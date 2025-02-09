@@ -1,0 +1,6 @@
+
+
+void main(){
+	i32 i = 3 + 4
+	print(i)
+}

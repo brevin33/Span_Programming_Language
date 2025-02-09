@@ -1,0 +1,14 @@
+# Format Style Options - Created with Clang Power Tools
+---
+BasedOnStyle: WebKit
+AllowShortIfStatementsOnASingleLine: Always
+BreakBeforeBraces: Allman
+AllowShortFunctionsOnASingleLine: None 
+ColumnLimit: 230
+DerivePointerAlignment: true
+IndentPPDirectives: BeforeHash
+MaxEmptyLinesToKeep: 3
+ReflowComments: false
+SortIncludes: false
+SpacesBeforeTrailingComments: 2
+...
