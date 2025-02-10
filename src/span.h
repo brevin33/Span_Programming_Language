@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <llvm-c/Core.h>
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -87,8 +88,7 @@ typedef float f32;
 
 void compile(const std::string& dir);
 
-enum TokenType
-{
+enum TokenType {
     tt_err,
     tt_int,
     tt_float,
@@ -116,32 +116,150 @@ enum TokenType
     tt_greq,
     tt_gr,
     tt_le,
+    tt_ret,
+    tt_com,
+    tt_eof,
 };
 
-union TokenData
-{
+union TokenData {
     std::string* str;
     u64 uint;
     f64 dec;
 };
 
-struct Token
-{
-    u8 type;
+struct Token {
+    TokenType type;
     u8 file;
     u16 schar;
     u16 echar;
     u16 line;
     TokenData data;
-    ~Token()
-    {
-        if (type == tt_id || type == tt_str) delete data.str;
+
+    Token()
+        : type(tt_int)
+        , file(0)
+        , schar(0)
+        , echar(0)
+        , line(0) {
+        data.uint = 0;
+    }
+
+    ~Token() {
+        cleanup();
+    }
+
+    // Copy constructor
+    Token(const Token& other)
+        : type(other.type)
+        , file(other.file)
+        , schar(other.schar)
+        , echar(other.echar)
+        , line(other.line) {
+        if (type == tt_id || type == tt_str) {
+            data.str = new std::string(*other.data.str);
+        } else {
+            data = other.data;
+        }
+    }
+
+    // Copy assignment operator
+    Token& operator=(const Token& other) {
+        if (this == &other) return *this;
+
+        cleanup();  // Clean up existing data
+
+        type = other.type;
+        file = other.file;
+        schar = other.schar;
+        echar = other.echar;
+        line = other.line;
+
+        if (type == tt_id || type == tt_str) {
+            data.str = new std::string(*other.data.str);
+        } else {
+            data = other.data;
+        }
+
+        return *this;
+    }
+
+    // Move constructor
+    Token(Token&& other) noexcept
+        : type(other.type)
+        , file(other.file)
+        , schar(other.schar)
+        , echar(other.echar)
+        , line(other.line) {
+        if (type == tt_id || type == tt_str) {
+            data.str = other.data.str;
+            other.data.str = nullptr;
+        } else {
+            data = other.data;
+        }
+        other.type = tt_err;
+    }
+
+    // Move assignment operator
+    Token& operator=(Token&& other) noexcept {
+        if (this == &other) return *this;
+
+        cleanup();  // Clean up existing data
+
+        type = other.type;
+        file = other.file;
+        schar = other.schar;
+        echar = other.echar;
+        line = other.line;
+
+        if (type == tt_id || type == tt_str) {
+            data.str = other.data.str;
+            other.data.str = nullptr;
+        } else {
+            data = other.data;
+        }
+        other.type = tt_err;
+
+        return *this;
+    }
+
+private:
+    void cleanup() {
+        if (type == tt_id || type == tt_str) {
+            delete data.str;
+            data.str = nullptr;
+        }
     }
 };
 
-struct Module
-{
+struct TokenPosition {
+    u8 file;
+    u16 line;
+    u16 i;
+};
+
+struct Type {
+    std::string name;
+    LLVMTypeRef llvmType;
+};
+
+struct Function {
+    std::string name;
+    TokenPosition start;
+    Type returnType;
+    std::vector<Type> paramTypes;
+    std::vector<std::string> paramNames;
+    LLVMTypeRef llvmType;
+    LLVMValueRef llvmVal;
+};
+
+struct Module {
+    LLVMModuleRef llvmModule;
     std::vector<std::string> files;
     std::vector<std::vector<std::string>> textByFileByLine;
-    std::vector<std::vector<Token>> tokensByFile;
+    std::vector<std::vector<std::vector<Token>>> tokensByFileByLine;
+    std::vector<TokenPosition> functionStarts;
+    std::vector<Type> types;
+    std::unordered_map<std::string, u64> nameToTypeId;
+    std::vector<Function> functions;
+    std::unordered_map<std::string, u64> nameToFunctionId;
 };
