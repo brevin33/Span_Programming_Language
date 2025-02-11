@@ -407,6 +407,45 @@ Type createType(const string& name, LLVMTypeRef llvmType) {
     return type;
 }
 
+
+// this should just be a copy of getType without the err logging
+Type tryGetType(u8& sfile, u16& sline, u16& si, bool& err, Module& module) {
+    u8 file = sfile;
+    u16 i = si;
+    u16 line = sline;
+    vector<vector<Token>>& tokensByLine = module.tokensByFileByLine[file];
+
+    if (tokensByLine[line][i].type != tt_id) {
+        err = true;
+        return {};
+    }
+    string baseTypeName = *tokensByLine[line][i].data.str;
+    if (module.nameToTypeId.count(baseTypeName) == 0) {
+        err = true;
+        return {};
+    }
+    if (nextTokenLine(line, i, tokensByLine)) {
+        err = true;
+        return {};
+    }
+    //TODO: add type mods
+
+    string typeName = baseTypeName;
+
+    auto t = module.nameToTypeId.find(typeName);
+    Type type;
+    if (t != module.nameToTypeId.end()) {
+        type = module.types[t->second];
+    } else {
+        //TODO: create llvm type if doesn't exist
+    }
+
+    sfile = file;
+    si = i;
+    sline = line;
+    return type;
+}
+
 Type getType(u8& sfile, u16& sline, u16& si, bool& err, Module& module) {
     u8 file = sfile;
     u16 i = si;
@@ -423,7 +462,11 @@ Type getType(u8& sfile, u16& sline, u16& si, bool& err, Module& module) {
         err = true;
         return {};
     }
-    nextTokenIndex(line, i, tokensByLine);
+    if (nextTokenLine(line, i, tokensByLine)) {
+        logError("Type doesn't make since as last token on this line", tokensByLine[line][i], module);
+        err = true;
+        return {};
+    }
     //TODO: add type mods
 
     string typeName = baseTypeName;
@@ -494,14 +537,57 @@ void prototypeFunction(TokenPosition& funcStart, Module& module) {
     funciton.paramNames = paramNames;
     funciton.paramTypes = paramTypes;
     funciton.returnType = retType;
+    funciton.start = funcStart;
     return;
 }
 
-void implementFunction(TokenPosition& funcStart, Module& module) {
+void implementFunction(Function& function, Module& module) {
+    TokenPosition& funcStart = function.start;
     u8 file = funcStart.file;
     u16 line = funcStart.line;
     u16 i = funcStart.i;
+    bool err = false;
     vector<vector<Token>>& tokensByLine = module.tokensByFileByLine[file];
+
+    while (tokensByLine[line][i].type != tt_lcur) {
+        nextTokenIndex(line, i, tokensByLine);
+    }
+    nextTokenIndex(line, i, tokensByLine);
+
+    if (i != 0) {
+        logError("No more tokens should be on this line", tokensByLine[line][i], module);
+        line++;
+    }
+
+    // TODO: loop over all lines or somthing with this code
+    Type type = tryGetType(file, line, i, err, module);
+    if (!err) {
+        // type
+        if (tokensByLine[line][i].type != tt_id) {
+            logError("Expected variable name", tokensByLine[line][i], module);
+            // TODO: handel error
+        }
+        string variableName = *tokensByLine[line][i].data.str;
+        if (nextTokenLine(line, i, tokensByLine)) {
+            // TODO: define variable
+        }
+        switch (tokensByLine[line][i].type) {
+        case tt_eq: {
+            // TODO: handel assign variable
+        }
+        default: {
+            logError("Didn't expect this after variable declaration", tokensByLine[line][i], module);
+            // TODO: handel error
+        }
+        }
+    } else {
+        // not type
+        // TODO
+    }
+
+
+
+    return;
 }
 
 LLVMTypeRef determineReturnType(LLVMTypeRef lhsType, LLVMTypeRef rhsType) {
@@ -666,15 +752,15 @@ void setupGenerics(Module& module) {
     module.nameToTypeId["f64"] = module.types.size();
     module.types.push_back(createType("f64", LLVMDoubleType()));
 
-    for (u32 i = 0; i < module.types.size(); i++) {
-        for (u32 j = 0; j < module.types.size(); j++) {
-            Type type1 = module.types[i];
-            Type type2 = module.types[j];
-            Function addFunc = createAddFunction(module, builder, "add-" + type1.name + type2.name, type1, type2);
-            module.nameToFunctionId[addFunc.name] = module.functions.size();
-            module.functions.push_back(addFunc);
-        }
-    }
+    //for (u32 i = 0; i < module.types.size(); i++) {
+    //    for (u32 j = 0; j < module.types.size(); j++) {
+    //        Type type1 = module.types[i];
+    //        Type type2 = module.types[j];
+    //        Function addFunc = createAddFunction(module, builder, "add-" + type1.name + type2.name, type1, type2);
+    //        module.nameToFunctionId[addFunc.name] = module.functions.size();
+    //        module.functions.push_back(addFunc);
+    //    }
+    //}
 
     module.nameToTypeId["void"] = module.types.size();
     module.types.push_back(createType("void", LLVMVoidType()));
@@ -703,8 +789,8 @@ void compileModule(const string& dir) {
         prototypeFunction(module.functionStarts[i], module);
     }
 
-    for (u64 i = 0; i < module.functionStarts.size(); i++) {
-        implementFunction(module.functionStarts[i], module);
+    for (u64 i = 0; i < module.functions.size(); i++) {
+        implementFunction(module.functions[i], module);
     }
 }
 
