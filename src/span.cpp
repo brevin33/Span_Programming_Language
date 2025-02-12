@@ -538,7 +538,43 @@ void prototypeFunction(TokenPosition& funcStart, Module& module) {
     funciton.paramTypes = paramTypes;
     funciton.returnType = retType;
     funciton.start = funcStart;
+    funciton.scope.parent = nullptr;
     return;
+}
+
+void implementScope(Scope& scope, Function& function, u8& file, u16& line, u16& i, Module& module) {
+    vector<vector<Token>>& tokensByLine = module.tokensByFileByLine[file];
+    bool err = false;
+    while (tokensByLine[line][i].type != tt_rbar) {
+        Type type = tryGetType(file, line, i, err, module);
+        if (!err) {
+            // type
+            if (tokensByLine[line][i].type != tt_id) {
+                logError("Expected variable name", tokensByLine[line][i], module);
+                i = 0;
+                line++;
+                continue;
+            }
+            string variableName = *tokensByLine[line][i].data.str;
+            if (nextTokenLine(line, i, tokensByLine)) {
+                // TODO: define variable
+            }
+            switch (tokensByLine[line][i].type) {
+            case tt_eq: {
+                // TODO: handel assign variable
+            }
+            default: {
+                logError("Didn't expect this after variable declaration", tokensByLine[line][i], module);
+                i = 0;
+                line++;
+                continue;
+            }
+            }
+        } else {
+            // not type
+            // TODO
+        }
+    }
 }
 
 void implementFunction(Function& function, Module& module) {
@@ -546,7 +582,6 @@ void implementFunction(Function& function, Module& module) {
     u8 file = funcStart.file;
     u16 line = funcStart.line;
     u16 i = funcStart.i;
-    bool err = false;
     vector<vector<Token>>& tokensByLine = module.tokensByFileByLine[file];
 
     while (tokensByLine[line][i].type != tt_lcur) {
@@ -559,30 +594,15 @@ void implementFunction(Function& function, Module& module) {
         line++;
     }
 
-    // TODO: loop over all lines or somthing with this code
-    Type type = tryGetType(file, line, i, err, module);
-    if (!err) {
-        // type
-        if (tokensByLine[line][i].type != tt_id) {
-            logError("Expected variable name", tokensByLine[line][i], module);
-            // TODO: handel error
-        }
-        string variableName = *tokensByLine[line][i].data.str;
-        if (nextTokenLine(line, i, tokensByLine)) {
-            // TODO: define variable
-        }
-        switch (tokensByLine[line][i].type) {
-        case tt_eq: {
-            // TODO: handel assign variable
-        }
-        default: {
-            logError("Didn't expect this after variable declaration", tokensByLine[line][i], module);
-            // TODO: handel error
-        }
-        }
-    } else {
-        // not type
-        // TODO
+    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(function.llvmVal, "entry");
+    LLVMPositionBuilderAtEnd(builder, entry);
+
+    for (int j = 0; j < function.paramNames.size(); j++) {
+        Variable var;
+        var.name = function.paramNames[0];
+        var.value.llvmValue = LLVMBuildAlloca(builder, function.paramTypes[0].llvmType, function.paramTypes[0].name.c_str());
+        var.value.type = function.paramTypes[0];
+        function.scope.variables.push_back(var);
     }
 
 

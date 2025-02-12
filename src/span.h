@@ -242,6 +242,21 @@ struct Type {
     LLVMTypeRef llvmType;
 };
 
+struct Value {
+    Type type;
+    LLVMValueRef llvmValue;
+};
+
+struct Variable {
+    std::string name;
+    Value value;
+};
+
+struct Scope {
+    std::unique_ptr<Scope> parent;
+    std::vector<Variable> variables;
+};
+
 struct Function {
     std::string name;
     TokenPosition start;
@@ -250,6 +265,7 @@ struct Function {
     std::vector<std::string> paramNames;
     LLVMTypeRef llvmType;
     LLVMValueRef llvmVal;
+    Scope scope;
 };
 
 struct Module {
