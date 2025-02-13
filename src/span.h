@@ -255,6 +255,7 @@ struct Variable {
 struct Scope {
     std::unique_ptr<Scope> parent;
     std::vector<Variable> variables;
+    std::unordered_map<std::string, u64> nameToVariableId;
 };
 
 struct Function {

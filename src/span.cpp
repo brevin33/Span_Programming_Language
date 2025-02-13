@@ -542,6 +542,43 @@ void prototypeFunction(TokenPosition& funcStart, Module& module) {
     return;
 }
 
+bool checkLine(TokenType type, u8& file, u16& line, u16& i, Module& module) {
+    vector<vector<Token>>& tokensByLine = module.tokensByFileByLine[file];
+    for (i; i < tokensByLine[line].size(); i++) {
+        if (tokensByLine[line][i].type == type) return true;
+    }
+    return false;
+}
+
+Value loadVariable(u8& file, u16& line, u16& i, Scope& scope, Module& module) {
+    //TODO
+}
+
+Value getValue(u8& file, u16& line, u16& i, Scope& scope, Module& module) {
+    vector<vector<Token>>& tokensByLine = module.tokensByFileByLine[file];
+    switch (tokensByLine[line][i].type) {
+    case tt_id: {
+        return loadVariable(file, line, i, scope, module);
+    }
+    case tt_float: {
+        //TODO
+    }
+    case tt_int: {
+        //TODO
+    }
+    case tt_str: {
+        //TODO
+    }
+    default: {
+        //TODO
+    }
+    }
+}
+
+Value parseStatement(Value& lval, u8& file, u16& line, u16& i, Scope& scope, Module& module) {
+    //TODO
+}
+
 void implementScope(Scope& scope, Function& function, u8& file, u16& line, u16& i, Module& module) {
     vector<vector<Token>>& tokensByLine = module.tokensByFileByLine[file];
     bool err = false;
@@ -556,11 +593,22 @@ void implementScope(Scope& scope, Function& function, u8& file, u16& line, u16& 
                 continue;
             }
             string variableName = *tokensByLine[line][i].data.str;
+            Variable var;
+            var.name = variableName;
+            var.value.llvmValue = LLVMBuildAlloca(builder, type.llvmType, variableName.c_str());
+            var.value.type = type;
+            scope.nameToVariableId[variableName] = scope.variables.size();
+            scope.variables.push_back(var);
             if (nextTokenLine(line, i, tokensByLine)) {
-                // TODO: define variable
+                continue;
             }
             switch (tokensByLine[line][i].type) {
             case tt_eq: {
+                if (nextTokenLine(line, i, tokensByLine)) {
+                    logError("No statment found to initilize variable", tokensByLine[line][i], module);
+                    continue;
+                }
+                Value rval = parseStatement(getValue(file, line, i, scope, module), file, line, i, scope, module);
                 // TODO: handel assign variable
             }
             default: {
