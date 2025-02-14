@@ -230,3 +230,18 @@ private:
         }
     }
 };
+
+struct Type {
+    std::string name;
+    LLVMTypeRef llvmType;
+};
+
+struct Function {
+    std::string name;
+    LLVMTypeRef llvmType;
+    LLVMValueRef llvmValue;
+    int tokenPos;
+    Type returnType;
+    std::vector<Type> paramTypes;
+    std::vector<std::string> paramNames;
+};

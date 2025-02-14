@@ -12,6 +12,8 @@ std::vector<std::string> files;
 std::vector<std::vector<std::string>> textByFileByLine;
 std::vector<Token> tokens;
 std::vector<u64> functionStarts;
+unordered_map<string, Type> nameToType;
+unordered_map<string, Function> nameToFunction;
 bool hadError = false;
 
 string loadFileToString(const string& filePath) {
@@ -301,10 +303,14 @@ void getTokens(u8 file) {
     tokens.push_back(eof);
 }
 
+bool nextToken(int& i) {
+    return ++i >= tokens.size();
+}
+
 bool looksLikeType(int& i) {
     int si = i;
     if (tokens[si].type != tt_id) return false;
-    if (++si >= tokens.size()) return false;
+    if (nextToken(si)) return false;
     // TODO: Type mod
 
     i = si;
@@ -315,17 +321,17 @@ bool looksLikeFunction(int& i) {
     int si = i;
     if (!looksLikeType(si)) return false;
     if (tokens[si].type != tt_id) return false;
-    if (++si >= tokens.size()) return false;
+    if (nextToken(si)) return false;
     if (tokens[si].type != tt_lpar) return false;
     while (true) {
-        if (++si >= tokens.size()) return false;
+        if (nextToken(si)) return false;
         if (tokens[si].type == tt_rpar) break;
     }
-    if (++si >= tokens.size()) return false;
+    if (nextToken(si)) return false;
     if (tokens[si].type != tt_lcur) return false;
     int curStack = 1;
     while (curStack != 0) {
-        if (++si >= tokens.size()) return false;
+        if (nextToken(si)) return false;
         if (tokens[si].type == tt_lcur) curStack++;
         if (tokens[si].type == tt_rcur) curStack--;
     }
@@ -350,19 +356,96 @@ void findFunctionStarts() {
                 if (tokens[i].type == tt_lcur) {
                     int curStack = 1;
                     while (curStack != 0) {
-                        if (++i >= tokens.size()) return;
+                        if (nextToken(i)) return;
                         if (tokens[i].type == tt_lcur) curStack--;
                         if (tokens[i].type == tt_rcur) curStack++;
                     }
-                    if (++i >= tokens.size()) return;
+                    if (nextToken(i)) return;
                     if (tokens[i].type == tt_endl) break;
                     if (tokens[i].type == tt_eof) break;
-                    logError("Right Brackets should be on there own line", tokens[i]);
+                    logError("Right brackets should be on there own line", tokens[i]);
                 }
-                if (++i >= tokens.size()) return;
+                if (nextToken(i)) return;
             }
         }
     }
+}
+
+Type getTypeFromName(const string& name, bool& err, bool logErrors = true) {
+    auto t = nameToType.find(name);
+    if (t == nameToType.end()) {
+        err = true;
+        return {};
+    }
+    return t->second;
+}
+
+Type getType(int& i, bool& err, bool logErrors = true) {
+    int si = i;
+    if (tokens[si].type != tt_id) {
+        if (logErrors) logError("Expected a type name", tokens[i]);
+        err = true;
+        return {};
+    }
+    string baseTypeName = *tokens[i].data.str;
+    Type baseType = getTypeFromName(baseTypeName, err, logErrors);
+    if (err) {
+        if (logErrors) logError("There is no type with name of " + baseTypeName, tokens[i]);
+        return {};
+    }
+    nextToken(si);
+    // TODO: type mods
+
+    i = si;
+    return baseType;
+}
+
+void prototypeFunction(int i) {
+    int s = i;
+    bool err = false;
+    Type returnType = getType(i, err);
+    if (err) return;
+    nextToken(i);
+    if (tokens[i].type != tt_id) {
+        logError("Expected a function name", tokens[i]);
+        return;
+    }
+    string funcName = *tokens[i].data.str;
+    nextToken(i);
+    nextToken(i);
+    vector<Type> paramTypes;
+    vector<string> paramNames;
+    if (tokens[i].type != tt_rpar) {
+        while (true) {
+            Type paramType = getType(i, err);
+            if (err) return;
+            if (tokens[i].type != tt_id) {
+                logError("Expected a parameter name", tokens[i]);
+                return;
+            }
+            nextToken(i);
+            if (tokens[i].type == tt_rpar) break;
+            if (tokens[i].type != tt_com) {
+                logError("Expected a comma , or closing paren )", tokens[i]);
+                return;
+            }
+            nextToken(i);
+        }
+    }
+
+    vector<LLVMTypeRef> llvmParamTypes(paramNames.size());
+    for (int j = 0; j < paramTypes.size(); j++) {
+        llvmParamTypes[j] = paramTypes[j].llvmType;
+    }
+    Function func;
+    func.name = funcName;
+    func.paramNames = paramNames;
+    func.paramTypes = paramTypes;
+    func.returnType = returnType;
+    func.llvmType = LLVMFunctionType(returnType.llvmType, llvmParamTypes.data(), llvmParamTypes.size(), 0);
+    func.llvmValue = LLVMAddFunction(llvmModule, funcName.c_str(), func.llvmType);
+    func.tokenPos = s;
+    nameToFunction[funcName] = func;
 }
 
 void compileModule(const string& dir) {
@@ -380,6 +463,9 @@ void compileModule(const string& dir) {
         getTokens(files.size() - 1);
     }
     findFunctionStarts();
+    for (int i = 0; i < functionStarts.size(); i++) {
+        prototypeFunction(functionStarts[i]);
+    }
 }
 
 
