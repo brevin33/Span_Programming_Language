@@ -10,5 +10,6 @@ IndentPPDirectives: BeforeHash
 MaxEmptyLinesToKeep: 3
 ReflowComments: false
 SortIncludes: false
+IndentCaseLabels: true 
 SpacesBeforeTrailingComments: 2
 ...

@@ -6,6 +6,9 @@
 #include <sstream>
 #include <string>
 #include <llvm-c/Core.h>
+#include <llvm-c/Target.h>
+#include <llvm-c/Analysis.h>
+#include <llvm-c/Support.h>
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -234,6 +237,21 @@ private:
 struct Type {
     std::string name;
     LLVMTypeRef llvmType;
+};
+
+struct Value {
+    Type type;
+    LLVMValueRef llvmVal;
+};
+
+struct Variable {
+    std::string name;
+    Value val;
+};
+
+struct Scope {
+    std::unique_ptr<Scope> parent;
+    std::unordered_map<std::string, Variable> nameToVariable;
 };
 
 struct Function {
