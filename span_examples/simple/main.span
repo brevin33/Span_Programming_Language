@@ -1,5 +1,9 @@
 
+int foo(int a, int b){
+    int j = a
+}
 
 void main(){
-    u64 i = 3 + 4
+    int i = 3 + 4
+    int k = foo(i, 3)
 }

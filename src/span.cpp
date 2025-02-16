@@ -9,6 +9,7 @@ namespace fs = std::filesystem;
 LLVMContextRef context;
 LLVMBuilderRef builder;
 LLVMModuleRef llvmModule;
+LLVMTargetDataRef dataLayout;
 std::vector<std::string> files;
 std::vector<std::vector<std::string>> textByFileByLine;
 std::vector<Token> tokens;
@@ -16,6 +17,10 @@ std::vector<u64> functionStarts;
 unordered_map<string, Type> nameToType;
 unordered_map<string, vector<Function>> nameToFunction;
 bool hadError = false;
+
+Variable dummyVar = {};
+
+Value parseStatment(int& i, bool& err, Scope& scope, const vector<TokenType>& dels, int retPrio = INT_MIN);
 
 string loadFileToString(const string& filePath) {
     ifstream file(filePath, ios::in | ios::ate);
@@ -43,20 +48,36 @@ vector<string> splitStringByNewline(const std::string& str) {
     return lines;
 }
 
+string removeSpaces(const string& str) {
+    stringstream ss;
+    bool startSpaces = true;
+    for (int i = 0; i < str.size(); i++) {
+        if (isspace(str[i]) && startSpaces) continue;
+        ss << str[i];
+        startSpaces = false;
+    }
+    return ss.str();
+}
+
 void logError(const string& err, Token& token, bool wholeLine = false) {
     hadError = true;
     std::cout << "\033[31m";
     cout << "Error: " << err << endl;
     std::cout << "\033[0m";
-    cout << textByFileByLine[token.file][token.line] << endl;
+    cout << removeSpaces(textByFileByLine[token.file][token.line]) << endl;
     std::cout << "\033[31m";
     if (wholeLine) {
         for (int i = 0; i <= textByFileByLine[token.file][token.line].size(); i++) {
             cout << "^";
         }
     } else {
+        bool startSpaces = true;
         for (int i = 0; i < token.schar; i++) {
+            if (isspace(textByFileByLine[token.file][token.line][i]) && startSpaces) {
+                continue;
+            }
             cout << " ";
+            startSpaces = false;
         }
         for (int i = token.schar; i <= token.echar; i++) {
             cout << "^";
@@ -292,8 +313,8 @@ void getTokens(u8 file) {
         }
         Token eof;
         eof.type = tt_endl;
-        eof.schar = UINT16_MAX;
-        eof.echar = UINT16_MAX;
+        eof.schar = line.size();
+        eof.echar = line.size();
         eof.line = lineNum;
         eof.file = file;
         tokens.push_back(eof);
@@ -383,14 +404,34 @@ Type createType(const string& name, LLVMTypeRef llvmType) {
     return type;
 }
 
-bool typeMatch(Type type1, Type type2) {
-    return type1.name == type2.name;
+void aliasType(const string& name, Type typeToAlias) {
+    nameToType[name] = typeToAlias;
 }
 
-bool typeMatchOrImplicitCast(Type type, Value val) {
-    if (typeMatch(type, val.type)) return true;
-    // TODO: Implicit casting
-    return false;
+bool isIntType(const Type& type) {
+    LLVMTypeKind typeKind = LLVMGetTypeKind(type.llvmType);
+    return typeKind == LLVMIntegerTypeKind;
+}
+
+bool isIntSigned(const Type& type) {
+    return type.name[0] == 'i';
+}
+
+bool isFloatType(const Type& type) {
+    LLVMTypeKind typeKind = LLVMGetTypeKind(type.llvmType);
+    return typeKind == LLVMDoubleTypeKind || typeKind == LLVMFloatTypeKind || typeKind == LLVMHalfTypeKind;
+}
+
+bool isNumType(const Type& type) {
+    return isFloatType(type) || isIntType(type);
+}
+
+int getTypeWidth(const Type& type) {
+    return LLVMSizeOfTypeInBits(dataLayout, type.llvmType);
+}
+
+bool typeMatch(Type type1, Type type2) {
+    return type1.name == type2.name;
 }
 
 Type getTypeFromName(const string& name, bool& err) {
@@ -422,19 +463,43 @@ Type getType(int& i, bool& err, bool logErrors = true) {
     return baseType;
 }
 
+bool isTypePtr(const Type& type) {
+    return type.name.back() == '*';
+}
+
+bool isTypeRef(Type type) {
+    return type.name.back() == '&';
+}
+
 Type getTypePtr(Type type) {
     type.name = type.name + '*';
     type.llvmType = LLVMPointerType(type.llvmType, 0);
     return type;
 }
 
+Type getTypeRef(Type type) {
+    type.name = type.name + '&';
+    type.llvmType = LLVMPointerType(type.llvmType, 0);
+    return type;
+}
+
+
 Type getTypePointingTo(Type type, bool& err) {
-    if (type.name.back() != '*') {
+    if (type.name.back() != '*' && type.name.back() != '&') {
         err = true;
         return {};
     }
     type.name.resize(type.name.size() - 1);
     return getTypeFromName(type.name, err);
+}
+
+Value dereferenceValue(Value val) {
+    assert(isTypePtr(val.type) || isTypeRef(val.type));
+    bool err = false;
+    val.type = getTypePointingTo(val.type, err);
+    assert(!err);
+    val.llvmVal = LLVMBuildLoad2(builder, val.type.llvmType, val.llvmVal, "derefVal");
+    return val;
 }
 
 void prototypeFunction(int i) {
@@ -459,6 +524,8 @@ void prototypeFunction(int i) {
                 logError("Expected a parameter name", tokens[i]);
                 return;
             }
+            paramTypes.push_back(paramType);
+            paramNames.push_back(*tokens[i].data.str);
             nextToken(i);
             if (tokens[i].type == tt_rpar) break;
             if (tokens[i].type != tt_com) {
@@ -479,7 +546,8 @@ void prototypeFunction(int i) {
     func.paramTypes = paramTypes;
     func.returnType = returnType;
     func.llvmType = LLVMFunctionType(returnType.llvmType, llvmParamTypes.data(), llvmParamTypes.size(), 0);
-    func.llvmValue = LLVMAddFunction(llvmModule, funcName.c_str(), func.llvmType);
+    string llvmname = funcName + to_string(nameToFunction[funcName].size());
+    func.llvmValue = LLVMAddFunction(llvmModule, llvmname.c_str(), func.llvmType);
     func.tokenPos = s;
     nameToFunction[funcName].push_back(func);
 }
@@ -492,8 +560,138 @@ Variable& getVariableFromName(const string& name, Scope& scope, bool& err) {
         s = s->parent.get();
     }
     err = true;
-    Variable v = {};
-    return v;
+    return dummyVar;
+}
+
+void implicitCastNumber(Type& type, Value& val) {
+    int typeWidth = 0;
+    int valWidth = 0;
+    if (isIntType(type)) {
+        typeWidth = LLVMGetIntTypeWidth(type.llvmType);
+    } else {
+        if (type.name == "f16") typeWidth = 16;
+        if (type.name == "f32") typeWidth = 32;
+        if (type.name == "f64") typeWidth = 64;
+    }
+    if (isIntType(val.type)) {
+        valWidth = LLVMGetIntTypeWidth(val.type.llvmType);
+    } else {
+        if (val.type.name == "f16") valWidth = 16;
+        if (val.type.name == "f32") valWidth = 32;
+        if (val.type.name == "f64") valWidth = 64;
+    }
+
+    if (isFloatType(type)) {
+        if (isFloatType(val.type)) {
+            val.llvmVal = LLVMBuildFPCast(builder, val.llvmVal, type.llvmType, "floatTofloat");
+        } else {
+            if (isIntSigned(val.type)) {
+                val.llvmVal = LLVMBuildSIToFP(builder, val.llvmVal, type.llvmType, "intToFloat");
+            } else {
+                val.llvmVal = LLVMBuildUIToFP(builder, val.llvmVal, type.llvmType, "intToFloat");
+            }
+        }
+    } else {
+        if (typeWidth > valWidth) {
+            if (isIntSigned(type)) {
+                val.llvmVal = LLVMBuildSExt(builder, val.llvmVal, type.llvmType, "intToint");
+            } else {
+                val.llvmVal = LLVMBuildZExt(builder, val.llvmVal, type.llvmType, "intToint");
+            }
+        } else {
+            val.llvmVal = LLVMBuildTrunc(builder, val.llvmVal, type.llvmType, "intToint");
+        }
+    }
+    val.type = type;
+}
+
+Value callFunction(const string& name, int& i, bool& err, Scope& scope) {
+    int si = i;
+    assert(tokens[si].type == tt_lpar);
+    nextToken(si);
+    vector<Value> vals;
+    if (tokens[si].type != tt_rpar) {
+        while (true) {
+            Value val = parseStatment(si, err, scope, { tt_com, tt_rpar });
+            if (err) return {};
+            vals.push_back(val);
+            if (tokens[si].type == tt_com) {
+                nextToken(si);
+                continue;
+            }
+            if (tokens[si].type == tt_rpar) break;
+        }
+    }
+    nextToken(si);
+    auto t = nameToFunction.find(name);
+    if (t == nameToFunction.end()) {
+        logError("No function with name of " + name, tokens[i - 1]);
+        err = true;
+        return {};
+    }
+    vector<Function> funcs = t->second;
+    Function* funcToCall = nullptr;
+    for (int j = 0; j < funcs.size(); j++) {
+        if (funcs[j].paramNames.size() == vals.size()) {
+            bool match = true;
+            for (int k = 0; k < vals.size(); k++) {
+                if (funcs[j].paramTypes[k].name != vals[k].type.name) match = false;
+            }
+            if (match) {
+                funcToCall = &funcs[j];
+                break;
+            }
+        }
+    }
+
+    if (funcToCall == nullptr) {
+        // see if there is an way to cast into a function
+        for (int j = 0; j < funcs.size(); j++) {
+            if (funcs[j].paramNames.size() == vals.size()) {
+                bool match = true;
+                for (int k = 0; k < vals.size(); k++) {
+                    bool useable = funcs[j].paramTypes[k].name == vals[k].type.name;
+                    useable = useable || (isNumType(funcs[j].paramTypes[k]) && isNumType(vals[k].type));
+                    if (!useable) match = false;
+                }
+                if (match) {
+                    if (funcToCall != nullptr) {
+                        logError("Function call is ambiguous", tokens[i - 1]);
+                        err = true;
+                        return {};
+                    }
+                    funcToCall = &funcs[j];
+                }
+            }
+        }
+
+        if (funcToCall == nullptr) {
+            logError("No function overload uses given arguments", tokens[i - 1]);
+            err = true;
+            return {};
+        }
+
+        for (int k = 0; k < vals.size(); k++) {
+            if (funcToCall->paramTypes[k].name != vals[k].type.name) {
+                implicitCastNumber(funcToCall->paramTypes[k], vals[k]);
+            }
+        }
+    }
+
+    vector<LLVMValueRef> llvmVals;
+    for (int j = 0; j < vals.size(); j++) {
+        llvmVals.push_back(vals[j].llvmVal);
+    }
+
+    i = si;
+    Value val;
+    if (funcToCall->returnType.name != "void") {
+        val.llvmVal = LLVMBuildCall2(builder, funcToCall->llvmType, funcToCall->llvmValue, llvmVals.data(), llvmVals.size(), name.c_str());
+    } else {
+        val.llvmVal = LLVMBuildCall2(builder, funcToCall->llvmType, funcToCall->llvmValue, llvmVals.data(), llvmVals.size(), "");
+    }
+    val.type = funcToCall->returnType;
+    return val;
 }
 
 Value parseValue(int& i, bool& err, Scope& scope) {
@@ -501,26 +699,28 @@ Value parseValue(int& i, bool& err, Scope& scope) {
     Value val;
     switch (tokens[si].type) {
         case tt_id: {
+            string id = *tokens[i].data.str;
+            if (tokens[si + 1].type == tt_lpar) {
+                nextToken(si);
+                val = callFunction(id, si, err, scope);
+                if (err) return {};
+                break;
+            }
             Variable var = getVariableFromName(*tokens[si].data.str, scope, err);
             if (err) {
                 logError("Variable doesn't exist", tokens[si]);
+                err = true;
                 return {};
             }
             nextToken(si);
-            if (tokens[si].type == tt_lpar) {
-                // TODO: function call
-                break;
-            }
-            Type type = getTypePointingTo(var.val.type, err);
-            assert(!err);
-            val.llvmVal = LLVMBuildLoad2(builder, type.llvmType, var.val.llvmVal, var.name.c_str());
-            val.type = type;
+            val = var.val;
             break;
         }
         case tt_float: {
             val.type = getTypeFromName("f64", err);
             assert(!err);
             val.llvmVal = LLVMConstReal(val.type.llvmType, tokens[si].data.dec);
+            val.constant = true;
             nextToken(si);
             break;
         }
@@ -528,6 +728,7 @@ Value parseValue(int& i, bool& err, Scope& scope) {
             val.type = getTypeFromName("u64", err);
             assert(!err);
             val.llvmVal = LLVMConstInt(val.type.llvmType, tokens[si].data.uint, 0);
+            val.constant = true;
             nextToken(si);
             break;
         }
@@ -541,6 +742,9 @@ Value parseValue(int& i, bool& err, Scope& scope) {
             // TODO: get ptr
         }
         default: {
+            logError("Couldn't interpit this as a value", tokens[i]);
+            err = true;
+            return {};
             break;
         }
     }
@@ -564,9 +768,165 @@ int getTokenPrio(Token& token, bool& err) {
     }
 }
 
-Value addValues(Value& lval, Value& rval) {
-    // TODO
-    return lval;
+void castNumberForBiop(Value& lval, Value& rval) {
+    int lwidth = 0;
+    int rwidth = 0;
+    if (isIntType(lval.type)) {
+        lwidth = LLVMGetIntTypeWidth(lval.type.llvmType);
+    } else {
+        if (lval.type.name == "f16") lwidth = 16;
+        if (lval.type.name == "f32") lwidth = 32;
+        if (lval.type.name == "f64") lwidth = 64;
+    }
+    if (isIntType(rval.type)) {
+        rwidth = LLVMGetIntTypeWidth(rval.type.llvmType);
+    } else {
+        if (rval.type.name == "f16") rwidth = 16;
+        if (rval.type.name == "f32") rwidth = 32;
+        if (rval.type.name == "f64") rwidth = 64;
+    }
+
+    if (isFloatType(lval.type) && !isFloatType(rval.type)) {
+        if (isIntSigned(rval.type)) {
+            rval.type = lval.type;
+            rval.llvmVal = LLVMBuildSIToFP(builder, rval.llvmVal, lval.type.llvmType, "intToFloat");
+            return;
+        } else {
+            rval.type = lval.type;
+            rval.llvmVal = LLVMBuildUIToFP(builder, rval.llvmVal, lval.type.llvmType, "intToFloat");
+            return;
+        }
+    } else if (!isFloatType(lval.type) && isFloatType(rval.type)) {
+        if (isIntSigned(lval.type)) {
+            lval.type = rval.type;
+            lval.llvmVal = LLVMBuildSIToFP(builder, lval.llvmVal, rval.type.llvmType, "intToFloat");
+            return;
+        } else {
+            lval.type = rval.type;
+            lval.llvmVal = LLVMBuildUIToFP(builder, lval.llvmVal, rval.type.llvmType, "intToFloat");
+            return;
+        }
+    }
+
+    if (isFloatType(lval.type) && isFloatType(rval.type)) {
+        if (lval.constant) {
+            lval.type = rval.type;
+            lval.llvmVal = LLVMBuildFPCast(builder, lval.llvmVal, rval.type.llvmType, "floatTofloat");
+            return;
+        } else if (rval.constant) {
+            rval.type = lval.type;
+            rval.llvmVal = LLVMBuildFPCast(builder, rval.llvmVal, lval.type.llvmType, "floatTofloat");
+            return;
+        } else {
+            if (lwidth < rwidth) {
+                rval.type = lval.type;
+                rval.llvmVal = LLVMBuildFPCast(builder, rval.llvmVal, lval.type.llvmType, "floatTofloat");
+            } else {
+                lval.type = rval.type;
+                lval.llvmVal = LLVMBuildFPCast(builder, lval.llvmVal, rval.type.llvmType, "floatTofloat");
+            }
+            return;
+        }
+    }
+
+
+
+    if (lwidth > rwidth && lval.constant == rval.constant) {
+        if (isIntSigned(lval.type) || isIntSigned(rval.type)) {
+            lval.type.name[0] = 'i';
+            rval.type = lval.type;
+            rval.llvmVal = LLVMBuildSExt(builder, rval.llvmVal, lval.type.llvmType, "intToint");
+            return;
+        } else {
+            rval.type = lval.type;
+            rval.llvmVal = LLVMBuildZExt(builder, rval.llvmVal, lval.type.llvmType, "intToint");
+            return;
+        }
+    } else if (lval.constant == rval.constant) {
+        if (isIntSigned(lval.type) || isIntSigned(rval.type)) {
+            rval.type.name[0] = 'i';
+            lval.type = rval.type;
+            lval.llvmVal = LLVMBuildSExt(builder, lval.llvmVal, rval.type.llvmType, "intToint");
+            return;
+        } else {
+            lval.type = rval.type;
+            lval.llvmVal = LLVMBuildZExt(builder, lval.llvmVal, rval.type.llvmType, "intToint");
+            return;
+        }
+    }
+
+    if (lval.constant) {
+        if (lwidth > rwidth) {
+            if (isIntSigned(lval.type)) {
+                rval.type.name[0] = 'i';
+            }
+            lval.type = rval.type;
+            lval.llvmVal = LLVMBuildTrunc(builder, lval.llvmVal, rval.type.llvmType, "intToint");
+        } else {
+            if (isIntSigned(lval.type)) {
+                rval.type.name[0] = 'i';
+                lval.llvmVal = LLVMBuildSExt(builder, lval.llvmVal, rval.type.llvmType, "intToint");
+            } else {
+                lval.llvmVal = LLVMBuildZExt(builder, lval.llvmVal, rval.type.llvmType, "intToint");
+            }
+            lval.type = rval.type;
+            return;
+        }
+    } else {
+        if (rwidth > lwidth) {
+            if (isIntSigned(rval.type)) {
+                lval.type.name[0] = 'i';
+            }
+            rval.type = lval.type;
+            rval.llvmVal = LLVMBuildTrunc(builder, rval.llvmVal, lval.type.llvmType, "intToint");
+        } else {
+            if (isIntSigned(rval.type)) {
+                lval.type.name[0] = 'i';
+                rval.llvmVal = LLVMBuildSExt(builder, rval.llvmVal, lval.type.llvmType, "intToint");
+            } else {
+                rval.llvmVal = LLVMBuildZExt(builder, rval.llvmVal, lval.type.llvmType, "intToint");
+            }
+            rval.type = rval.type;
+            return;
+        }
+    }
+
+    return;
+}
+
+
+bool typeMatchOrImplicitCast(Type& type, Value& val) {
+    if (typeMatch(type, val.type)) return true;
+    if (isNumType(type) && isNumType(val.type)) {
+        implicitCastNumber(type, val);
+        return true;
+    }
+    return false;
+}
+
+Value addValues(Value& lval, Value& rval, bool& err) {
+    //TODO: overload function
+    if (isTypeRef(lval.type)) {
+        lval = dereferenceValue(lval);
+    }
+    if (isTypeRef(rval.type)) {
+        rval = dereferenceValue(rval);
+    }
+    if (isNumType(lval.type) && isNumType(rval.type)) {
+        Value val;
+        castNumberForBiop(lval, rval);
+        val.type = lval.type;
+        val.constant = lval.constant && rval.constant;
+
+        if (isFloatType(lval.type)) {
+            val.llvmVal = LLVMBuildFAdd(builder, lval.llvmVal, rval.llvmVal, "addFloats");
+        } else {
+            val.llvmVal = LLVMBuildAdd(builder, lval.llvmVal, rval.llvmVal, "addInts");
+        }
+        return val;
+    }
+    err = true;
+    return {};
 }
 
 string to_string(TokenType type) {
@@ -584,19 +944,21 @@ string to_string(TokenType type) {
     }
 }
 
-Value parseStatment(int& i, bool& err, Scope& scope, TokenType del, int retPrio = INT_MIN) {
+Value parseStatment(int& i, bool& err, Scope& scope, const vector<TokenType>& dels, int retPrio) {
     int si = i;
     Value lval = parseValue(si, err, scope);
     if (err) return {};
     while (true) {
-        if (tokens[si].type == del) {
-            i = si;
-            return lval;
+        for (int j = 0; j < dels.size(); j++) {
+            if (tokens[si].type == dels[j]) {
+                i = si;
+                return lval;
+            }
         }
         int prio = getTokenPrio(tokens[si], err);
         TokenType op = tokens[si].type;
         if (err) {
-            logError("Expected a binary opperator, or " + to_string(del), tokens[si]);
+            logError("Expected a binary opperator, or end of statment", tokens[si]);
             return {};
         }
         if (retPrio >= prio) {
@@ -604,13 +966,16 @@ Value parseStatment(int& i, bool& err, Scope& scope, TokenType del, int retPrio 
             return lval;
         }
         nextToken(si);
-        Value rval = parseStatment(si, err, scope, del, prio);
+        Value rval = parseStatment(si, err, scope, dels, prio);
         if (err) {
             return {};
         }
         switch (op) {
             case tt_add: {
-                lval = addValues(lval, rval);
+                lval = addValues(lval, rval, err);
+                if (err) {
+                    logError("Can't add values of type " + lval.type.name + " with " + rval.type.name, tokens[i], true);
+                }
                 break;
             }
             default: {
@@ -656,15 +1021,16 @@ void implementScope(int& i, Function& func, Scope& scope) {
             nextToken(i);
             Variable var;
             var.name = varName;
-            var.val.type = getTypePtr(type);
+            var.val.type = getTypeRef(type);
             var.val.llvmVal = LLVMBuildAlloca(builder, type.llvmType, varName.c_str());
             scope.nameToVariable[varName] = var;
             if (tokens[i].type == tt_endl) continue;
             switch (tokens[i].type) {
                 case tt_eq: {
                     nextToken(i);
-                    Value rval = parseStatment(i, err, scope, tt_endl);
+                    Value rval = parseStatment(i, err, scope, { tt_endl });
                     if (err) {
+                        err = false;
                         while (true) {
                             if (tokens[i].type == tt_endl) break;
                             if (tokens[i].type == tt_rcur) return;
@@ -695,12 +1061,34 @@ void implementScope(int& i, Function& func, Scope& scope) {
             }
 
         } else {
+            err = false;
             switch (tokens[i].type) {
                 case tt_id: {
-                    //TODO:
+                    string name = *tokens[i].data.str;
+                    Variable var = getVariableFromName(name, scope, err);
+                    if (err) {
+                        err = false;
+                        nextToken(i);
+                        Value lval = parseStatment(i, err, scope, { tt_eq, tt_endl });
+                        if (err) {
+                            while (true) {
+                                if (tokens[i].type == tt_endl) break;
+                                if (tokens[i].type == tt_rcur) return;
+                                nextToken(i);
+                            }
+                            nextToken(i);
+                            continue;
+                        } else if (tokens[i].type == tt_eq) {
+                            if (isTypePtr(lval.type)) { }
+                            Value rval = parseStatment(i, err, scope, { tt_eq, tt_endl });
+                        } else {  // tt_endl
+                            continue;
+                        }
+                    } else {
+                    }
                 }
                 default: {
-                    logError("Line cann't start with this token", tokens[i]);
+                    logError("Line can't start with this token", tokens[i]);
                     while (true) {
                         if (tokens[i].type == tt_endl) break;
                         if (tokens[i].type == tt_rcur) return;
@@ -727,27 +1115,73 @@ void implementFunction(Function& func) {
     LLVMPositionBuilderAtEnd(builder, entry);
     for (int j = 0; j < func.paramNames.size(); j++) {
         Variable var;
-        var.name = func.paramNames[i];
-        var.val.type = getTypePtr(func.paramTypes[i]);
+        var.name = func.paramNames[j];
+        var.val.type = getTypeRef(func.paramTypes[j]);
         var.val.llvmVal = LLVMBuildAlloca(builder, func.paramTypes[j].llvmType, func.paramNames[j].c_str());
         LLVMBuildStore(builder, LLVMGetParam(func.llvmValue, j), var.val.llvmVal);
         scope.nameToVariable[var.name] = var;
     }
     implementScope(i, func, scope);
 }
+LLVMValueRef createFormatString(LLVMModuleRef module, const char* str) {
+    // Create a global constant for the format string
+    LLVMValueRef formatStr = LLVMAddGlobal(module, LLVMArrayType(LLVMInt8Type(), strlen(str) + 1), "fmt");
+    LLVMSetInitializer(formatStr, LLVMConstString(str, strlen(str) + 1, true));
+    LLVMSetGlobalConstant(formatStr, true);
+    LLVMSetLinkage(formatStr, LLVMPrivateLinkage);
+
+    // Get pointer to the start of the string
+    LLVMValueRef zero = LLVMConstInt(LLVMInt32Type(), 0, false);
+    LLVMValueRef indices[] = { zero, zero };
+    return LLVMBuildInBoundsGEP2(builder, LLVMTypeOf(formatStr), formatStr, indices, 2, "fmtPtr");
+}
+
+void addPrint() {
+    LLVMTypeRef printfArgTypes[] = { LLVMPointerType(LLVMInt8Type(), 0) };
+    LLVMTypeRef printfType = LLVMFunctionType(LLVMInt32Type(), printfArgTypes, 1, true);
+    LLVMValueRef printfFunc = LLVMAddFunction(llvmModule, "printf", printfType);
+
+    LLVMTypeRef paramTypes[] = { LLVMInt64Type() };
+    LLVMTypeRef printI64Type = LLVMFunctionType(LLVMVoidType(), paramTypes, 1, false);
+    LLVMValueRef printI64Func = LLVMAddFunction(llvmModule, "print_i64", printI64Type);
+
+    Function intPrint;
+    intPrint.llvmType = printI64Type;
+    intPrint.llvmValue = printI64Func;
+    intPrint.name = "print";
+    intPrint.paramNames = { "a" };
+    bool err;
+    intPrint.paramTypes = { getTypeFromName("i64", err) };
+    intPrint.returnType = getTypeFromName("void", err);
+    intPrint.tokenPos = 0;
+    nameToFunction["print"].push_back(intPrint);
+
+    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(printI64Func, "entry");
+    LLVMPositionBuilderAtEnd(builder, entry);
+
+    LLVMValueRef i64Value = LLVMGetParam(printI64Func, 0);
+    LLVMValueRef formatStr = createFormatString(llvmModule, "%ld\n");
+    LLVMValueRef printfArgs[] = { formatStr, i64Value };
+    LLVMBuildCall2(builder, printfType, printfFunc, printfArgs, 2, "calltmp");
+    LLVMBuildRetVoid(builder);
+}
 
 void addDefaults() {
     createType("void", LLVMVoidType());
-    createType("int", LLVMIntType(32));
-    createType("uint", LLVMIntType(32));
-    createType("float", LLVMFloatType());
     for (int i = 1; i < 256; i++) {
         createType("u" + to_string(i), LLVMIntType(i));
         createType("i" + to_string(i), LLVMIntType(i));
     }
-    createType("f32", LLVMDoubleType());
+    createType("f32", LLVMFloatType());
     createType("f64", LLVMDoubleType());
     createType("f16", LLVMHalfType());
+
+    bool err;
+    aliasType("float", getTypeFromName("f32", err));
+    aliasType("int", getTypeFromName("i32", err));
+    aliasType("uint", getTypeFromName("u32", err));
+    aliasType("char", getTypeFromName("u8", err));
+    addPrint();
 }
 
 void compileModule(const string& dir) {
@@ -756,6 +1190,7 @@ void compileModule(const string& dir) {
         return;
     }
     llvmModule = LLVMModuleCreateWithName(dir.c_str());
+    dataLayout = LLVMGetModuleDataLayout(llvmModule);
     addDefaults();
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;

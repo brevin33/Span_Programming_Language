@@ -237,11 +237,13 @@ private:
 struct Type {
     std::string name;
     LLVMTypeRef llvmType;
+    std::string anything;
 };
 
 struct Value {
     Type type;
     LLVMValueRef llvmVal;
+    bool constant = false;
 };
 
 struct Variable {
