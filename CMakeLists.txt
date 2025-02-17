@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.20)
 
-project ("GPU Lang")
+project ("Span Lang")
 
 include(FetchContent)
 include(FeatureSummary)
@@ -118,6 +118,6 @@ set(lld_libs
     ${LLD_MACHO}
     )
 
-add_executable(spanLang "src/main.cpp" "src/span.cpp")
+add_executable(spanLang "src/main.cpp" "src/span.cpp" "src/utils.cpp" "src/module.cpp" "src/function.cpp" "src/type.cpp" "src/value.cpp" "src/scope.cpp" "src/variable.cpp")
 
 target_link_libraries(spanLang ${llvm_libs} ${lld_libs})
