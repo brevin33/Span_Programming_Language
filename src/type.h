@@ -9,7 +9,7 @@ public:
 
     Type(LLVMTypeRef llvmType, const string& name, Module* module);
 
-    Type(Type type, const string& name, Module* module);
+    Type(const string& name, Module* module);
 
     Type::~Type();
 
@@ -25,16 +25,27 @@ public:
 
     bool isRef();
 
+    Type actualType();
+
     Type dereference();
 
     Type ptr();
 
     Type ref();
 
+    u64 getNumberWidth();
+
+    bool operator==(const Type& other) const {
+        return (name == other.name) && (module == other.module);
+    }
+
+    bool operator!=(const Type& other) const {
+        return (name != other.name) || (module != other.module);
+    }
+
 public:
     LLVMTypeRef llvmType;
     string name;
-    Type* alias = nullptr;
     Module* module;
 
 private:

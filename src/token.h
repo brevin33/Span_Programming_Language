@@ -417,9 +417,23 @@ public:
         }
     }
 
+    void lastToken() {
+        pos.index--;
+        if (pos.index < 0) {
+            pos.line--;
+            pos.index = tokensByFileByLine[pos.file][pos.line].size();
+            if (pos.line < 0) {
+                pos.file++;
+                pos.line = tokensByFileByLine[pos.file].size();
+            }
+        }
+    }
+
     Token getToken() {
         return tokensByFileByLine[pos.file][pos.line][pos.index];
     }
+
+
 
 public:
     TokenPositon pos = { 0, 0, 0 };

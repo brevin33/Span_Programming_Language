@@ -4,7 +4,6 @@
 Module::Module(const string& dir) {
     this->dir = dir;
     llvmModule = LLVMModuleCreateWithName(dir.c_str());
-    dataLayout = LLVMGetModuleDataLayout(llvmModule);
     if (dir != "base") {
         moduleDeps.push_back(baseModule);
     }
@@ -14,6 +13,7 @@ Module::~Module() {
 }
 
 void Module::loadTokens() {
+    activeModule = this;
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;
         fs::path path = entry.path();
@@ -75,7 +75,7 @@ void Module::setupTypesAndFunctions() {
     }
     for (int i = 0; i < functionStarts.size(); i++) {
         if (functionDefIsGood[i] != nullptr) {
-            implementFunction(functionStarts[i], functionDefIsGood[i]);
+            implementFunction(functionStarts[i], *functionDefIsGood[i]);
         }
     }
 }
@@ -146,6 +146,188 @@ optional<Type> Module::typeFromTokens() {
     return baseType;
 }
 
+optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope, int prio) {
+    TokenPositon start = tokens.pos;
+    optional<Value> lval = parseValue(scope);
+    if (!lval.has_value()) return nullopt;
+    while (true) {
+        for (int i = 0; i < del.size(); i++) {
+            if (tokens.getToken().type == del[i]) return lval;
+        }
+        switch (tokens.getToken().type) {
+            case tt_add: {
+                if (prio >= 3) return lval;
+                tokens.nextToken();
+                optional<Value> rval = parseValue(scope);
+                if (!rval.has_value()) {
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                optional<Value> addVal = add(lval.value(), rval.value());
+                if (!addVal.has_value()) {
+                    logError("Can't add types of " + lval.value().type.name + " with " + rval.value().type.name);
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                lval = addVal;
+                break;
+            }
+            default: {
+                logError("Expected an operation to apply");
+                tokens.pos = start;
+                return nullopt;
+            }
+        }
+    }
+    return optional<Value>();
+}
+
+optional<Value> Module::parseValue(Scope& scope) {
+    TokenPositon start = tokens.pos;
+    switch (tokens.getToken().type) {
+        case tt_id: {
+            Token s = tokens.getToken();
+            string name = *tokens.getToken().data.str;
+            tokens.nextToken();
+            if (tokens.getToken().type == tt_lpar) {
+                optional<Value> val = parseFunctionCall(name, scope);
+                if (!val.has_value()) {
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                return val.value();
+            }
+            optional<Variable*> var = scope.getVariableFromName(name);
+            if (!var.has_value()) {
+                logError("No variable with this name", &s);
+                tokens.pos = start;
+                return nullopt;
+            }
+            return var.value()->value;
+        }
+        case tt_int: {
+            u64 num = tokens.getToken().data.uint;
+            tokens.nextToken();
+            return Value(num, this);
+        }
+        case tt_float: {
+            f64 num = tokens.getToken().data.dec;
+            tokens.nextToken();
+            return Value(num, this);
+        }
+        case tt_sub: {
+            tokens.nextToken();
+            if (tokens.getToken().type == tt_sub) {
+                logError("Cann't have two - in a row");
+                tokens.pos = start;
+                return nullopt;
+            }
+            optional<Value> val = parseValue(scope);
+            if (!val.has_value()) {
+                tokens.pos = start;
+                return nullopt;
+            }
+            optional<Value> negVal = val.value().negate();
+            return negVal;
+        }
+        default: {
+            logError("Expected a value");
+            return nullopt;
+        }
+    }
+    return optional<Value>();
+}
+
+optional<Value> Module::parseFunctionCall(string& name, Scope& scope) {
+
+    tokens.lastToken();
+    Token funcNameToken = tokens.getToken();
+    tokens.nextToken();
+
+    TokenPositon start = tokens.pos;
+    vector<Value> vals;
+    assert(tokens.getToken().type == tt_lpar);
+    tokens.nextToken();
+    if (tokens.getToken().type != tt_rpar) {
+        while (true) {
+            optional<Value> val = parseStatment({ tt_com, tt_rpar }, scope);
+            if (!val.has_value()) {
+                tokens.pos = start;
+                return nullopt;
+            }
+            vals.push_back(val.value());
+            if (tokens.getToken().type == tt_com) {
+                tokens.nextToken();
+                continue;
+            }
+            if (tokens.getToken().type == tt_rpar) break;
+        }
+    }
+
+    tokens.nextToken();
+
+    auto t = nameToFunction.find(name);
+    if (t == nameToFunction.end()) {
+        logError("No function with name of " + name);
+        return {};
+    }
+    vector<Function>& funcs = t->second;
+    Function* funcToCall = nullptr;
+    for (int j = 0; j < funcs.size(); j++) {
+        if (funcs[j].paramNames.size() == vals.size()) {
+            bool match = true;
+            for (int k = 0; k < vals.size(); k++) {
+                if (funcs[j].paramTypes[k] != vals[k].type && funcs[j].paramTypes[k] != vals[k].type.actualType()) match = false;
+            }
+            if (match) {
+                funcToCall = &funcs[j];
+                break;
+            }
+        }
+    }
+
+    if (funcToCall == nullptr) {
+        // see if there is an way to cast into a function
+        for (int j = 0; j < funcs.size(); j++) {
+            if (funcs[j].paramNames.size() == vals.size()) {
+                bool match = true;
+                for (int k = 0; k < vals.size(); k++) {
+                    bool useable = funcs[j].paramTypes[k] == vals[k].type;
+                    useable = useable || (funcs[j].paramTypes[k].isNumber() && vals[k].type.actualType().isNumber());
+                    if (!useable) match = false;
+                }
+                if (match) {
+                    if (funcToCall != nullptr) {
+                        logError("Function call is ambiguous", &funcNameToken);
+                        tokens.pos = start;
+                        return nullopt;
+                    }
+                    funcToCall = &funcs[j];
+                }
+            }
+        }
+
+        if (funcToCall == nullptr) {
+            logError("No function overload uses given arguments", &funcNameToken);
+            tokens.pos = start;
+            return nullopt;
+        }
+
+        for (int k = 0; k < vals.size(); k++) {
+            if (funcToCall->paramTypes[k] == vals[k].type.actualType()) {
+                vals[k] = vals[k].actualValue();
+            }
+            if (funcToCall->paramTypes[k] != vals[k].type) {
+                optional<Value> v = vals[k].cast(funcToCall->paramTypes[k]);
+                assert(v.has_value());
+                vals[k] = v.value();
+            }
+        }
+    }
+
+    return funcToCall->call(vals);
+}
+
 Function* Module::prototypeFunction(TokenPositon start) {
     tokens.pos = start;
     optional<Type> type = typeFromTokens();
@@ -192,22 +374,102 @@ Function* Module::prototypeFunction(TokenPositon start) {
     return &nameToFunction[funcName].back();
 }
 
-void Module::implementFunction(TokenPositon start, Function* func) {
+void Module::implementScope(TokenPositon start, Scope& scope, Function& func) {
+    tokens.pos = start;
+    assert(tokens.getToken().type == tt_lcur);
+    tokens.nextToken();
+
+    if (tokens.getToken().type != tt_endl) {
+        logError("Nothing else should be on this line");
+        while (true) {
+            if (tokens.getToken().type == tt_endl) break;
+            if (tokens.getToken().type == tt_rcur) return;
+            tokens.nextToken();
+        }
+    }
+
+    while (true) {
+        assert(tokens.getToken().type == tt_endl);
+        tokens.nextToken();
+        bool err = false;
+        if (tokens.getToken().type == tt_rcur) {
+            tokens.nextToken();
+            break;
+        }
+
+        optional<Type> type = typeFromTokens();
+        if (type.has_value()) {
+            if (tokens.getToken().type != tt_id) {
+                logError("Expected variable name");
+                while (true) {
+                    if (tokens.getToken().type == tt_endl) break;
+                    if (tokens.getToken().type == tt_rcur) return;
+                    tokens.nextToken();
+                }
+                continue;
+            }
+            string varName = *tokens.getToken().data.str;
+            bool worked = scope.addVariable(Variable(varName, type.value(), this));
+            if (!worked) {
+                logError("Already have a variable with this name in scope");
+                while (true) {
+                    if (tokens.getToken().type == tt_endl) break;
+                    if (tokens.getToken().type == tt_rcur) return;
+                    tokens.nextToken();
+                }
+                continue;
+            }
+            tokens.nextToken();
+            if (tokens.getToken().type == tt_endl) continue;
+            if (tokens.getToken().type == tt_eq) {
+                tokens.nextToken();
+                optional<Value> val = parseStatment({ tt_endl }, scope);
+                if (val.has_value()) {
+                    scope.getVariableFromName(varName).value()->store(val.value());
+                    continue;
+                }
+                while (true) {
+                    if (tokens.getToken().type == tt_endl) break;
+                    if (tokens.getToken().type == tt_rcur) return;
+                    tokens.nextToken();
+                }
+                continue;
+            } else {
+                logError("Expected an assinment or new line after variable declaration");
+                while (true) {
+                    if (tokens.getToken().type == tt_endl) break;
+                    if (tokens.getToken().type == tt_rcur) return;
+                    tokens.nextToken();
+                }
+                continue;
+            }
+
+        } else {
+        }
+    }
+}
+
+void Module::implementFunction(TokenPositon start, Function& func) {
     tokens.pos = start;
 
     while (true) {
         if (tokens.getToken().type == tt_lcur) break;
         tokens.nextToken();
     }
-    tokens.nextToken();
 
-    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(func->llvmValue, "entry");
+    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(func.llvmValue, "entry");
     LLVMPositionBuilderAtEnd(builder, entry);
-    for (int j = 0; j < func->paramNames.size(); j++) {
-        Variable var(func->paramNames[j], func->paramTypes[j], this);
-        var.store(func->getParamValue(j));
-        func->scope.nameToVariable[var.name] = var;
+    for (int j = 0; j < func.paramNames.size(); j++) {
+        Variable var(func.paramNames[j], func.paramTypes[j], this);
+        var.store(func.getParamValue(j));
+        bool worked = func.scope.addVariable(var);
+        if (!worked) {
+            logError("Two parameters have the same name", nullptr, true);
+            return;
+        }
     }
+
+    implementScope(tokens.pos, func.scope, func);
 }
 
 

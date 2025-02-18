@@ -1,6 +1,6 @@
 
 int foo(int a, int b){
-    int j = a
+    int j = a + b
 }
 
 void main(){

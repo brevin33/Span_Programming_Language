@@ -15,6 +15,8 @@ public:
 
     Value getParamValue(int paramNumber);
 
+    Value call(vector<Value> vals);
+
 
 
 public:

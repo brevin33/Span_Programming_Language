@@ -2,6 +2,7 @@
 #include "utils.h"
 #include "token.h"
 #include "function.h"
+#include "scope.h"
 
 class Function;
 
@@ -26,7 +27,6 @@ public:
 
 private:
     string dir;
-    LLVMTargetDataRef dataLayout;
     vector<string> files;
     vector<vector<string>> textByFileByLine;
     vector<TokenPositon> functionStarts;
@@ -37,9 +37,17 @@ private:
 private:
     optional<Type> typeFromTokens();
 
+    optional<Value> parseStatment(const vector<TokenType>& del, Scope& scope, int prio = INT_MIN);
+
+    optional<Value> parseValue(Scope& scope);
+
+    optional<Value> Module::parseFunctionCall(string& name, Scope& scope);
+
     Function* prototypeFunction(TokenPositon start);
 
-    void implementFunction(TokenPositon start, Function* func);
+    void implementFunction(TokenPositon start, Function& func);
+
+    void implementScope(TokenPositon start, Scope& scope, Function& func);
 
     bool looksLikeType();
 

@@ -9,6 +9,7 @@ LLVMBuilderRef builder;
 Module* baseModule;
 unordered_map<string, vector<Type>> nameToType;
 unordered_map<string, vector<Function>> nameToFunction;
+Module* activeModule;
 
 void setupBasicTypes() {
     for (int i = 0; i < 512; i++) {

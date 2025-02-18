@@ -1,4 +1,5 @@
 #include "function.h"
+#include "span.h"
 
 
 Function::Function() {
@@ -21,4 +22,20 @@ Function::Function(const Type& returnType, const string& name, const vector<Type
 
 Value Function::getParamValue(int paramNumber) {
     return Value(LLVMGetParam(llvmValue, paramNumber), paramTypes[paramNumber], module);
+}
+
+Value Function::call(vector<Value> vals) {
+    vector<LLVMValueRef> llvmVals;
+    for (int j = 0; j < vals.size(); j++) {
+        llvmVals.push_back(vals[j].llvmValue);
+    }
+
+    Value val;
+    if (returnType.name != "void") {
+        val.llvmValue = LLVMBuildCall2(builder, llvmType, llvmValue, llvmVals.data(), llvmVals.size(), name.c_str());
+    } else {
+        val.llvmValue = LLVMBuildCall2(builder, llvmType, llvmValue, llvmVals.data(), llvmVals.size(), "");
+    }
+    val.type = returnType;
+    return val;
 }
