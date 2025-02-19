@@ -6,7 +6,7 @@ optional<Variable*> Scope::getVariableFromName(const string& name) {
         if (parent == nullptr) return nullopt;
         return parent->getVariableFromName(name);
     }
-    return &t->second;
+    return &nameToVariable[name];
 }
 
 bool Scope::addVariable(const Variable& var) {

@@ -1,9 +1,12 @@
 
-int foo(int a, int b){
-    int j = a + b
+i32 foo(i32 a, i16 b){
+    i32 j = a + b
+    return j
 }
 
 void main(){
-    int i = 3 + 4
-    int k = foo(i, 3)
+    i32 i = 3 + 4
+    i32 k = foo(i, 3)
+    print(i)
+    return
 }

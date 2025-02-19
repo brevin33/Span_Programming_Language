@@ -35,7 +35,7 @@ private:
     bool hadError = false;
 
 private:
-    optional<Type> typeFromTokens();
+    optional<Type> typeFromTokens(bool logErrors = true);
 
     optional<Value> parseStatment(const vector<TokenType>& del, Scope& scope, int prio = INT_MIN);
 

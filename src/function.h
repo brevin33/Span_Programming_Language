@@ -15,7 +15,7 @@ public:
 
     Value getParamValue(int paramNumber);
 
-    Value call(vector<Value> vals);
+    Value call(vector<Value> vals, Module* module);
 
 
 
@@ -27,6 +27,7 @@ public:
     Scope scope;
     LLVMTypeRef llvmType;
     LLVMValueRef llvmValue;
+    std::unordered_map<u64, LLVMValueRef> moduleToFunc;
 
 private:
     Module* module;

@@ -65,9 +65,6 @@ bool Type::isInt() {
 
 bool Type::isUInt() {
     if (name[0] != 'u') return false;
-    if (vals[k].type.amAliasing(funcToCall->paramTypes[k])) {
-        vals[k].type = funcToCall->paramTypes[k];
-    }
     for (int i = 1; i < name.size(); i++) {
         if (name[i] < '0' || name[i] > '9') return false;
     }

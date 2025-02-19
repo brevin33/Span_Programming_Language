@@ -32,7 +32,8 @@ Value::Value(double num, Module* module) {
     this->module = module;
 }
 
-optional<Value> Value::cast(Type& type) {
+optional<Value> Value::implCast(Type& type) {
+    if (this->type == type) return *this;
     Value v = actualValue();
     if (v.type.isUInt()) {
         if (type.isUInt()) {
@@ -100,10 +101,15 @@ optional<Value> Value::cast(Type& type) {
             v.type = type;
             return v;
         }
-    } else {
-        return nullopt;
     }
-    return {};
+    return nullopt;
+}
+
+optional<Value> Value::cast(Type& type) {
+    Value v = actualValue();
+    optional<Value> implValue = implCast(type);
+    //TODO: cast overloading
+    return implValue;
 }
 
 void Value::store(const Value& val) {

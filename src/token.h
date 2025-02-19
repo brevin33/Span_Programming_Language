@@ -191,8 +191,14 @@ public:
                                 }
                             }
                             c--;
+                            string str = ss.str();
+                            if (str == "return") {
+                                token.type = tt_ret;
+                                break;
+                            }
+                            // Add more keywords here
                             token.data.str = new string;
-                            *token.data.str = ss.str();
+                            *token.data.str = str;
                             token.echar = c;
                             token.type = tt_id;
                             break;
@@ -220,17 +226,9 @@ public:
                                 break;
                             }
                             c--;
-                            string str = ss.str();
                             token.echar = c;
-
-                            if (str == "return") {
-                                token.type = tt_ret;
-                                break;
-                            }
-                            // Add more keywords here
-
                             token.data.str = new string;
-                            *token.data.str = str;
+                            *token.data.str = ss.str();
                             token.type = tt_str;
                             break;
                         }

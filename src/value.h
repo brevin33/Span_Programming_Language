@@ -18,6 +18,8 @@ public:
 
     optional<Value> cast(Type& type);
 
+    optional<Value> implCast(Type& type);
+
     void store(const Value& val);
 
     optional<Value> negate();

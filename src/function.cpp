@@ -24,7 +24,18 @@ Value Function::getParamValue(int paramNumber) {
     return Value(LLVMGetParam(llvmValue, paramNumber), paramTypes[paramNumber], module);
 }
 
-Value Function::call(vector<Value> vals) {
+Value Function::call(vector<Value> vals, Module* module) {
+    LLVMValueRef func;
+    if (module != this->module) {
+        auto t = moduleToFunc.find((u64)module);
+        if (t == moduleToFunc.end()) {
+            moduleToFunc[(u64)module] = LLVMAddFunction(module->llvmModule, name.c_str(), llvmType);
+            LLVMSetLinkage(moduleToFunc[(u64)module], LLVMExternalLinkage);
+        }
+        func = moduleToFunc[(u64)module];
+    } else {
+        func = llvmValue;
+    }
     vector<LLVMValueRef> llvmVals;
     for (int j = 0; j < vals.size(); j++) {
         llvmVals.push_back(vals[j].llvmValue);
@@ -32,9 +43,9 @@ Value Function::call(vector<Value> vals) {
 
     Value val;
     if (returnType.name != "void") {
-        val.llvmValue = LLVMBuildCall2(builder, llvmType, llvmValue, llvmVals.data(), llvmVals.size(), name.c_str());
+        val.llvmValue = LLVMBuildCall2(builder, llvmType, func, llvmVals.data(), llvmVals.size(), name.c_str());
     } else {
-        val.llvmValue = LLVMBuildCall2(builder, llvmType, llvmValue, llvmVals.data(), llvmVals.size(), "");
+        val.llvmValue = LLVMBuildCall2(builder, llvmType, func, llvmVals.data(), llvmVals.size(), "");
     }
     val.type = returnType;
     return val;

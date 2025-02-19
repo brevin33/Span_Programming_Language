@@ -10,6 +10,7 @@ Module::Module(const string& dir) {
 }
 
 Module::~Module() {
+    LLVMDisposeModule(llvmModule);
 }
 
 void Module::loadTokens() {
@@ -113,7 +114,18 @@ void Module::logError(const string& err, Token* token, bool wholeLine) {
 }
 
 void Module::printResult() {
-    if (hadError) {
+    char* errorMessage = NULL;
+    LLVMBool result = LLVMVerifyModule(baseModule->llvmModule, LLVMReturnStatusAction, &errorMessage);
+
+    cout << "Module " + dir << endl;
+
+    if (result) {
+        std::cout << "\033[31m";
+        cout << "LLVM Error: ";
+        std::cout << "\033[0m";
+        std::cout << errorMessage << endl;
+        LLVMDisposeMessage(errorMessage);
+    } else if (hadError) {
         std::cout << "\033[31m";
         cout << "Failed" << endl;
         std::cout << "\033[0m";
@@ -122,22 +134,23 @@ void Module::printResult() {
         cout << "Success!" << endl;
         std::cout << "\033[0m";
     }
+    cout << "-------------------------------------" << endl;
 }
 
-optional<Type> Module::typeFromTokens() {
+optional<Type> Module::typeFromTokens(bool logErrors) {
     TokenPositon start = tokens.pos;
     if (tokens.getToken().type != tt_id) {
-        logError("Expected type");
+        if (logErrors) logError("Expected type");
         return nullopt;
     }
     string name = *tokens.getToken().data.str;
     auto t = nameToType.find(name);
     if (t == nameToType.end()) {
-        logError("Type doesn't exist");
+        if (logErrors) logError("Type doesn't exist");
         return nullopt;
     }
     if (t->second.size() != 1) {
-        logError("Ambiguous type");
+        if (logErrors) logError("Ambiguous type");
     }
     Type baseType = t->second[0];
     tokens.nextToken();
@@ -179,7 +192,7 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
             }
         }
     }
-    return optional<Value>();
+    return nullopt;
 }
 
 optional<Value> Module::parseValue(Scope& scope) {
@@ -325,7 +338,7 @@ optional<Value> Module::parseFunctionCall(string& name, Scope& scope) {
         }
     }
 
-    return funcToCall->call(vals);
+    return funcToCall->call(vals, this);
 }
 
 Function* Module::prototypeFunction(TokenPositon start) {
@@ -397,7 +410,7 @@ void Module::implementScope(TokenPositon start, Scope& scope, Function& func) {
             break;
         }
 
-        optional<Type> type = typeFromTokens();
+        optional<Type> type = typeFromTokens(false);
         if (type.has_value()) {
             if (tokens.getToken().type != tt_id) {
                 logError("Expected variable name");
@@ -425,7 +438,14 @@ void Module::implementScope(TokenPositon start, Scope& scope, Function& func) {
                 tokens.nextToken();
                 optional<Value> val = parseStatment({ tt_endl }, scope);
                 if (val.has_value()) {
-                    scope.getVariableFromName(varName).value()->store(val.value());
+                    Variable* var = scope.getVariableFromName(varName).value();
+                    optional<Value> valCast = val.value().implCast(var->value.type.actualType());
+                    if (valCast.has_value()) {
+                        var->store(valCast.value());
+                        continue;
+                    } else {
+                        logError("Type of assignment and value don't match. Assignment Type: " + var->value.type.actualType().name + " | Value Type: " + val.value().type.name, nullptr, true);
+                    }
                     continue;
                 }
                 while (true) {
@@ -443,8 +463,80 @@ void Module::implementScope(TokenPositon start, Scope& scope, Function& func) {
                 }
                 continue;
             }
-
         } else {
+            if (tokens.getToken().type == tt_ret) {
+                tokens.nextToken();
+                if (tokens.getToken().type == tt_endl) {
+                    if (func.returnType.name != "void") {
+                        logError("Expected value to return");
+                        continue;
+                    }
+                    LLVMBuildRetVoid(builder);
+                    continue;
+                }
+                if (func.returnType.name == "void") {
+                    logError("Expected endline for return from void funciton");
+                    while (true) {
+                        if (tokens.getToken().type == tt_endl) break;
+                        if (tokens.getToken().type == tt_rcur) return;
+                        tokens.nextToken();
+                    }
+                    continue;
+                }
+                optional<Value> val = parseStatment({ tt_eq, tt_endl }, scope);
+                if (!val.has_value() || !val.value().type.isRef()) {
+                    while (true) {
+                        if (tokens.getToken().type == tt_endl) break;
+                        if (tokens.getToken().type == tt_rcur) return;
+                        tokens.nextToken();
+                    }
+                    continue;
+                }
+                if (func.returnType.isRef()) {
+                    if (func.returnType != val.value().type) {
+                        logError("Type of return and value don't match. return type: " + func.returnType.name + " | Value Type: " + val.value().type.name, nullptr, true);
+                        continue;
+                    }
+                    LLVMBuildRet(builder, val.value().llvmValue);
+                    continue;
+                } else {
+                    optional<Value> valCast = val.value().implCast(func.returnType.actualType());
+                    if (!valCast.has_value()) {
+                        logError("Type of return and value don't match. return type: " + func.returnType.actualType().name + " | Value Type: " + val.value().type.actualType().name, nullptr, true);
+                        continue;
+                    }
+                    LLVMBuildRet(builder, valCast.value().llvmValue);
+                    continue;
+                }
+            }
+            optional<Value> val = parseStatment({ tt_eq, tt_endl }, scope);
+            if (!val.has_value() || !val.value().type.isRef()) {
+                while (true) {
+                    if (tokens.getToken().type == tt_endl) break;
+                    if (tokens.getToken().type == tt_rcur) return;
+                    tokens.nextToken();
+                }
+                continue;
+            }
+            if (tokens.getToken().type == tt_endl) continue;
+            assert(tokens.getToken().type == tt_eq);
+            tokens.nextToken();
+            optional<Value> rval = parseStatment({ tt_endl }, scope);
+            if (!rval.has_value()) {
+                while (true) {
+                    if (tokens.getToken().type == tt_endl) break;
+                    if (tokens.getToken().type == tt_rcur) return;
+                    tokens.nextToken();
+                }
+                continue;
+            }
+            optional<Value> valCast = rval.value().implCast(val.value().type.actualType());
+            if (!valCast.has_value()) {
+                logError("Type of assignment and value don't match. Assignment Type: " + val.value().type.actualType().name + " | Value Type: " + rval.value().type.actualType().name, nullptr, true);
+                continue;
+            }
+            val.value().store(valCast.value().actualValue());
+            continue;
         }
     }
 }
