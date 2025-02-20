@@ -4,6 +4,7 @@
 #include <assert.h>
 
 
+
 LLVMContextRef context;
 LLVMBuilderRef builder;
 Module* baseModule;
@@ -11,18 +12,6 @@ unordered_map<string, vector<Type>> nameToType;
 unordered_map<string, vector<Function>> nameToFunction;
 Module* activeModule;
 
-LLVMValueRef createFormatString(LLVMModuleRef module, const char* str) {
-    // Create a global constant for the format string
-    LLVMValueRef formatStr = LLVMAddGlobal(module, LLVMArrayType(LLVMInt8Type(), strlen(str) + 1), "fmt");
-    LLVMSetInitializer(formatStr, LLVMConstString(str, strlen(str) + 1, true));
-    LLVMSetGlobalConstant(formatStr, true);
-    LLVMSetLinkage(formatStr, LLVMPrivateLinkage);
-
-    // Get pointer to the start of the string
-    LLVMValueRef zero = LLVMConstInt(LLVMInt32Type(), 0, false);
-    LLVMValueRef indices[] = { zero, zero };
-    return LLVMBuildInBoundsGEP2(builder, LLVMTypeOf(formatStr), formatStr, indices, 2, "fmtPtr");
-}
 
 void setupBasicTypes() {
     // number types
@@ -69,14 +58,12 @@ void setupBasicTypes() {
     LLVMPositionBuilderAtEnd(builder, entry);
 
     LLVMValueRef i64Value = LLVMGetParam(printI64Func, 0);
-    // Create a global constant for the format string
     char* str = "%d\n";
     LLVMValueRef formatStr = LLVMAddGlobal(baseModule->llvmModule, LLVMArrayType(LLVMInt8Type(), strlen(str) + 1), "fmt");
     LLVMSetInitializer(formatStr, LLVMConstString(str, strlen(str) + 1, true));
     LLVMSetGlobalConstant(formatStr, true);
     LLVMSetLinkage(formatStr, LLVMPrivateLinkage);
 
-    // Get pointer to the start of the string
     LLVMValueRef zero = LLVMConstInt(LLVMInt32Type(), 0, false);
     LLVMValueRef indices[] = { zero, zero };
     LLVMValueRef formatStr2 = LLVMBuildInBoundsGEP2(builder, LLVMTypeOf(formatStr), formatStr, indices, 2, "fmtPtr");
@@ -86,7 +73,15 @@ void setupBasicTypes() {
     LLVMBuildRetVoid(builder);
 }
 
+
+
 void compile(const std::string& dir) {
+    LLVMInitializeAllTargetInfos();
+    LLVMInitializeAllTargets();
+    LLVMInitializeAllTargetMCs();
+    LLVMInitializeAllAsmPrinters();
+    LLVMInitializeAllAsmParsers();
+
     context = LLVMContextCreate();
     builder = LLVMCreateBuilderInContext(context);
     baseModule = new Module("base");
@@ -100,4 +95,27 @@ void compile(const std::string& dir) {
     baseModule->printResult();
 
     module.printResult();
+
+    baseModule->compileToObjFile("Build");
+    module.compileToObjFile("Build");
+
+    vector<string> objFiles;
+    for (const auto& entry : fs::directory_iterator("Build")) {
+        fs::path path = entry.path();
+        objFiles.push_back(path.string());
+    }
+    std::stringstream command;
+    command << "clang -o main.exe ";
+    command << "-target x86_64-pc-windows-msvc ";
+    for (const auto& file : objFiles) {
+        command << file << " ";
+    }
+    command << "-lc ";
+    command << "-v ";
+    int result = std::system(command.str().c_str());
+    if (result == 0) {
+        std::cout << "Linking successful!" << std::endl;
+    } else {
+        std::cout << "Linking failed with error code: " << result << std::endl;
+    }
 }

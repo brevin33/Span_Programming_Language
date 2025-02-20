@@ -125,6 +125,7 @@ void Module::printResult() {
         std::cout << "\033[0m";
         std::cout << errorMessage << endl;
         LLVMDisposeMessage(errorMessage);
+        hadError = true;
     } else if (hadError) {
         std::cout << "\033[31m";
         cout << "Failed" << endl;
@@ -134,6 +135,71 @@ void Module::printResult() {
         cout << "Success!" << endl;
         std::cout << "\033[0m";
     }
+    cout << "-------------------------------------" << endl;
+}
+
+
+void Module::compileToObjFile(const string& buildDir) {
+    if (hadError) return;
+    if (!fs::exists(buildDir)) fs::create_directories(buildDir);
+    // Initialize LLVM targets
+    LLVMInitializeAllTargets();
+    LLVMInitializeAllTargetMCs();
+    LLVMInitializeAllAsmPrinters();
+    LLVMInitializeAllAsmParsers();
+
+    // Set target triple
+    char* triple = LLVMGetDefaultTargetTriple();
+    LLVMSetTarget(llvmModule, triple);
+    printf("Target triple: %s\n", triple);
+
+    // Create target machine
+    LLVMTargetRef target;
+    char* error = NULL;
+    if (LLVMGetTargetFromTriple(triple, &target, &error) != 0) {
+        fprintf(stderr, "Error getting target: %s\n", error);
+        LLVMDisposeMessage(error);
+        return;
+    }
+
+    LLVMTargetMachineRef tm = LLVMCreateTargetMachine(target, triple, "generic", "", LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+
+    if (!tm) {
+        fprintf(stderr, "Error creating target machine\n");
+        return;
+    }
+
+    // Set data layout (required for object file emission)
+    LLVMTargetDataRef targetData = LLVMCreateTargetDataLayout(tm);
+    const char* dataLayout = LLVMGetDataLayoutStr(llvmModule);
+    LLVMSetDataLayout(llvmModule, dataLayout);
+    LLVMDisposeTargetData(targetData);
+
+    // Verify module before emitting
+    char* errorMsg = NULL;
+    if (LLVMVerifyModule(llvmModule, LLVMReturnStatusAction, &errorMsg)) {
+        fprintf(stderr, "Module verification failed: %s\n", errorMsg);
+        LLVMDisposeMessage(errorMsg);
+        return;
+    }
+
+    // Ensure the output directory exists
+    string objFile = buildDir + "/" + dirName() + ".o";
+    if (dir == "base") objFile = buildDir + '/' + dir + ".o";
+    printf("Output object file: %s\n", objFile.c_str());
+
+    // Emit object file
+    if (LLVMTargetMachineEmitToFile(tm, llvmModule, objFile.c_str(), LLVMObjectFile, &error)) {
+        fprintf(stderr, "Error writing object file: %s\n", error);
+        LLVMDisposeMessage(error);
+        return;
+    }
+
+    printf("Object file written successfully: %s\n", objFile.c_str());
+
+    // Cleanup
+    LLVMDisposeTargetMachine(tm);
+    LLVMDisposeMessage(triple);
     cout << "-------------------------------------" << endl;
 }
 
@@ -484,7 +550,7 @@ void Module::implementScope(TokenPositon start, Scope& scope, Function& func) {
                     continue;
                 }
                 optional<Value> val = parseStatment({ tt_eq, tt_endl }, scope);
-                if (!val.has_value() || !val.value().type.isRef()) {
+                if (!val.has_value()) {
                     while (true) {
                         if (tokens.getToken().type == tt_endl) break;
                         if (tokens.getToken().type == tt_rcur) return;
@@ -575,6 +641,18 @@ bool Module::looksLikeType() {
     // TODO: Type mod
 
     return true;
+}
+
+string Module::dirName() {
+    stringstream ss;
+    int lastSlash = 0;
+    for (int i = 0; i < dir.size(); i++) {
+        if (dir[i] == '\\' || dir[i] == '/') lastSlash = i;
+    }
+    for (int i = lastSlash + 1; i < dir.size(); i++) {
+        ss << dir[i];
+    }
+    return ss.str();
 }
 
 bool Module::looksLikeFunction() {

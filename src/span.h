@@ -7,6 +7,12 @@
 #include "module.h"
 #include "variable.h"
 #include "scope.h"
+#include "lld/Common/Driver.h"
+#include "llvm-c/TargetMachine.h"
+#include "llvm-c/Target.h"
+#include <llvm-c/Core.h>
+#include <llvm-c/Analysis.h>
+#include <llvm-c/BitWriter.h>
 
 extern LLVMContextRef context;
 extern LLVMBuilderRef builder;

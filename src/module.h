@@ -22,6 +22,8 @@ public:
 
     void printResult();
 
+    void compileToObjFile(const string& buildDir);
+
 public:
     LLVMModuleRef llvmModule;
 
@@ -50,6 +52,8 @@ private:
     void implementScope(TokenPositon start, Scope& scope, Function& func);
 
     bool looksLikeType();
+
+    string dirName();
 
     bool looksLikeFunction();
 };
