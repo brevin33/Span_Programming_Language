@@ -225,7 +225,7 @@ public:
                                 token.type = tt_err;
                                 break;
                             }
-                            c--;
+                            c++;
                             token.echar = c;
                             token.data.str = new string;
                             *token.data.str = ss.str();

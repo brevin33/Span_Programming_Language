@@ -12,8 +12,6 @@ Type::Type(LLVMTypeRef llvmType, const string& name, Module* module) {
 
 Type::Type(const string& name, Module* module) {
     // this is trash but i guess llvm doesn't keep pointer type info any more ????
-    this->name = name;
-    this->module = module;
     int baseTypeEnd = name.size();
     for (int i = 0; i < name.size(); i++) {
         if (name[i] == '*' || name[i] == '&' || name[i] == '[' || name[i] == '^') {
@@ -49,6 +47,8 @@ Type::Type(const string& name, Module* module) {
         }
     }
     this->llvmType = baseType.llvmType;
+    this->name = baseType.name;
+    this->module = baseType.module;
 }
 
 Type::~Type() {
@@ -98,6 +98,11 @@ bool Type::isRef() {
     return false;
 }
 
+bool Type::isVec() {
+    if (name.back() == ']') return true;
+    return false;
+}
+
 Type Type::actualType() {
     Type t = *this;
     while (t.isRef()) {
@@ -128,6 +133,12 @@ Type Type::ptr() {
 Type Type::ref() {
     LLVMTypeRef ref = LLVMPointerType(llvmType, 0);
     string newName = name + '&';
+    return Type(ref, newName, module);
+}
+
+Type Type::vec(u64 num) {
+    LLVMTypeRef ref = LLVMVectorType(llvmType, num);
+    string newName = name + '[' + to_string(num) + ']';
     return Type(ref, newName, module);
 }
 

@@ -11,7 +11,7 @@ class Function {
 public:
     Function();
 
-    Function(const Type& returnType, const string& name, const vector<Type>& paramTypes, const vector<string> paramNames, Module* module);
+    Function(const Type& returnType, const string& name, const vector<Type>& paramTypes, const vector<string> paramNames, Module* module, bool external = false);
 
     Value getParamValue(int paramNumber);
 

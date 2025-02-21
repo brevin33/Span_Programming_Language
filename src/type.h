@@ -25,6 +25,8 @@ public:
 
     bool isRef();
 
+    bool isVec();
+
     Type actualType();
 
     Type dereference();
@@ -32,6 +34,8 @@ public:
     Type ptr();
 
     Type ref();
+
+    Type vec(u64 num);
 
     u64 getNumberWidth();
 

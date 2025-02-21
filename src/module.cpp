@@ -7,6 +7,8 @@ Module::Module(const string& dir) {
     if (dir != "base") {
         moduleDeps.push_back(baseModule);
     }
+
+    
 }
 
 Module::~Module() {
@@ -218,11 +220,43 @@ optional<Type> Module::typeFromTokens(bool logErrors) {
     if (t->second.size() != 1) {
         if (logErrors) logError("Ambiguous type");
     }
-    Type baseType = t->second[0];
+    Type type = t->second[0];
     tokens.nextToken();
-    //TODO: type mod
-
-    return baseType;
+    while (true) {
+        switch (tokens.getToken().type) {
+            case tt_mul: {
+                type = type.ptr();
+                tokens.nextToken();
+                break;
+            }
+            case tt_and: {
+                type = type.ref();
+                tokens.nextToken();
+                break;
+            }
+            case tt_lbar: {
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_int) {
+                    logError("Expected number");
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                u64 number = tokens.getToken().data.uint;
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_rbar) {
+                    logError("Expected ]");
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                tokens.nextToken();
+                type = type.vec(number);
+                break;
+            }
+            default: {
+                return type;
+            }
+        }
+    }
 }
 
 optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope, int prio) {
@@ -293,6 +327,24 @@ optional<Value> Module::parseValue(Scope& scope) {
             f64 num = tokens.getToken().data.dec;
             tokens.nextToken();
             return Value(num, this);
+        }
+        case tt_str: {
+            string str = *tokens.getToken().data.str;
+
+            LLVMValueRef strAlloca = LLVMBuildAlloca(builder, LLVMArrayType(LLVMInt8TypeInContext(context), str.size() + 1), "str");
+
+            for (size_t i = 0; i < str.size() + 1; i++) {
+                LLVMValueRef index = LLVMConstInt(LLVMInt32TypeInContext(context), i, false);
+                LLVMValueRef charPtr = LLVMBuildGEP2(builder, LLVMArrayType(LLVMInt8TypeInContext(context), str.size() + 1), strAlloca, &index, 1, "charPtr");
+                LLVMBuildStore(builder, LLVMConstInt(LLVMInt8TypeInContext(context), str[i], false), charPtr);
+            }
+            Type charptr = Type("char*", baseModule);
+            LLVMValueRef strval = LLVMBuildBitCast(builder, strAlloca, charptr.llvmType, "toCharptr");
+            tokens.nextToken();
+
+            Token t = tokens.getToken();
+
+            return Value(strval, charptr, this, true);
         }
         case tt_sub: {
             tokens.nextToken();
@@ -638,9 +690,36 @@ bool Module::looksLikeType() {
         return false;
     }
     tokens.nextToken();
-    // TODO: Type mod
-
-    return true;
+    while (true) {
+        switch (tokens.getToken().type) {
+            case tt_mul: {
+                tokens.nextToken();
+                break;
+            }
+            case tt_and: {
+                tokens.nextToken();
+                break;
+            }
+            case tt_lbar: {
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_int) {
+                    tokens.pos = start;
+                    return false;
+                }
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_rbar) {
+                    tokens.pos = start;
+                    return false;
+                }
+                tokens.nextToken();
+                break;
+            }
+            default: {
+                return true;
+                break;
+            }
+        }
+    }
 }
 
 string Module::dirName() {

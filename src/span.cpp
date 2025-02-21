@@ -34,11 +34,14 @@ void setupBasicTypes() {
     nameToType["float"].push_back(Type(LLVMFloatType(), "f32", baseModule));
     nameToType["double"].push_back(Type(LLVMDoubleType(), "f64", baseModule));
 
+    nameToType["char"].push_back(Type(LLVMIntType(8), "u8", baseModule));
+
 
     // print function
     LLVMTypeRef printfArgTypes[] = { LLVMPointerType(LLVMInt8Type(), 0) };
     LLVMTypeRef printfType = LLVMFunctionType(LLVMInt32Type(), printfArgTypes, 1, true);
     LLVMValueRef printfFunc = LLVMAddFunction(baseModule->llvmModule, "printf", printfType);
+    LLVMSetLinkage(printfFunc, LLVMExternalLinkage);
 
     LLVMTypeRef paramTypes[] = { LLVMInt64Type() };
     LLVMTypeRef printI64Type = LLVMFunctionType(LLVMVoidType(), paramTypes, 1, false);
@@ -96,6 +99,9 @@ void compile(const std::string& dir) {
 
     module.printResult();
 
+    error_code ec;
+    fs::remove_all("Build", ec);
+
     baseModule->compileToObjFile("Build");
     module.compileToObjFile("Build");
 
@@ -105,13 +111,13 @@ void compile(const std::string& dir) {
         objFiles.push_back(path.string());
     }
     std::stringstream command;
-    command << "clang -o main.exe ";
+    // new: try doing this instead lld-link mycode.obj /out:myprogram.exe /subsystem:console /defaultlib:libcmt
+    command << "clang -o Build/main.exe ";
     command << "-target x86_64-pc-windows-msvc ";
     for (const auto& file : objFiles) {
         command << file << " ";
     }
-    command << "-lc ";
-    command << "-v ";
+    command << "-lc";
     int result = std::system(command.str().c_str());
     if (result == 0) {
         std::cout << "Linking successful!" << std::endl;
