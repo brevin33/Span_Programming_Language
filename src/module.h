@@ -20,7 +20,7 @@ public:
 
     void logError(const string& err, Token* token = nullptr, bool wholeLine = false);
 
-    void printResult();
+    bool printResult();
 
     void compileToObjFile(const string& buildDir);
 

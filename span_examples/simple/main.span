@@ -1,13 +1,7 @@
-
-int foo(int a, int b){
-    int j = a + b
-    return foo(1,2)
-}
+i32 puts(char* text)
 
 int main(){
-    int i = 3 + 4
-    int k = foo(i, 3)
     char* helloWorld = "hello world"
-    print(i)
-    return k
+    puts(helloWorld)
+    return 3
 }

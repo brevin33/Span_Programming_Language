@@ -35,6 +35,7 @@ Value::Value(double num, Module* module) {
 optional<Value> Value::implCast(Type& type) {
     if (this->type == type) return *this;
     Value v = actualValue();
+    if (type == v.type) return v;
     if (v.type.isUInt()) {
         if (type.isUInt()) {
             u64 vWidth = v.type.getNumberWidth();

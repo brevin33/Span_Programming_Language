@@ -115,9 +115,10 @@ void Module::logError(const string& err, Token* token, bool wholeLine) {
     cout << "-------------------------------------" << endl;
 }
 
-void Module::printResult() {
+bool Module::printResult() {
     char* errorMessage = NULL;
     LLVMBool result = LLVMVerifyModule(baseModule->llvmModule, LLVMReturnStatusAction, &errorMessage);
+    bool res;
 
     cout << "Module " + dir << endl;
 
@@ -138,6 +139,7 @@ void Module::printResult() {
         std::cout << "\033[0m";
     }
     cout << "-------------------------------------" << endl;
+    return hadError;
 }
 
 
@@ -335,16 +337,15 @@ optional<Value> Module::parseValue(Scope& scope) {
 
             for (size_t i = 0; i < str.size() + 1; i++) {
                 LLVMValueRef index = LLVMConstInt(LLVMInt32TypeInContext(context), i, false);
-                LLVMValueRef charPtr = LLVMBuildGEP2(builder, LLVMArrayType(LLVMInt8TypeInContext(context), str.size() + 1), strAlloca, &index, 1, "charPtr");
+                LLVMValueRef charPtr = LLVMBuildGEP2(builder, LLVMInt8TypeInContext(context), strAlloca, &index, 1, "charPtr");
                 LLVMBuildStore(builder, LLVMConstInt(LLVMInt8TypeInContext(context), str[i], false), charPtr);
             }
             Type charptr = Type("char*", baseModule);
-            LLVMValueRef strval = LLVMBuildBitCast(builder, strAlloca, charptr.llvmType, "toCharptr");
             tokens.nextToken();
 
             Token t = tokens.getToken();
 
-            return Value(strval, charptr, this, true);
+            return Value(strAlloca, charptr, this, true);
         }
         case tt_sub: {
             tokens.nextToken();
@@ -399,15 +400,15 @@ optional<Value> Module::parseFunctionCall(string& name, Scope& scope) {
 
     auto t = nameToFunction.find(name);
     if (t == nameToFunction.end()) {
-        logError("No function with name of " + name);
+        logError("No function with name of " + name, &funcNameToken);
         return {};
     }
     vector<Function>& funcs = t->second;
     Function* funcToCall = nullptr;
     for (int j = 0; j < funcs.size(); j++) {
-        if (funcs[j].paramNames.size() == vals.size()) {
+        if (funcs[j].paramNames.size() == vals.size() || (funcs[j].variadic && funcs[j].paramNames.size() <= vals.size())) {
             bool match = true;
-            for (int k = 0; k < vals.size(); k++) {
+            for (int k = 0; k < funcs[j].paramNames.size(); k++) {
                 if (funcs[j].paramTypes[k] != vals[k].type && funcs[j].paramTypes[k] != vals[k].type.actualType()) match = false;
             }
             if (match) {
@@ -420,9 +421,9 @@ optional<Value> Module::parseFunctionCall(string& name, Scope& scope) {
     if (funcToCall == nullptr) {
         // see if there is an way to cast into a function
         for (int j = 0; j < funcs.size(); j++) {
-            if (funcs[j].paramNames.size() == vals.size()) {
+            if (funcs[j].paramNames.size() == vals.size() || (funcs[j].variadic && funcs[j].paramNames.size() <= vals.size())) {
                 bool match = true;
-                for (int k = 0; k < vals.size(); k++) {
+                for (int k = 0; k < funcs[j].paramNames.size(); k++) {
                     bool useable = funcs[j].paramTypes[k] == vals[k].type;
                     useable = useable || (funcs[j].paramTypes[k].isNumber() && vals[k].type.actualType().isNumber());
                     if (!useable) match = false;
@@ -443,18 +444,18 @@ optional<Value> Module::parseFunctionCall(string& name, Scope& scope) {
             tokens.pos = start;
             return nullopt;
         }
-
-        for (int k = 0; k < vals.size(); k++) {
-            if (funcToCall->paramTypes[k] == vals[k].type.actualType()) {
-                vals[k] = vals[k].actualValue();
-            }
-            if (funcToCall->paramTypes[k] != vals[k].type) {
-                optional<Value> v = vals[k].cast(funcToCall->paramTypes[k]);
-                assert(v.has_value());
-                vals[k] = v.value();
-            }
-        }
     }
+
+	for (int k = 0; k < funcToCall->paramNames.size(); k++) {
+		if (funcToCall->paramTypes[k] == vals[k].type.actualType()) {
+			vals[k] = vals[k].actualValue();
+		}
+		if (funcToCall->paramTypes[k] != vals[k].type) {
+			optional<Value> v = vals[k].cast(funcToCall->paramTypes[k]);
+			assert(v.has_value());
+			vals[k] = v.value();
+		}
+	}
 
     return funcToCall->call(vals, this);
 }
@@ -473,8 +474,20 @@ Function* Module::prototypeFunction(TokenPositon start) {
 
     vector<Type> paramTypes;
     vector<string> paramNames;
+    bool variadicArgs = false;
     if (tokens.getToken().type != tt_rpar) {
         while (true) {
+
+            if (tokens.getToken().type == tt_elips) {
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_rpar) {
+                    logError("Expected a )");
+                    return nullptr;
+                }
+                variadicArgs = true;
+                break;
+            }
+
             optional<Type> paramType = typeFromTokens();
             if (!type.has_value()) return nullptr;
 
@@ -499,9 +512,10 @@ Function* Module::prototypeFunction(TokenPositon start) {
     }
     tokens.nextToken();
 
-    assert(tokens.getToken().type == tt_lcur);
+    bool external = true;
+    if (tokens.getToken().type == tt_lcur) external = false;
 
-    nameToFunction[funcName].push_back(Function(type.value(), funcName, paramTypes, paramNames, this));
+    nameToFunction[funcName].push_back(Function(type.value(), funcName, paramTypes, paramNames, this, variadicArgs, external));
     return &nameToFunction[funcName].back();
 }
 
@@ -660,6 +674,7 @@ void Module::implementScope(TokenPositon start, Scope& scope, Function& func) {
 }
 
 void Module::implementFunction(TokenPositon start, Function& func) {
+    if (func.external) return;
     tokens.pos = start;
 
     while (true) {
@@ -748,6 +763,9 @@ bool Module::looksLikeFunction() {
         if (tokens.getToken().type == tt_rpar) break;
     }
     tokens.nextToken();
+    if (tokens.getToken().type == tt_endl) {
+        return true;
+    }
     if (tokens.getToken().type != tt_lcur) {
         tokens.pos = start;
         return false;

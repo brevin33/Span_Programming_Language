@@ -35,45 +35,6 @@ void setupBasicTypes() {
     nameToType["double"].push_back(Type(LLVMDoubleType(), "f64", baseModule));
 
     nameToType["char"].push_back(Type(LLVMIntType(8), "u8", baseModule));
-
-
-    // print function
-    LLVMTypeRef printfArgTypes[] = { LLVMPointerType(LLVMInt8Type(), 0) };
-    LLVMTypeRef printfType = LLVMFunctionType(LLVMInt32Type(), printfArgTypes, 1, true);
-    LLVMValueRef printfFunc = LLVMAddFunction(baseModule->llvmModule, "printf", printfType);
-    LLVMSetLinkage(printfFunc, LLVMExternalLinkage);
-
-    LLVMTypeRef paramTypes[] = { LLVMInt64Type() };
-    LLVMTypeRef printI64Type = LLVMFunctionType(LLVMVoidType(), paramTypes, 1, false);
-    LLVMValueRef printI64Func = LLVMAddFunction(baseModule->llvmModule, "print_i64", printI64Type);
-
-    Function intPrint;
-    intPrint.llvmType = printI64Type;
-    intPrint.llvmValue = printI64Func;
-    intPrint.name = "print";
-    intPrint.paramNames = { "a" };
-    bool err;
-    intPrint.paramTypes = { nameToType["i64"].front() };
-    intPrint.returnType = nameToType["void"].front();
-    nameToFunction["print"].push_back(Function(intPrint.returnType, intPrint.name, intPrint.paramTypes, intPrint.paramNames, baseModule));
-
-    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(printI64Func, "entry");
-    LLVMPositionBuilderAtEnd(builder, entry);
-
-    LLVMValueRef i64Value = LLVMGetParam(printI64Func, 0);
-    char* str = "%d\n";
-    LLVMValueRef formatStr = LLVMAddGlobal(baseModule->llvmModule, LLVMArrayType(LLVMInt8Type(), strlen(str) + 1), "fmt");
-    LLVMSetInitializer(formatStr, LLVMConstString(str, strlen(str) + 1, true));
-    LLVMSetGlobalConstant(formatStr, true);
-    LLVMSetLinkage(formatStr, LLVMPrivateLinkage);
-
-    LLVMValueRef zero = LLVMConstInt(LLVMInt32Type(), 0, false);
-    LLVMValueRef indices[] = { zero, zero };
-    LLVMValueRef formatStr2 = LLVMBuildInBoundsGEP2(builder, LLVMTypeOf(formatStr), formatStr, indices, 2, "fmtPtr");
-
-    LLVMValueRef printfArgs[] = { formatStr2, i64Value };
-    LLVMBuildCall2(builder, printfType, printfFunc, printfArgs, 2, "calltmp");
-    LLVMBuildRetVoid(builder);
 }
 
 
@@ -95,14 +56,18 @@ void compile(const std::string& dir) {
     module.findStarts();
     module.setupTypesAndFunctions();
 
-    baseModule->printResult();
+    bool err = module.printResult();
 
-    module.printResult();
+    cout << endl;
+    char *ir = LLVMPrintModuleToString(module.llvmModule);
+    printf("%s\n", ir);
+    LLVMDisposeMessage(ir);  // Free the allocated string
+
+    if (err) return;
 
     error_code ec;
     fs::remove_all("Build", ec);
 
-    baseModule->compileToObjFile("Build");
     module.compileToObjFile("Build");
 
     vector<string> objFiles;
@@ -112,12 +77,11 @@ void compile(const std::string& dir) {
     }
     std::stringstream command;
     // new: try doing this instead lld-link mycode.obj /out:myprogram.exe /subsystem:console /defaultlib:libcmt
-    command << "clang -o Build/main.exe ";
-    command << "-target x86_64-pc-windows-msvc ";
+    command << "lld-link ";
     for (const auto& file : objFiles) {
         command << file << " ";
     }
-    command << "-lc";
+    command << "/out:main.exe /subsystem:console /defaultlib:libcmt"; 
     int result = std::system(command.str().c_str());
     if (result == 0) {
         std::cout << "Linking successful!" << std::endl;

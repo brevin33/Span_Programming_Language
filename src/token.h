@@ -32,6 +32,7 @@ enum TokenType {
     tt_com,
     tt_eof,
     tt_eot,
+    tt_elips,
 };
 
 union TokenData {
@@ -232,7 +233,16 @@ public:
                             token.type = tt_str;
                             break;
                         }
-                        case '.':
+                        case '.':{
+                            if (c + 1 < line.size() && line[c + 1] == '.') {
+								if (c + 2 < line.size() && line[c + 2] == '.') {
+                                    c += 2;
+                                    token.echar = c;
+                                    token.type = tt_elips;
+                                    break;
+								}
+                            }
+                        }
                         CASENUMBER: {
                             bool isFloat = false;
                             stringstream ss;

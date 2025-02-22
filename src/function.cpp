@@ -5,20 +5,21 @@
 Function::Function() {
 }
 
-Function::Function(const Type& returnType, const string& name, const vector<Type>& paramTypes, const vector<string> paramNames, Module* module, bool external) {
+Function::Function(const Type& returnType, const string& name, const vector<Type>& paramTypes, const vector<string> paramNames, Module* module, bool variadic, bool external) {
     this->returnType = returnType;
     this->name = name;
     this->paramNames = paramNames;
     this->paramTypes = paramTypes;
     this->module = module;
+    this->variadic = variadic;
+    this->external = external;
 
     LLVMTypeRef llvmTypes[256];
     for (int i = 0; i < paramNames.size(); i++) {
         llvmTypes[i] = paramTypes[i].llvmType;
     }
-    this->llvmType = LLVMFunctionType(returnType.llvmType, llvmTypes, paramTypes.size(), 0);
+    this->llvmType = LLVMFunctionType(returnType.llvmType, llvmTypes, paramTypes.size(), variadic);
     this->llvmValue = LLVMAddFunction(module->llvmModule, name.c_str(), this->llvmType);
-    if (external) LLVMSetLinkage(this->llvmValue, LLVMExternalLinkage);
 }
 
 Value Function::getParamValue(int paramNumber) {
