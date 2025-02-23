@@ -4,13 +4,19 @@
 
 class Scope {
 public:
+    Scope(Scope* parent, LLVMBasicBlockRef start);
+    Scope();
     optional<Variable*> getVariableFromName(const string& name);
     bool addVariable(const Variable& var);
+    void gotoLast();
+    void addBlock(LLVMBasicBlockRef block);
 
 public:
+    Scope* parent = nullptr;
+    Scope* child = nullptr;
 private:
     unordered_map<string, Variable> nameToVariable;
-    unique_ptr<Scope> parent = nullptr;
+    vector<LLVMBasicBlockRef> blocks;
 
 private:
 };

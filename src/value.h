@@ -28,6 +28,8 @@ public:
 
     Value actualValue();
 
+    Value variadicCast();
+
 public:
     LLVMValueRef llvmValue;
     Type type;
@@ -39,3 +41,12 @@ private:
 };
 
 optional<Value> add(Value& lval, Value& rval);
+optional<Value> mul(Value& lval, Value& rval);
+optional<Value> div(Value& lval, Value& rval);
+optional<Value> sub(Value& lval, Value& rval);
+optional<Value> equal(Value& lval, Value& rval);
+optional<Value> lessThanOrEqual(Value& lval, Value& rval);
+optional<Value> greaterThanOrEqual(Value& lval, Value& rval);
+optional<Value> lessThan(Value& lval, Value& rval);
+optional<Value> greaterThan(Value& lval, Value& rval);
+optional<Value> notEqual(Value& lval, Value& rval);

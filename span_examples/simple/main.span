@@ -1,7 +1,18 @@
-i32 puts(char* text)
+int printf(char* text, ...)
 
-int main(){
-    char* helloWorld = "hello world"
-    puts(helloWorld)
-    return 3
+
+void main(){
+    i8 b = 2 * 3 + 3 + 9 * 7
+
+    if 0 <= 3 {
+        printf("%d\n", 1)
+    }
+    else if 0 == 4{
+        printf("%d\n", 2)
+    }
+    else {
+        printf("%d\n", 3)
+    }
+    printf("%d", b)
+
 }

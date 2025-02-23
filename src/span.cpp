@@ -35,6 +35,7 @@ void setupBasicTypes() {
     nameToType["double"].push_back(Type(LLVMDoubleType(), "f64", baseModule));
 
     nameToType["char"].push_back(Type(LLVMIntType(8), "u8", baseModule));
+    nameToType["bool"].push_back(Type(LLVMIntType(1), "i1", baseModule));
 }
 
 
@@ -59,11 +60,11 @@ void compile(const std::string& dir) {
     bool err = module.printResult();
 
     cout << endl;
-    char *ir = LLVMPrintModuleToString(module.llvmModule);
-    printf("%s\n", ir);
-    LLVMDisposeMessage(ir);  // Free the allocated string
-
     if (err) return;
+
+    char* irString = LLVMPrintModuleToString(module.llvmModule);
+    printf("%s\n", irString);
+    LLVMDisposeMessage(irString);
 
     error_code ec;
     fs::remove_all("Build", ec);
@@ -81,7 +82,7 @@ void compile(const std::string& dir) {
     for (const auto& file : objFiles) {
         command << file << " ";
     }
-    command << "/out:main.exe /subsystem:console /defaultlib:libcmt"; 
+    command << "/out:main.exe /subsystem:console /defaultlib:libcmt";
     int result = std::system(command.str().c_str());
     if (result == 0) {
         std::cout << "Linking successful!" << std::endl;

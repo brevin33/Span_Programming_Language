@@ -35,6 +35,7 @@ private:
     vector<Module*> moduleDeps;
     Tokens tokens;
     bool hadError = false;
+    bool hasMain = false;
 
 private:
     optional<Type> typeFromTokens(bool logErrors = true);
@@ -49,7 +50,9 @@ private:
 
     void implementFunction(TokenPositon start, Function& func);
 
-    void implementScope(TokenPositon start, Scope& scope, Function& func);
+    bool implementScope(TokenPositon start, Scope& scope, Function& func);
+
+    bool implementScopeHelper(TokenPositon start, Scope& scope, Function& func);
 
     bool looksLikeType();
 

@@ -106,7 +106,7 @@ bool Type::isVec() {
 Type Type::actualType() {
     Type t = *this;
     while (t.isRef()) {
-        t = dereference();
+        t = t.dereference();
     }
     return t;
 }

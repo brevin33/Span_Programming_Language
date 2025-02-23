@@ -8,6 +8,7 @@ class Variable {
 public:
     Variable();
     Variable(string& name, Type& type, Module* module);
+    Variable(string& name, Type& type, Value& val, Module* module);
 
     void store(const Value& value);
 

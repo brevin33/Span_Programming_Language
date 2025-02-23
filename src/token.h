@@ -27,12 +27,16 @@ enum TokenType {
     tt_leeq,
     tt_greq,
     tt_gr,
+    tt_neq,
+    tt_ex,
     tt_le,
     tt_ret,
     tt_com,
     tt_eof,
     tt_eot,
     tt_elips,
+    tt_if,
+    tt_else,
 };
 
 union TokenData {
@@ -192,15 +196,33 @@ public:
                                 }
                             }
                             c--;
+                            token.echar = c;
                             string str = ss.str();
                             if (str == "return") {
                                 token.type = tt_ret;
                                 break;
                             }
+                            if (str == "if") {
+                                token.type = tt_if;
+                                break;
+                            }
+                            if (str == "else") {
+                                token.type = tt_else;
+                                break;
+                            }
+                            if (str == "true" || str == "True") {
+                                token.type == tt_int;
+                                token.data.uint = 1;
+                                break;
+                            }
+                            if (str == "flase" || str == "False") {
+                                token.type == tt_int;
+                                token.data.uint = 0;
+                                break;
+                            }
                             // Add more keywords here
                             token.data.str = new string;
                             *token.data.str = str;
-                            token.echar = c;
                             token.type = tt_id;
                             break;
                         }
@@ -214,6 +236,28 @@ public:
                                         done = true;
                                         break;
                                     }
+                                    case '\\': {
+                                        if (c + 1 < line.size() && line[c + 1] == 'n') {
+                                            c += 2;
+                                            ss << '\n';
+                                            break;
+                                        }
+                                        if (c + 1 < line.size() && line[c + 1] == '\\') {
+                                            c += 2;
+                                            ss << '\\';
+                                            break;
+                                        }
+                                        if (c + 1 < line.size() && line[c + 1] == '0') {
+                                            c += 2;
+                                            ss << '\0';
+                                            break;
+                                        }
+                                        if (c + 1 < line.size() && line[c + 1] == 't') {
+                                            c += 2;
+                                            ss << '\t';
+                                            break;
+                                        }
+                                    }
                                     default: {
                                         ss << line[c];
                                         c++;
@@ -226,21 +270,20 @@ public:
                                 token.type = tt_err;
                                 break;
                             }
-                            c++;
                             token.echar = c;
                             token.data.str = new string;
                             *token.data.str = ss.str();
                             token.type = tt_str;
                             break;
                         }
-                        case '.':{
+                        case '.': {
                             if (c + 1 < line.size() && line[c + 1] == '.') {
-								if (c + 2 < line.size() && line[c + 2] == '.') {
+                                if (c + 2 < line.size() && line[c + 2] == '.') {
                                     c += 2;
                                     token.echar = c;
                                     token.type = tt_elips;
                                     break;
-								}
+                                }
                             }
                         }
                         CASENUMBER: {
@@ -317,6 +360,17 @@ public:
                                 break;
                             }
                             token.type = tt_gr;
+                            token.echar = c;
+                            break;
+                        }
+                        case '!': {
+                            if (c + 1 < line.size() && line[c + 1] == '=') {
+                                c++;
+                                token.type = tt_neq;
+                                token.echar = c;
+                                break;
+                            }
+                            token.type = tt_ex;
                             token.echar = c;
                             break;
                         }

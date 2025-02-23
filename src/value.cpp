@@ -152,6 +152,14 @@ Value Value::actualValue() {
     return v;
 }
 
+Value Value::variadicCast() {
+    Value v;
+    if (type.isRef()) v = actualValue();
+    else
+        v = *this;
+    return v;
+}
+
 void castNumberForBiop(Value& lval, Value& rval) {
     int lwidth = lval.type.getNumberWidth();
     int rwidth = rval.type.getNumberWidth();
@@ -274,6 +282,168 @@ optional<Value> add(Value& lval, Value& rval) {
             val = LLVMBuildFAdd(builder, l.llvmValue, r.llvmValue, "addf");
         } else {
             val = LLVMBuildAdd(builder, l.llvmValue, r.llvmValue, "addf");
+        }
+        return Value(val, l.type, l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> sub(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFSub(builder, l.llvmValue, r.llvmValue, "subf");
+        } else {
+            val = LLVMBuildSub(builder, l.llvmValue, r.llvmValue, "subf");
+        }
+        return Value(val, l.type, l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> equal(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFCmp(builder, LLVMRealOEQ, l.llvmValue, r.llvmValue, "subf");
+        } else {
+            val = LLVMBuildICmp(builder, LLVMIntEQ, l.llvmValue, r.llvmValue, "subf");
+        }
+        return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> lessThanOrEqual(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFCmp(builder, LLVMRealOLE, l.llvmValue, r.llvmValue, "subf");
+        } else {
+            if (l.type.isInt()) {
+                val = LLVMBuildICmp(builder, LLVMIntSLE, l.llvmValue, r.llvmValue, "subf");
+            } else {
+                val = LLVMBuildICmp(builder, LLVMIntULE, l.llvmValue, r.llvmValue, "subf");
+            }
+        }
+        return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> greaterThanOrEqual(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFCmp(builder, LLVMRealOGE, l.llvmValue, r.llvmValue, "subf");
+        } else {
+            if (l.type.isInt()) {
+                val = LLVMBuildICmp(builder, LLVMIntSGE, l.llvmValue, r.llvmValue, "subf");
+            } else {
+                val = LLVMBuildICmp(builder, LLVMIntUGE, l.llvmValue, r.llvmValue, "subf");
+            }
+        }
+        return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> lessThan(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFCmp(builder, LLVMRealOLT, l.llvmValue, r.llvmValue, "subf");
+        } else {
+            if (l.type.isInt()) {
+                val = LLVMBuildICmp(builder, LLVMIntSLT, l.llvmValue, r.llvmValue, "subf");
+            } else {
+                val = LLVMBuildICmp(builder, LLVMIntULT, l.llvmValue, r.llvmValue, "subf");
+            }
+        }
+        return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> greaterThan(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFCmp(builder, LLVMRealOGT, l.llvmValue, r.llvmValue, "subf");
+        } else {
+            if (l.type.isInt()) {
+                val = LLVMBuildICmp(builder, LLVMIntSGT, l.llvmValue, r.llvmValue, "subf");
+            } else {
+                val = LLVMBuildICmp(builder, LLVMIntUGT, l.llvmValue, r.llvmValue, "subf");
+            }
+        }
+        return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> notEqual(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFCmp(builder, LLVMRealONE, l.llvmValue, r.llvmValue, "subf");
+        } else {
+            val = LLVMBuildICmp(builder, LLVMIntNE, l.llvmValue, r.llvmValue, "subf");
+        }
+        return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> mul(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFMul(builder, l.llvmValue, r.llvmValue, "mulf");
+        } else {
+            val = LLVMBuildMul(builder, l.llvmValue, r.llvmValue, "mulf");
+        }
+        return Value(val, l.type, l.module, l.constant && r.constant);
+    }
+    return nullopt;
+}
+
+optional<Value> div(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isNumber() && r.type.isNumber()) {
+        castNumberForBiop(l, r);
+        LLVMValueRef val;
+        if (l.type.isFloat()) {
+            val = LLVMBuildFDiv(builder, l.llvmValue, r.llvmValue, "divf");
+        } else {
+            if (l.type.isUInt()) val = LLVMBuildUDiv(builder, l.llvmValue, r.llvmValue, "divf");
+            else
+                val = LLVMBuildSDiv(builder, l.llvmValue, r.llvmValue, "divf");
         }
         return Value(val, l.type, l.module, l.constant && r.constant);
     }
