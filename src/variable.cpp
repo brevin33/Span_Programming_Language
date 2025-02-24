@@ -15,7 +15,7 @@ Variable::Variable(string& name, Type& type, Value& val, Module* module) {
     this->name = name;
     this->module = module;
     if (type.isRef()) {
-		this->value = val;
+        this->value = val;
         return;
     }
     LLVMValueRef stackVal = LLVMBuildAlloca(builder, type.llvmType, name.c_str());

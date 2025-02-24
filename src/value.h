@@ -28,7 +28,9 @@ public:
 
     Value actualValue();
 
-    Value variadicCast();
+    optional<Value> toBool();
+
+    optional<Value> variadicCast();
 
 public:
     LLVMValueRef llvmValue;
@@ -50,3 +52,7 @@ optional<Value> greaterThanOrEqual(Value& lval, Value& rval);
 optional<Value> lessThan(Value& lval, Value& rval);
 optional<Value> greaterThan(Value& lval, Value& rval);
 optional<Value> notEqual(Value& lval, Value& rval);
+Value as(Value& lval, Type& rval);
+optional<Value> to(Value& lval, Type& rval);
+optional<Value> and (Value & lval, Value& rval);
+optional<Value> or (Value & lval, Value& rval);

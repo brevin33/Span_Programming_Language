@@ -1,0 +1,9 @@
+int printf(char* text, ...)
+
+void main(){
+	int i = 0
+	while i < 99 && true {
+		printf("%d\n", i)
+		i += 1
+	}
+}

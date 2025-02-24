@@ -152,12 +152,51 @@ Value Value::actualValue() {
     return v;
 }
 
-Value Value::variadicCast() {
+optional<Value> Value::toBool() {
+    Value zero = Value(LLVMConstInt(LLVMInt32Type(), 0, 0), nameToType["i32"].front(), module, true);
+    optional<Value> zeroAsVal = zero.cast(type);
+    if (!zeroAsVal.has_value() || (!zeroAsVal.value().type.isNumber())) {
+        return nullopt;
+    }
+    LLVMValueRef condition;
+    if (zeroAsVal.value().type.isFloat()) {
+        condition = LLVMBuildFCmp(builder, LLVMRealONE, zeroAsVal.value().llvmValue, llvmValue, "cmp");
+    } else {
+        condition = LLVMBuildICmp(builder, LLVMIntNE, zeroAsVal.value().llvmValue, llvmValue, "cmp");
+    }
+    return Value(condition, nameToType["i1"].front(), module, constant);
+}
+
+optional<Value> Value::variadicCast() {
     Value v;
     if (type.isRef()) v = actualValue();
     else
         v = *this;
-    return v;
+    if (v.type.isFloat()) {
+        v.llvmValue = LLVMBuildFPCast(builder, v.llvmValue, LLVMDoubleType(), "upcastVaradicArg");
+        v.type = nameToType["f64"].front();
+        return v;
+    }
+    if (v.type.isInt()) {
+        u64 intwidth = v.type.getNumberWidth();
+        if (intwidth > 64) return nullopt;
+        if (intwidth < 32) {
+            v.llvmValue = LLVMBuildSExt(builder, v.llvmValue, LLVMInt32Type(), "upcastVaradicArg");
+            v.type = nameToType["i32"].front();
+        }
+        return v;
+    }
+    if (v.type.isUInt()) {
+        u64 intwidth = v.type.getNumberWidth();
+        if (intwidth > 64) return nullopt;
+        if (intwidth < 32) {
+            v.llvmValue = LLVMBuildZExt(builder, v.llvmValue, LLVMInt32Type(), "upcastVaradicArg");
+            v.type = nameToType["u32"].front();
+        }
+        return v;
+    }
+    //TODO: passing small structs
+    return nullopt;
 }
 
 void castNumberForBiop(Value& lval, Value& rval) {
@@ -285,6 +324,12 @@ optional<Value> add(Value& lval, Value& rval) {
         }
         return Value(val, l.type, l.module, l.constant && r.constant);
     }
+    vector<Function>& funcs = nameToFunction["add"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
+    }
     return nullopt;
 }
 
@@ -301,6 +346,12 @@ optional<Value> sub(Value& lval, Value& rval) {
         }
         return Value(val, l.type, l.module, l.constant && r.constant);
     }
+    vector<Function>& funcs = nameToFunction["sub"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
+    }
     return nullopt;
 }
 
@@ -311,11 +362,17 @@ optional<Value> equal(Value& lval, Value& rval) {
         castNumberForBiop(l, r);
         LLVMValueRef val;
         if (l.type.isFloat()) {
-            val = LLVMBuildFCmp(builder, LLVMRealOEQ, l.llvmValue, r.llvmValue, "subf");
+            val = LLVMBuildFCmp(builder, LLVMRealOEQ, l.llvmValue, r.llvmValue, "eq");
         } else {
-            val = LLVMBuildICmp(builder, LLVMIntEQ, l.llvmValue, r.llvmValue, "subf");
+            val = LLVMBuildICmp(builder, LLVMIntEQ, l.llvmValue, r.llvmValue, "eq");
         }
         return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    vector<Function>& funcs = nameToFunction["equal"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
     }
     return nullopt;
 }
@@ -327,15 +384,21 @@ optional<Value> lessThanOrEqual(Value& lval, Value& rval) {
         castNumberForBiop(l, r);
         LLVMValueRef val;
         if (l.type.isFloat()) {
-            val = LLVMBuildFCmp(builder, LLVMRealOLE, l.llvmValue, r.llvmValue, "subf");
+            val = LLVMBuildFCmp(builder, LLVMRealOLE, l.llvmValue, r.llvmValue, "leq");
         } else {
             if (l.type.isInt()) {
-                val = LLVMBuildICmp(builder, LLVMIntSLE, l.llvmValue, r.llvmValue, "subf");
+                val = LLVMBuildICmp(builder, LLVMIntSLE, l.llvmValue, r.llvmValue, "leq");
             } else {
-                val = LLVMBuildICmp(builder, LLVMIntULE, l.llvmValue, r.llvmValue, "subf");
+                val = LLVMBuildICmp(builder, LLVMIntULE, l.llvmValue, r.llvmValue, "leq");
             }
         }
         return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    vector<Function>& funcs = nameToFunction["lessThanOrEqual"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
     }
     return nullopt;
 }
@@ -347,15 +410,21 @@ optional<Value> greaterThanOrEqual(Value& lval, Value& rval) {
         castNumberForBiop(l, r);
         LLVMValueRef val;
         if (l.type.isFloat()) {
-            val = LLVMBuildFCmp(builder, LLVMRealOGE, l.llvmValue, r.llvmValue, "subf");
+            val = LLVMBuildFCmp(builder, LLVMRealOGE, l.llvmValue, r.llvmValue, "geq");
         } else {
             if (l.type.isInt()) {
-                val = LLVMBuildICmp(builder, LLVMIntSGE, l.llvmValue, r.llvmValue, "subf");
+                val = LLVMBuildICmp(builder, LLVMIntSGE, l.llvmValue, r.llvmValue, "geq");
             } else {
-                val = LLVMBuildICmp(builder, LLVMIntUGE, l.llvmValue, r.llvmValue, "subf");
+                val = LLVMBuildICmp(builder, LLVMIntUGE, l.llvmValue, r.llvmValue, "geq");
             }
         }
         return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    vector<Function>& funcs = nameToFunction["greaterThanOrEqual"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
     }
     return nullopt;
 }
@@ -367,15 +436,21 @@ optional<Value> lessThan(Value& lval, Value& rval) {
         castNumberForBiop(l, r);
         LLVMValueRef val;
         if (l.type.isFloat()) {
-            val = LLVMBuildFCmp(builder, LLVMRealOLT, l.llvmValue, r.llvmValue, "subf");
+            val = LLVMBuildFCmp(builder, LLVMRealOLT, l.llvmValue, r.llvmValue, "less");
         } else {
             if (l.type.isInt()) {
-                val = LLVMBuildICmp(builder, LLVMIntSLT, l.llvmValue, r.llvmValue, "subf");
+                val = LLVMBuildICmp(builder, LLVMIntSLT, l.llvmValue, r.llvmValue, "less");
             } else {
-                val = LLVMBuildICmp(builder, LLVMIntULT, l.llvmValue, r.llvmValue, "subf");
+                val = LLVMBuildICmp(builder, LLVMIntULT, l.llvmValue, r.llvmValue, "less");
             }
         }
         return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    vector<Function>& funcs = nameToFunction["lessThan"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
     }
     return nullopt;
 }
@@ -387,15 +462,21 @@ optional<Value> greaterThan(Value& lval, Value& rval) {
         castNumberForBiop(l, r);
         LLVMValueRef val;
         if (l.type.isFloat()) {
-            val = LLVMBuildFCmp(builder, LLVMRealOGT, l.llvmValue, r.llvmValue, "subf");
+            val = LLVMBuildFCmp(builder, LLVMRealOGT, l.llvmValue, r.llvmValue, "gr");
         } else {
             if (l.type.isInt()) {
-                val = LLVMBuildICmp(builder, LLVMIntSGT, l.llvmValue, r.llvmValue, "subf");
+                val = LLVMBuildICmp(builder, LLVMIntSGT, l.llvmValue, r.llvmValue, "gr");
             } else {
-                val = LLVMBuildICmp(builder, LLVMIntUGT, l.llvmValue, r.llvmValue, "subf");
+                val = LLVMBuildICmp(builder, LLVMIntUGT, l.llvmValue, r.llvmValue, "gr");
             }
         }
         return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
+    }
+    vector<Function>& funcs = nameToFunction["greaterThan"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
     }
     return nullopt;
 }
@@ -407,13 +488,38 @@ optional<Value> notEqual(Value& lval, Value& rval) {
         castNumberForBiop(l, r);
         LLVMValueRef val;
         if (l.type.isFloat()) {
-            val = LLVMBuildFCmp(builder, LLVMRealONE, l.llvmValue, r.llvmValue, "subf");
+            val = LLVMBuildFCmp(builder, LLVMRealONE, l.llvmValue, r.llvmValue, "neq");
         } else {
-            val = LLVMBuildICmp(builder, LLVMIntNE, l.llvmValue, r.llvmValue, "subf");
+            val = LLVMBuildICmp(builder, LLVMIntNE, l.llvmValue, r.llvmValue, "neq");
         }
         return Value(val, nameToType["bool"].front(), l.module, l.constant && r.constant);
     }
+    vector<Function>& funcs = nameToFunction["notEqual"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
+    }
     return nullopt;
+}
+
+Value as(Value& lval, Type& rval) {
+    Value l = lval.actualValue();
+    int rbitsize = LLVMSizeOfTypeInBits(LLVMGetModuleDataLayout(activeModule->llvmModule), rval.llvmType);
+    int lbitsize = LLVMSizeOfTypeInBits(LLVMGetModuleDataLayout(activeModule->llvmModule), lval.type.llvmType);
+    if (lbitsize < rbitsize) {
+        l.llvmValue = LLVMBuildZExt(builder, l.llvmValue, rval.llvmType, "upcast");
+    } else {
+        l.llvmValue = LLVMBuildTrunc(builder, l.llvmValue, rval.llvmType, "downcast");
+    }
+    l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, rval.llvmType, "bitcast");
+    l.type = rval;
+    return l;
+}
+
+optional<Value> to(Value& lval, Type& rval) {
+    Value l = lval.actualValue();
+    return l.cast(rval);
 }
 
 optional<Value> mul(Value& lval, Value& rval) {
@@ -428,6 +534,12 @@ optional<Value> mul(Value& lval, Value& rval) {
             val = LLVMBuildMul(builder, l.llvmValue, r.llvmValue, "mulf");
         }
         return Value(val, l.type, l.module, l.constant && r.constant);
+    }
+    vector<Function>& funcs = nameToFunction["mul"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
     }
     return nullopt;
 }
@@ -447,5 +559,29 @@ optional<Value> div(Value& lval, Value& rval) {
         }
         return Value(val, l.type, l.module, l.constant && r.constant);
     }
+    vector<Function>& funcs = nameToFunction["div"];
+    for (int i = 0; i < funcs.size(); i++) {
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
+    }
     return nullopt;
+}
+
+optional<Value> and (Value & lval, Value& rval) {
+    optional<Value> l = lval.toBool();
+    if (!l.has_value()) return nullopt;
+    optional<Value> r = rval.toBool();
+    if (!r.has_value()) return nullopt;
+    l.value().llvmValue = LLVMBuildAnd(builder, l.value().llvmValue, r.value().llvmValue, "cmp");
+    return l;
+}
+
+optional<Value> or (Value & lval, Value& rval) {
+    optional<Value> l = lval.toBool();
+    if (!l.has_value()) return nullopt;
+    optional<Value> r = rval.toBool();
+    if (!r.has_value()) return nullopt;
+    l.value().llvmValue = LLVMBuildOr(builder, l.value().llvmValue, r.value().llvmValue, "cmp");
+    return l;
 }

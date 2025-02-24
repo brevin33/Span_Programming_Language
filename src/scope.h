@@ -9,14 +9,16 @@ public:
     optional<Variable*> getVariableFromName(const string& name);
     bool addVariable(const Variable& var);
     void gotoLast();
+    void gotoFront();
     void addBlock(LLVMBasicBlockRef block);
 
 public:
     Scope* parent = nullptr;
     Scope* child = nullptr;
+    vector<LLVMBasicBlockRef> blocks;
+
 private:
     unordered_map<string, Variable> nameToVariable;
-    vector<LLVMBasicBlockRef> blocks;
 
 private:
 };

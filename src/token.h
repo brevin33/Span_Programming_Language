@@ -21,22 +21,35 @@ enum TokenType {
     tt_rpar,
     tt_car,
     tt_or,
-    tt_oror,
+    tt_bitor,
     tt_and,
-    tt_andand,
+    tt_bitand,
     tt_leeq,
     tt_greq,
     tt_gr,
     tt_neq,
+    tt_for,
+    tt_while,
+    tt_break,
+    tt_continue,
     tt_ex,
     tt_le,
     tt_ret,
     tt_com,
+    tt_semi,
     tt_eof,
     tt_eot,
     tt_elips,
     tt_if,
     tt_else,
+    tt_lshift,
+    tt_rshift,
+    tt_as,
+    tt_to,
+    tt_addeq,
+    tt_subeq,
+    tt_muleq,
+    tt_diveq,
 };
 
 union TokenData {
@@ -210,12 +223,52 @@ public:
                                 token.type = tt_else;
                                 break;
                             }
-                            if (str == "true" || str == "True") {
+                            if (str == "for") {
+                                token.type = tt_for;
+                                break;
+                            }
+                            if (str == "while") {
+                                token.type = tt_while;
+                                break;
+                            }
+                            if (str == "break") {
+                                token.type = tt_break;
+                                break;
+                            }
+                            if (str == "continue") {
+                                token.type = tt_continue;
+                                break;
+                            }
+                            if (str == "as") {
+                                token.type = tt_as;
+                                break;
+                            }
+                            if (str == "to") {
+                                token.type = tt_to;
+                                break;
+                            }
+                            if (str == "loop") {
+                                // loop basiclly working like a macro for while true
+                                Token token2;
+                                token2.echar = token.echar;
+                                token2.schar = token.schar;
+                                token2.file = token.file;
+                                token2.line = token.line;
+                                token2.data.str = new string;
+                                *token2.data.str = "while";
+                                token2.type = tt_id;
+
+                                token.type = tt_int;
+                                token.data.uint = 1;
+                                tokens.push_back(token2);
+                                break;
+                            }
+                            if (str == "true") {
                                 token.type == tt_int;
                                 token.data.uint = 1;
                                 break;
                             }
-                            if (str == "flase" || str == "False") {
+                            if (str == "false") {
                                 token.type == tt_int;
                                 token.data.uint = 0;
                                 break;
@@ -322,22 +375,22 @@ public:
                         case '|': {
                             if (c + 1 < line.size() && line[c + 1] == '|') {
                                 c++;
-                                token.type = tt_oror;
+                                token.type = tt_or;
                                 token.echar = c;
                                 break;
                             }
-                            token.type = tt_or;
+                            token.type = tt_bitor;
                             token.echar = c;
                             break;
                         }
                         case '&': {
                             if (c + 1 < line.size() && line[c + 1] == '&') {
                                 c++;
-                                token.type = tt_andand;
+                                token.type = tt_and;
                                 token.echar = c;
                                 break;
                             }
-                            token.type = tt_and;
+                            token.type = tt_bitand;
                             token.echar = c;
                             break;
                         }
@@ -375,21 +428,50 @@ public:
                             break;
                         }
                         case '+': {
+                            if (c + 1 < line.size() && line[c + 1] == '=') {
+                                c++;
+                                token.type = tt_addeq;
+                                token.echar = c;
+                                break;
+                            }
                             token.type = tt_add;
                             token.echar = c;
                             break;
                         }
+                        case ';': {
+                            token.type = tt_semi;
+                            token.echar = c;
+                            break;
+                        }
                         case '-': {
+                            if (c + 1 < line.size() && line[c + 1] == '=') {
+                                c++;
+                                token.type = tt_subeq;
+                                token.echar = c;
+                                break;
+                            }
                             token.type = tt_sub;
                             token.echar = c;
                             break;
                         }
                         case '*': {
+                            if (c + 1 < line.size() && line[c + 1] == '=') {
+                                c++;
+                                token.type = tt_muleq;
+                                token.echar = c;
+                                break;
+                            }
                             token.type = tt_mul;
                             token.echar = c;
                             break;
                         }
                         case '/': {
+                            if (c + 1 < line.size() && line[c + 1] == '=') {
+                                c++;
+                                token.type = tt_diveq;
+                                token.echar = c;
+                                break;
+                            }
                             token.type = tt_div;
                             token.echar = c;
                             break;
@@ -480,14 +562,17 @@ public:
     }
 
     void lastToken() {
-        pos.index--;
-        if (pos.index < 0) {
-            pos.line--;
-            pos.index = tokensByFileByLine[pos.file][pos.line].size();
-            if (pos.line < 0) {
-                pos.file++;
-                pos.line = tokensByFileByLine[pos.file].size();
+        if (pos.index == 0) {
+            if (pos.line == 0) {
+                assert(pos.file != 0);
+                pos.file--;
+                pos.line = tokensByFileByLine[pos.file].size() - 1;
+            } else {
+                pos.line--;
+                pos.index = tokensByFileByLine[pos.file][pos.line].size() - 1;
             }
+        } else {
+            pos.index--;
         }
     }
 

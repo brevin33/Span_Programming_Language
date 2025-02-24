@@ -27,6 +27,7 @@ public:
     Scope scope;
     LLVMTypeRef llvmType;
     LLVMValueRef llvmValue;
+    LLVMBasicBlockRef entry;
     bool variadic;
     bool external;
     std::unordered_map<u64, LLVMValueRef> moduleToFunc;

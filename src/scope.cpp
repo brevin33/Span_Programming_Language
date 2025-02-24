@@ -31,6 +31,10 @@ void Scope::addBlock(LLVMBasicBlockRef block) {
     blocks.push_back(block);
 }
 
+void Scope::gotoFront() {
+    LLVMBuildBr(builder, blocks.front());
+}
+
 void Scope::gotoLast() {
     LLVMBuildBr(builder, blocks.back());
 }
