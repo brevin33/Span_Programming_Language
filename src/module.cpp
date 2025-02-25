@@ -540,6 +540,21 @@ optional<Value> Module::parseValue(Scope& scope) {
             }
             return var.value()->value;
         }
+        case tt_lpar: {
+            tokens.nextToken();
+            optional<Value> v = parseStatment({ tt_rpar, tt_endl }, scope);
+            if (!v.has_value()) {
+                tokens.pos = start;
+                return nullopt;
+            }
+            if (tokens.getToken().type == tt_endl) {
+                tokens.pos = start;
+                logError("Never found closing )");
+                return nullopt;
+            }
+            tokens.nextToken();
+            return v.value();
+        }
         case tt_int: {
             u64 num = tokens.getToken().data.uint;
             tokens.nextToken();
@@ -844,6 +859,76 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
         } else {
 
 
+
+            // break
+            if (tokens.getToken().type == tt_break) {
+                tokens.nextToken();
+                int numBreak = 1;
+                if (tokens.getToken().type == tt_int) {
+                    numBreak = tokens.getToken().data.uint;
+                    tokens.nextToken();
+                }
+                if (tokens.getToken().type != tt_endl) {
+                    logError("Expected end line after break");
+                    implementScopeRecoverError
+                }
+                Scope* s = &scope;
+                while (true) {
+                    if (s->canBreak) numBreak--;
+                    if (numBreak == 0) break;
+                    s = s->parent;
+                    if (s == nullptr) break;
+                }
+                if (s == nullptr || s->parent == nullptr) {
+                    logError("can't break that far", nullptr, true);
+                    implementScopeRecoverError
+                }
+                s = s->parent;
+                s->gotoLast();
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_rcur) {
+                    logError("Must end scope after calling break");
+                    tokens.lastToken();
+                    continue;
+                }
+                return true;
+            }
+
+
+            // continue
+            if (tokens.getToken().type == tt_continue) {
+                tokens.nextToken();
+                int numBreak = 1;
+                if (tokens.getToken().type == tt_int) {
+                    numBreak = tokens.getToken().data.uint;
+                    tokens.nextToken();
+                }
+                if (tokens.getToken().type != tt_endl) {
+                    logError("Expected end line after continue");
+                    implementScopeRecoverError
+                }
+                Scope* s = &scope;
+                while (true) {
+                    if (s->canBreak) numBreak--;
+                    if (numBreak == 0) break;
+                    s = s->parent;
+                    if (s == nullptr) break;
+                }
+                if (s == nullptr) {
+                    logError("can't continue that far", nullptr, true);
+                    implementScopeRecoverError
+                }
+                s->gotoFront();
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_rcur) {
+                    logError("Must end scope after calling continue");
+                    tokens.lastToken();
+                    continue;
+                }
+                return true;
+            }
+
+
             //while
             if (tokens.getToken().type == tt_while) {
                 LLVMBasicBlockRef merge_block = LLVMAppendBasicBlock(func.llvmValue, "merge");
@@ -851,7 +936,7 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 tokens.nextToken();
                 LLVMBasicBlockRef whileCon = LLVMAppendBasicBlock(func.llvmValue, "whileCon");
                 LLVMBasicBlockRef whileBody = LLVMAppendBasicBlock(func.llvmValue, "whileBody");
-                Scope whileScope(&scope, whileCon);
+                Scope whileScope(&scope, whileCon, true);
                 whileScope.addBlock(whileBody);
 
                 whileScope.gotoFront();
@@ -880,8 +965,8 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 LLVMBuildCondBr(builder, condition, whileBody, merge_block);
 
                 LLVMPositionBuilderAtEnd(builder, whileBody);
-                implementScope(tokens.pos, whileScope, func);
-                whileScope.gotoFront();
+                bool scopedBreaks = implementScope(tokens.pos, whileScope, func);
+                if (!scopedBreaks) whileScope.gotoFront();
 
                 assert(tokens.getToken().type == tt_rcur);
                 tokens.nextToken();
@@ -928,9 +1013,9 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
 
                     LLVMPositionBuilderAtEnd(builder, then_block);
 
-                    Scope ifScope(&scope, then_block);
-                    implementScope(tokens.pos, ifScope, func);
-                    scope.gotoLast();
+                    Scope ifScope(&scope, then_block, false);
+                    bool scopedBreaks = implementScope(tokens.pos, ifScope, func);
+                    if (!scopedBreaks) scope.gotoLast();
                     assert(tokens.getToken().type == tt_rcur);
                     tokens.nextToken();
                     if (tokens.getToken().type != tt_endl) {
@@ -939,13 +1024,13 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                     }
                     tokens.nextToken();
 
-                    Scope elseScope(&scope, else_block);
+                    Scope elseScope(&scope, else_block, false);
                     LLVMPositionBuilderAtEnd(builder, else_block);
                     if (tokens.getToken().type == tt_else) {
                         tokens.nextToken();
                         if (tokens.getToken().type == tt_lcur) {
-                            implementScope(tokens.pos, elseScope, func);
-                            scope.gotoLast();
+                            scopedBreaks = implementScope(tokens.pos, elseScope, func);
+                            if (!scopedBreaks) scope.gotoLast();
                             assert(tokens.getToken().type == tt_rcur);
                             tokens.nextToken();
                             if (tokens.getToken().type != tt_endl) {
@@ -1114,7 +1199,7 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
     if (scope.parent == nullptr) {
         return false;
     }
-    return true;
+    return false;
 }
 
 void Module::implementFunction(TokenPositon start, Function& func) {
@@ -1128,7 +1213,7 @@ void Module::implementFunction(TokenPositon start, Function& func) {
 
     LLVMBasicBlockRef entry = LLVMAppendBasicBlock(func.llvmValue, "entry");
     LLVMBasicBlockRef body = LLVMAppendBasicBlock(func.llvmValue, "body");
-    func.scope = Scope(nullptr, entry);
+    func.scope = Scope(nullptr, entry, false);
     func.entry = entry;
     LLVMPositionBuilderAtEnd(builder, entry);
     func.scope.addBlock(body);
@@ -1162,7 +1247,7 @@ bool Module::implementScope(TokenPositon start, Scope& scope, Function& func) {
                 return false;
             }
         } else {
-            assert(false);
+            return false;
         }
     }
     //Todo: end of scope op like defer

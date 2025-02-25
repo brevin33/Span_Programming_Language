@@ -1,8 +1,9 @@
 #include "scope.h"
 #include "span.h"
 
-Scope::Scope(Scope* parent, LLVMBasicBlockRef start) {
+Scope::Scope(Scope* parent, LLVMBasicBlockRef start, bool canBreak) {
     this->parent = parent;
+    this->canBreak = canBreak;
     blocks.push_back(start);
 }
 

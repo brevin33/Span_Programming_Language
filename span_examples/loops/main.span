@@ -2,8 +2,11 @@ int printf(char* text, ...)
 
 void main(){
 	int i = 0
-	while i < 99 && true {
-		printf("%d\n", i)
-		i += 1
+	while (i <= 100){
+		while true{
+			printf("%d\n", i)
+			i += 2.4 to int 
+			continue 2
+		}
 	}
 }

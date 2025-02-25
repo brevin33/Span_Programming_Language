@@ -508,8 +508,10 @@ Value as(Value& lval, Type& rval) {
     int rbitsize = LLVMSizeOfTypeInBits(LLVMGetModuleDataLayout(activeModule->llvmModule), rval.llvmType);
     int lbitsize = LLVMSizeOfTypeInBits(LLVMGetModuleDataLayout(activeModule->llvmModule), lval.type.llvmType);
     if (lbitsize < rbitsize) {
+        l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, LLVMIntType(lbitsize), "toint");
         l.llvmValue = LLVMBuildZExt(builder, l.llvmValue, rval.llvmType, "upcast");
     } else {
+        l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, LLVMIntType(lbitsize), "toint");
         l.llvmValue = LLVMBuildTrunc(builder, l.llvmValue, rval.llvmType, "downcast");
     }
     l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, rval.llvmType, "bitcast");
