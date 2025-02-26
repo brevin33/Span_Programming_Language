@@ -30,6 +30,8 @@ void Module::findStarts() {
         TokenPositon s = tokens.pos;
         if (looksLikeFunction()) {
             functionStarts.push_back(s);
+        } else if (looksLikeStruct()) {
+            structStarts.push_back(s);
         } else if (tokens.getToken().type == tt_endl) {
             tokens.nextToken();
             continue;
@@ -70,6 +72,17 @@ void Module::findStarts() {
 }
 
 void Module::setupTypesAndFunctions() {
+    // Types
+    for (int i = 0; i < structStarts.size(), i++) {
+        prototypeStruct(structStarts[i]);
+    }
+    // TODO: prototype enums and such
+    for (int i = 0; i < structStarts.size(), i++) {
+        implementStruct();
+    }
+    // TODO: implement enums and such
+
+    // functions
     vector<Function*> functionDefIsGood(functionStarts.size());
     for (int i = 0; i < functionStarts.size(); i++) {
         functionDefIsGood[i] = prototypeFunction(functionStarts[i]);
@@ -783,6 +796,42 @@ Function* Module::prototypeFunction(TokenPositon start) {
     return &nameToFunction[funcName].back();
 }
 
+void Module::prototypeStruct(TokenPositon start) {
+    tokens.pos = start;
+    tokens.nextToken();
+    string name = *tokens.getToken().data.str;
+    nameToStructStart[name] = start;
+    return;
+}
+
+bool Module::implementStruct(TokenPositon start) {
+    tokens.pos = start;
+    assert(tokens.getToken().type == tt_struct);
+    tokens.nextToken();
+    string name = *tokens.getToken().data.str;
+    if (nameToStructDone.find(name) != nameToStructDone.end()) {
+        if (nameToStructDone[name] == false) {
+            logError("Circular Dependency");
+            tokens.pos = start;
+            return false;
+        } else {
+            return true;
+        }
+    }
+    nameToStructDone[name] = false;
+    tokens.nextToken();
+    tokens.nextToken();
+    if (tokens.getToken().type != tt_endl) {
+        logError("Expected end line after {");
+        return false;
+    }
+    tokens.nextToken();
+    //TODO: parse elements of struct
+    return true;
+}
+
+
+
 #define implementScopeRecoverError                                                                                                                                                                                                   \
     while (true) {                                                                                                                                                                                                                   \
         if (tokens.getToken().type == tt_endl) break;                                                                                                                                                                                \
@@ -1327,6 +1376,38 @@ bool Module::looksLikeFunction() {
         tokens.pos = start;
         return false;
     }
+    int curStack = 1;
+    Token curStart = tokens.getToken();
+    while (curStack != 0) {
+        tokens.nextToken();
+        if (tokens.getToken().type == tt_eot) {
+            tokens.pos = start;
+            return false;
+        }
+        if (tokens.getToken().type == tt_eof) {
+            tokens.pos = start;
+            return false;
+        }
+        if (tokens.getToken().type == tt_rcur) curStack--;
+        if (tokens.getToken().type == tt_lcur) curStack++;
+    }
+    tokens.nextToken();
+    if (tokens.getToken().type == tt_endl) return true;
+    if (tokens.getToken().type == tt_eof) return true;
+
+    tokens.pos = start;
+    return false;
+}
+
+bool Module::looksLikeStruct() {
+    TokenPositon start = tokens.pos;
+    if (tokens.getToken().type != tt_struct) return true;
+    tokens.nextToken();
+    if (tokens.getToken().type != tt_id) {
+        tokens.pos = start;
+        return false;
+    }
+    tokens.nextToken();
     int curStack = 1;
     Token curStart = tokens.getToken();
     while (curStack != 0) {

@@ -32,7 +32,10 @@ private:
     vector<string> files;
     vector<vector<string>> textByFileByLine;
     vector<TokenPositon> functionStarts;
+    vector<TokenPositon> structStarts;
     vector<Module*> moduleDeps;
+    unordered_map<string, TokenPositon> nameToStructStart;
+    unordered_map<string, bool> nameToStructDone;
     Tokens tokens;
     bool hadError = false;
     bool hasMain = false;
@@ -48,6 +51,10 @@ private:
 
     Function* prototypeFunction(TokenPositon start);
 
+    void prototypeStruct(TokenPositon start);
+
+    bool implementStruct(TokenPositon start);
+
     void implementFunction(TokenPositon start, Function& func);
 
     bool implementScope(TokenPositon start, Scope& scope, Function& func);
@@ -59,4 +66,6 @@ private:
     string dirName();
 
     bool looksLikeFunction();
+
+    bool looksLikeStruct();
 };

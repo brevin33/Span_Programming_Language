@@ -49,6 +49,7 @@ enum TokenType {
     tt_addeq,
     tt_subeq,
     tt_muleq,
+    tt_struct,
     tt_diveq,
 };
 
@@ -237,6 +238,10 @@ public:
                             }
                             if (str == "continue") {
                                 token.type = tt_continue;
+                                break;
+                            }
+                            if (str == "continue") {
+                                token.type = tt_struct;
                                 break;
                             }
                             if (str == "as") {
