@@ -73,12 +73,12 @@ void Module::findStarts() {
 
 void Module::setupTypesAndFunctions() {
     // Types
-    for (int i = 0; i < structStarts.size(), i++) {
+    for (int i = 0; i < structStarts.size(); i++) {
         prototypeStruct(structStarts[i]);
     }
     // TODO: prototype enums and such
-    for (int i = 0; i < structStarts.size(), i++) {
-        implementStruct();
+    for (int i = 0; i < structStarts.size(); i++) {
+        implementStruct(structStarts[i]);
     }
     // TODO: implement enums and such
 
@@ -227,8 +227,18 @@ optional<Type> Module::typeFromTokens(bool logErrors) {
     string name = *tokens.getToken().data.str;
     auto t = nameToType.find(name);
     if (t == nameToType.end()) {
-        if (logErrors) logError("Type doesn't exist");
-        return nullopt;
+        auto s = nameToStructStart.find(name);
+        if (s == nameToStructStart.end()) {
+            if (logErrors) logError("Type doesn't exist");
+            return nullopt;
+        } else {
+            if (implementStruct(s->second)) {
+                t = nameToType.find(name);
+                assert(nameToType.end() != t);
+            } else {
+                return nullopt;
+            }
+        }
     }
     if (t->second.size() != 1) {
         if (logErrors) logError("Ambiguous type");
@@ -826,7 +836,32 @@ bool Module::implementStruct(TokenPositon start) {
         return false;
     }
     tokens.nextToken();
-    //TODO: parse elements of struct
+
+    vector<Type> structTypes;
+    vector<string> structElementNames;
+    while (true) {
+        if (tokens.getToken().type == tt_rcur) break;
+        optional<Type> t = typeFromTokens();
+        if (!t.has_value()) {
+            return false;
+        }
+        if (tokens.getToken().type != tt_id) {
+            logError("expected name of struct value");
+            return false;
+        }
+        string elName = *tokens.getToken().data.str;
+        tokens.nextToken();
+        if (tokens.getToken().type != tt_endl) {
+            logError("expected endline after defining struct element");
+            return false;
+        }
+        tokens.nextToken();
+        structTypes.push_back(t.value());
+        structElementNames.push_back(elName);
+    }
+
+    Type Struct(name, structTypes, structElementNames, this);
+    nameToType[name].push_back(Struct);
     return true;
 }
 
@@ -1401,7 +1436,7 @@ bool Module::looksLikeFunction() {
 
 bool Module::looksLikeStruct() {
     TokenPositon start = tokens.pos;
-    if (tokens.getToken().type != tt_struct) return true;
+    if (tokens.getToken().type != tt_struct) return false;
     tokens.nextToken();
     if (tokens.getToken().type != tt_id) {
         tokens.pos = start;

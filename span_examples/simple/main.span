@@ -1,5 +1,9 @@
 int printf(char* text, ...)
 
+struct test{
+	int i
+	int j
+}
 
 void main(){
     i8 b = 4 

@@ -248,6 +248,10 @@ public:
                                 token.type = tt_as;
                                 break;
                             }
+                            if (str == "struct") {
+                                token.type = tt_struct;
+                                break;
+                            }
                             if (str == "to") {
                                 token.type = tt_to;
                                 break;

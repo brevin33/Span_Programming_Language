@@ -9,6 +9,8 @@ public:
 
     Type(LLVMTypeRef llvmType, const string& name, Module* module);
 
+    Type(const string& name, vector<Type>& structTypes, vector<string>& struceElmNames, Module* module);
+
     Type(const string& name, Module* module);
 
     Type::~Type();
@@ -51,6 +53,8 @@ public:
     LLVMTypeRef llvmType;
     string name;
     Module* module;
+    vector<Type> structTypes;
+    vector<string> structElemNames;
 
 private:
 private:

@@ -9,6 +9,19 @@ Type::Type(LLVMTypeRef llvmType, const string& name, Module* module) {
     this->module = module;
 }
 
+Type::Type(const string& name, vector<Type>& structTypes, vector<string>& struceElmNames, Module* module) {
+    this->name = name;
+    this->module = module;
+    this->structTypes = structTypes;
+    this->structElemNames = structElemNames;
+    vector<LLVMTypeRef> llvmTypes;
+    for (int i = 0; i < structTypes.size(); i++) {
+        llvmTypes.push_back(structTypes[i].llvmType);
+    }
+    this->llvmType = LLVMStructCreateNamed(LLVMGetGlobalContext(), name.c_str());
+    LLVMStructSetBody(llvmType, llvmTypes.data(), llvmTypes.size(), false);
+}
+
 
 Type::Type(const string& name, Module* module) {
     // this is trash but i guess llvm doesn't keep pointer type info any more ????
