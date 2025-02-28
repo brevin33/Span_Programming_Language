@@ -359,6 +359,38 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                 lval = addVal;
                 break;
             }
+            case tt_dot: {
+                if (prio >= 7) return lval;
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_id) {
+                    logError("Expected method or member");
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                string str = *tokens.getToken().data.str;
+                tokens.nextToken();
+                if (tokens.getToken().type == tt_lpar) {
+                    // TODO
+                    assert(false);
+                } else {
+                    bool found = false;
+                    for (int i = 0; i < lval.value().type.structElemNames.size(); i++) {
+                        if (lval.value().type.structElemNames[i] != str) {
+                            continue;
+                        }
+                        lval = lval.value().structVal(i);
+                        found = true;
+                        break;
+                    }
+                    if (!found) {
+                        tokens.lastToken();
+                        logError("Didn't find a member with this name");
+                        tokens.pos = start;
+                        return nullopt;
+                    }
+                }
+                break;
+            }
             case tt_div: {
                 if (prio >= 4) return lval;
                 tokens.nextToken();

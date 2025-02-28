@@ -28,6 +28,8 @@ public:
 
     Value actualValue();
 
+    Value structVal(int i);
+
     optional<Value> toBool();
 
     optional<Value> variadicCast();

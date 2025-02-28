@@ -1,12 +1,24 @@
 int printf(char* text, ...)
 
+struct test2{
+    int i
+}
+
 struct test{
 	int i
-	int j
+	test2 j
+}
+
+test createTest(){
+    test t
+    t.i = 9
+    t.j.i = 3
+    return t
 }
 
 void main(){
     i8 b = 4 
+	test t = createTest()
 
     if 0 >= 3 {
         printf("%d\n", 1)
@@ -14,6 +26,6 @@ void main(){
     else if 0 == 4{
         printf("%d\n", 2)
     }
-    printf("%d\n", b)
+    printf("%d\n", t.i + t.j.i)
 
 }

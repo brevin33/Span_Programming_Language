@@ -46,6 +46,7 @@ enum TokenType {
     tt_rshift,
     tt_as,
     tt_to,
+    tt_dot,
     tt_addeq,
     tt_subeq,
     tt_muleq,
@@ -347,6 +348,9 @@ public:
                                     break;
                                 }
                             }
+                            token.echar = c;
+                            token.type = tt_dot;
+                            break;
                         }
                         CASENUMBER: {
                             bool isFloat = false;

@@ -137,7 +137,7 @@ optional<Value> Value::negate() {
 }
 
 Value Value::refToVal() {
-    assert(type.isRef());
+    assert(type.isRef() || type.isPtr());
     Value v = *this;
     v.type = v.type.dereference();
     v.llvmValue = LLVMBuildLoad2(builder, v.type.llvmType, v.llvmValue, "loadRef");
@@ -150,6 +150,22 @@ Value Value::actualValue() {
         v = refToVal();
     }
     return v;
+}
+
+Value Value::structVal(int i) {
+    if (type.isRef() || type.isPtr()) {
+        Value v = *this;
+        Value lastV;
+        while (v.type.isRef() || v.type.isPtr()) {
+            lastV = v;
+            v = v.refToVal();
+        }
+        LLVMValueRef elementValue = LLVMBuildStructGEP2(builder, v.type.llvmType, lastV.llvmValue, i, "extracted");
+        return Value(elementValue, type.structTypes[i].ref(), module, constant);
+    } else {
+        LLVMValueRef elementValue = LLVMBuildExtractValue(builder, llvmValue, i, "extracted");
+        return Value(elementValue, type.structTypes[i], module, constant);
+    }
 }
 
 optional<Value> Value::toBool() {

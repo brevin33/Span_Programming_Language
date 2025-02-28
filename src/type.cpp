@@ -13,7 +13,7 @@ Type::Type(const string& name, vector<Type>& structTypes, vector<string>& struce
     this->name = name;
     this->module = module;
     this->structTypes = structTypes;
-    this->structElemNames = structElemNames;
+    this->structElemNames = struceElmNames;
     vector<LLVMTypeRef> llvmTypes;
     for (int i = 0; i < structTypes.size(); i++) {
         llvmTypes.push_back(structTypes[i].llvmType);
@@ -140,13 +140,19 @@ Type Type::dereference() {
 Type Type::ptr() {
     LLVMTypeRef ref = LLVMPointerType(llvmType, 0);
     string newName = name + '*';
-    return Type(ref, newName, module);
+    Type t = *this;
+    t.name = newName;
+    t.llvmType = ref;
+    return t;
 }
 
 Type Type::ref() {
     LLVMTypeRef ref = LLVMPointerType(llvmType, 0);
     string newName = name + '&';
-    return Type(ref, newName, module);
+    Type t = *this;
+    t.name = newName;
+    t.llvmType = ref;
+    return t;
 }
 
 Type Type::vec(u64 num) {
