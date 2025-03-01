@@ -59,9 +59,7 @@ Type::Type(const string& name, Module* module) {
             }
         }
     }
-    this->llvmType = baseType.llvmType;
-    this->name = baseType.name;
-    this->module = baseType.module;
+    *this = baseType;
 }
 
 Type::~Type() {

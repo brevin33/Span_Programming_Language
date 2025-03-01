@@ -595,6 +595,40 @@ optional<Value> Module::parseValue(Scope& scope) {
             }
             return var.value()->value;
         }
+        case tt_lcur: {
+            vector<Value> vals;
+            tokens.nextToken();
+            while (true) {
+                optional<Value> val = parseStatment({ tt_com, tt_rcur }, scope);
+                if (!val.has_value()) {
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                vals.push_back(val.value());
+                if (tokens.getToken().type == tt_com) {
+                    tokens.nextToken();
+                    continue;
+                }
+                if (tokens.getToken().type == tt_rcur) break;
+                logError("Expected a closing } or a ,");
+                tokens.pos = start;
+                return nullopt;
+            }
+            tokens.nextToken();
+            string typeName = "";
+            vector<Type> types;
+            vector<string> structElmName;
+            vector<LLVMValueRef> valrefs;
+            for (int i = 0; i < vals.size(); i++) {
+                typeName += vals[i].type.name;
+                types.push_back(vals[i].type);
+                structElmName.push_back(to_string(i));
+                valrefs.push_back(vals[i].llvmValue);
+            }
+            Type t(typeName, types, structElmName, this);
+            Value v(LLVMConstNamedStruct(t.llvmType, valrefs.data(), valrefs.size()), t, this, true);
+            return v;
+        }
         case tt_lpar: {
             tokens.nextToken();
             optional<Value> v = parseStatment({ tt_rpar, tt_endl }, scope);
@@ -690,6 +724,9 @@ optional<Value> Module::parseFunctionCall(string& name, Scope& scope) {
                 continue;
             }
             if (tokens.getToken().type == tt_rpar) break;
+            logError("Expected a closing ) or a ,");
+            tokens.pos = start;
+            return nullopt;
         }
     }
 

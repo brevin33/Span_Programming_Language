@@ -103,6 +103,33 @@ optional<Value> Value::implCast(Type& type) {
             return v;
         }
     }
+    if (type.structElemNames.size() != 0) {
+        if (type.structElemNames.size() != v.type.structElemNames.size()) {
+            return nullopt;
+        }
+        vector<Value> vals;
+        for (int i = 0; i < type.structElemNames.size(); i++) {
+            optional<Value> val = v.structVal(i).implCast(type.structTypes[i]);
+            if (!val.has_value()) {
+                return nullopt;
+            }
+            vals.push_back(val.value());
+        }
+        string typeName = "";
+        vector<Type> types;
+        vector<string> structElmName;
+        vector<LLVMValueRef> valrefs;
+        for (int i = 0; i < vals.size(); i++) {
+            typeName += vals[i].type.name;
+            types.push_back(vals[i].type);
+            structElmName.push_back(to_string(i));
+            valrefs.push_back(vals[i].llvmValue);
+        }
+        Type t(typeName, types, structElmName, module);
+        Value v(LLVMConstNamedStruct(t.llvmType, valrefs.data(), valrefs.size()), t, module, true);
+        return v;
+    }
+
     return nullopt;
 }
 
