@@ -196,5 +196,6 @@ u64 Type::getNumberWidth() {
 }
 
 u64 Type::getBitWidth() {
+    if (name == "void") return 0;
     return LLVMSizeOfTypeInBits(LLVMGetModuleDataLayout(module->llvmModule), llvmType);
 }

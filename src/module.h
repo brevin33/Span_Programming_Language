@@ -6,6 +6,11 @@
 
 class Function;
 
+struct typeStartAndTypetype {
+    TokenPositon pos;
+    bool isStruct;
+};
+
 class Module {
 public:
     Module(const string& dir);
@@ -35,7 +40,7 @@ private:
     vector<TokenPositon> enumStarts;
     vector<TokenPositon> structStarts;
     vector<Module*> moduleDeps;
-    unordered_map<string, TokenPositon> nameToTypeStart;
+    unordered_map<string, typeStartAndTypetype> nameToTypeStart;
     unordered_map<string, bool> nameToTypeDone;
     Tokens tokens;
     bool hadError = false;
@@ -55,6 +60,8 @@ private:
     void prototypeStruct(TokenPositon start);
 
     void prototypeEnum(TokenPositon start);
+
+    bool implementType(typeStartAndTypetype start, bool secondPass = false);
 
     bool implementStruct(TokenPositon start, bool secondPass = false);
 

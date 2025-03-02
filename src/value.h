@@ -30,6 +30,8 @@ public:
 
     Value structVal(int i);
 
+    Value enumVal(int i);
+
     optional<Value> toBool();
 
     optional<Value> variadicCast();
@@ -58,3 +60,4 @@ Value as(Value& lval, Type& rval);
 optional<Value> to(Value& lval, Type& rval);
 optional<Value> and (Value & lval, Value& rval);
 optional<Value> or (Value & lval, Value& rval);
+Value createEnum(Type& enumType, Value* val, int i);

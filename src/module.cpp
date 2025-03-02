@@ -88,6 +88,12 @@ void Module::setupTypesAndFunctions() {
     for (int i = 0; i < structStarts.size(); i++) {
         implementStruct(structStarts[i], true);
     }
+    for (int i = 0; i < enumStarts.size(); i++) {
+        implementEnum(enumStarts[i]);
+    }
+    for (int i = 0; i < enumStarts.size(); i++) {
+        implementEnum(enumStarts[i]);
+    }
     // TODO: implement enums and such
 
     // functions
@@ -275,7 +281,7 @@ optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma) {
             return nullopt;
         } else {
             if (!typeFromTokensIsPtr()) {
-                if (implementStruct(s->second)) {
+                if (implementType(s->second)) {
                     type = nameToType.find(name)->second.front();
                 } else {
                     tokens.pos = start;
@@ -684,8 +690,62 @@ optional<Value> Module::parseValue(Scope& scope) {
     switch (tokens.getToken().type) {
         case tt_id: {
             Token s = tokens.getToken();
+            optional<Type> type = typeFromTokens(false);
+            // Type operation
+            if (type.has_value()) {
+                if (tokens.getToken().type != tt_dot) {
+                    logError("Expected a dot . after a Type to use it");
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_id) {
+                    logError("Expected a idenfier");
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                string str = *tokens.getToken().data.str;
+                tokens.nextToken();
+                if (type.value().isEnum()) {
+                    TokenPositon enumStart = tokens.pos;
+                    // enum ops
+                    for (int i = 0; i < type.value().elemNames.size(); i++) {
+                        if (type.value().elemNames[i] == str) {
+                            tokens.nextToken();
+                            if (type.value().elemTypes[i].name == "void") {
+                                Value e = createEnum(type.value(), nullptr, i);
+                                return e;
+                            } else {
+                                if (tokens.getToken().type != tt_lpar) {
+                                    logError("Expected a )");
+                                    tokens.pos = start;
+                                    return nullopt;
+                                }
+                                tokens.nextToken();
+                                optional<Value> val = parseStatment({ tt_rpar }, scope);
+                                if (!val.has_value()) {
+                                    tokens.pos = start;
+                                    return nullopt;
+                                }
+                                Value e = createEnum(type.value(), &val.value(), i);
+                                tokens.nextToken();
+                                return e;
+                            }
+                        }
+                    }
+                    tokens.pos = enumStart;
+                }
+
+
+                tokens.lastToken();
+                logError("didn't find a valid operation on type " + type.value().name + " called " + str);
+                tokens.pos = start;
+                return nullopt;
+            }
+
             string name = *tokens.getToken().data.str;
             tokens.nextToken();
+            // func call
             if (tokens.getToken().type == tt_lpar) {
                 optional<Value> val = parseFunctionCall(name, scope);
                 if (!val.has_value()) {
@@ -694,6 +754,7 @@ optional<Value> Module::parseValue(Scope& scope) {
                 }
                 return val.value();
             }
+            // get var
             optional<Variable*> var = scope.getVariableFromName(name);
             if (!var.has_value()) {
                 logError("No variable with this name", &s);
@@ -986,21 +1047,30 @@ void Module::prototypeEnum(TokenPositon start) {
     tokens.pos = start;
     tokens.nextToken();
     string name = *tokens.getToken().data.str;
-    nameToTypeStart[name] = start;
+    nameToTypeStart[name] = { start, false };
     return;
+}
+
+bool Module::implementType(typeStartAndTypetype start, bool secondPass) {
+    if (start.isStruct) {
+        return implementStruct(start.pos, secondPass);
+    } else {
+        return implementEnum(start.pos, secondPass);
+    }
+    return false;
 }
 
 void Module::prototypeStruct(TokenPositon start) {
     tokens.pos = start;
     tokens.nextToken();
     string name = *tokens.getToken().data.str;
-    nameToTypeStart[name] = start;
+    nameToTypeStart[name] = { start, true };
     return;
 }
 
 bool Module::implementEnum(TokenPositon start, bool secondPass) {
     tokens.pos = start;
-    assert(tokens.getToken().type == tt_struct);
+    assert(tokens.getToken().type == tt_enum);
     tokens.nextToken();
     string name = *tokens.getToken().data.str;
     if (secondPass && nameToTypeDone[name] == false) return false;
@@ -1068,6 +1138,7 @@ bool Module::implementEnum(TokenPositon start, bool secondPass) {
 
     Type Enum(name, enumTypes, enumElementNames, enumElementValues, this);
     nameToType[name].push_back(Enum);
+    nameToTypeDone[name] = true;
     return true;
 }
 
