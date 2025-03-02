@@ -1,0 +1,10 @@
+int printf(char* text, ...)
+
+enum test{
+    thing(int)
+    thing2
+}
+
+int,int createTest(){
+    return 7, 9
+}

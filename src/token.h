@@ -52,6 +52,7 @@ enum TokenType {
     tt_muleq,
     tt_struct,
     tt_diveq,
+    tt_enum,
 };
 
 union TokenData {
@@ -255,6 +256,10 @@ public:
                             }
                             if (str == "to") {
                                 token.type = tt_to;
+                                break;
+                            }
+                            if (str == "enum") {
+                                token.type = tt_enum;
                                 break;
                             }
                             if (str == "loop") {

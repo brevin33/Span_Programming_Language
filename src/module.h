@@ -32,16 +32,17 @@ private:
     vector<string> files;
     vector<vector<string>> textByFileByLine;
     vector<TokenPositon> functionStarts;
+    vector<TokenPositon> enumStarts;
     vector<TokenPositon> structStarts;
     vector<Module*> moduleDeps;
-    unordered_map<string, TokenPositon> nameToStructStart;
-    unordered_map<string, bool> nameToStructDone;
+    unordered_map<string, TokenPositon> nameToTypeStart;
+    unordered_map<string, bool> nameToTypeDone;
     Tokens tokens;
     bool hadError = false;
     bool hasMain = false;
 
 private:
-    optional<Type> typeFromTokens(bool logErrors = true);
+    optional<Type> typeFromTokens(bool logErrors = true, bool stopAtComma = false);
 
     optional<Value> parseStatment(const vector<TokenType>& del, Scope& scope, int prio = INT_MIN);
 
@@ -53,7 +54,13 @@ private:
 
     void prototypeStruct(TokenPositon start);
 
-    bool implementStruct(TokenPositon start);
+    void prototypeEnum(TokenPositon start);
+
+    bool implementStruct(TokenPositon start, bool secondPass = false);
+
+    bool implementEnum(TokenPositon start, bool secondPass = false);
+
+    bool typeFromTokensIsPtr();
 
     void implementFunction(TokenPositon start, Function& func);
 
@@ -66,6 +73,8 @@ private:
     string dirName();
 
     bool looksLikeFunction();
+
+    bool looksLikeEnum();
 
     bool looksLikeStruct();
 };

@@ -30,6 +30,8 @@ void Module::findStarts() {
         TokenPositon s = tokens.pos;
         if (looksLikeFunction()) {
             functionStarts.push_back(s);
+        } else if (looksLikeEnum()) {
+            enumStarts.push_back(s);
         } else if (looksLikeStruct()) {
             structStarts.push_back(s);
         } else if (tokens.getToken().type == tt_endl) {
@@ -76,9 +78,15 @@ void Module::setupTypesAndFunctions() {
     for (int i = 0; i < structStarts.size(); i++) {
         prototypeStruct(structStarts[i]);
     }
+    for (int i = 0; i < enumStarts.size(); i++) {
+        prototypeEnum(enumStarts[i]);
+    }
     // TODO: prototype enums and such
     for (int i = 0; i < structStarts.size(); i++) {
         implementStruct(structStarts[i]);
+    }
+    for (int i = 0; i < structStarts.size(); i++) {
+        implementStruct(structStarts[i], true);
     }
     // TODO: implement enums and such
 
@@ -218,33 +226,72 @@ void Module::compileToObjFile(const string& buildDir) {
     cout << "-------------------------------------" << endl;
 }
 
-optional<Type> Module::typeFromTokens(bool logErrors) {
+bool Module::typeFromTokensIsPtr() {
+    TokenPositon start = tokens.pos;
+    while (true) {
+        switch (tokens.getToken().type) {
+            case tt_mul:
+            case tt_and: {
+                tokens.nextToken();
+                return true;
+            }
+            case tt_lbar: {
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_int) {
+                    tokens.pos = start;
+                    return false;
+                }
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_rbar) {
+                    tokens.pos = start;
+                    return false;
+                }
+                tokens.nextToken();
+                break;
+            }
+            default: {
+                tokens.pos = start;
+                return false;
+            }
+        }
+    }
+}
+
+optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma) {
     TokenPositon start = tokens.pos;
     if (tokens.getToken().type != tt_id) {
         if (logErrors) logError("Expected type");
         return nullopt;
     }
     string name = *tokens.getToken().data.str;
+    tokens.nextToken();
     auto t = nameToType.find(name);
+    Type type;
     if (t == nameToType.end()) {
-        auto s = nameToStructStart.find(name);
-        if (s == nameToStructStart.end()) {
+        auto s = nameToTypeStart.find(name);
+        if (s == nameToTypeStart.end()) {
             if (logErrors) logError("Type doesn't exist");
+            tokens.pos = start;
             return nullopt;
         } else {
-            if (implementStruct(s->second)) {
-                t = nameToType.find(name);
-                assert(nameToType.end() != t);
+            if (!typeFromTokensIsPtr()) {
+                if (implementStruct(s->second)) {
+                    type = nameToType.find(name)->second.front();
+                } else {
+                    tokens.pos = start;
+                    return nullopt;
+                }
             } else {
-                return nullopt;
+                type = Type(LLVMPointerType(LLVMInt1Type(), 0), name, this);
             }
         }
+    } else {
+        if (t->second.size() != 1) {
+            tokens.pos = start;
+            if (logErrors) logError("Ambiguous type");
+        }
+        type = t->second[0];
     }
-    if (t->second.size() != 1) {
-        if (logErrors) logError("Ambiguous type");
-    }
-    Type type = t->second[0];
-    tokens.nextToken();
     while (true) {
         switch (tokens.getToken().type) {
             case tt_mul: {
@@ -260,20 +307,43 @@ optional<Type> Module::typeFromTokens(bool logErrors) {
             case tt_lbar: {
                 tokens.nextToken();
                 if (tokens.getToken().type != tt_int) {
-                    logError("Expected number");
+                    if (logErrors) logError("Expected number");
                     tokens.pos = start;
                     return nullopt;
                 }
                 u64 number = tokens.getToken().data.uint;
                 tokens.nextToken();
                 if (tokens.getToken().type != tt_rbar) {
-                    logError("Expected ]");
+                    if (logErrors) logError("Expected ]");
                     tokens.pos = start;
                     return nullopt;
                 }
                 tokens.nextToken();
                 type = type.vec(number);
                 break;
+            }
+            case tt_com: {
+                if (stopAtComma) return type;
+                tokens.nextToken();
+                vector<Type> impleStructTypes;
+                impleStructTypes.push_back(type);
+                while (true) {
+                    optional<Type> nextType = typeFromTokens(logErrors, true);
+                    if (!nextType.has_value()) {
+                        tokens.pos = start;
+                        return nullopt;
+                    }
+                    impleStructTypes.push_back(nextType.value());
+                    if (tokens.getToken().type != tt_com) break;
+                    tokens.nextToken();
+                }
+                string typeName = "";
+                vector<string> structElmName;
+                for (int i = 0; i < impleStructTypes.size(); i++) {
+                    typeName += impleStructTypes[i].name;
+                    structElmName.push_back(to_string(i));
+                }
+                return Type(typeName, impleStructTypes, structElmName, this);
             }
             default: {
                 return type;
@@ -291,6 +361,40 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
             if (tokens.getToken().type == del[i]) return lval;
         }
         switch (tokens.getToken().type) {
+            case tt_com: {
+                vector<Value> vals;
+                vals.push_back(lval.value());
+                tokens.nextToken();
+                while (true) {
+                    optional<Value> val = parseStatment({ tt_com, tt_endl }, scope);
+                    if (!val.has_value()) {
+                        tokens.pos = start;
+                        return nullopt;
+                    }
+                    vals.push_back(val.value());
+                    if (tokens.getToken().type == tt_com) {
+                        tokens.nextToken();
+                        continue;
+                    }
+                    if (tokens.getToken().type == tt_endl) break;
+                    logError("Expected a end line or a ,");
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                string typeName = "";
+                vector<Type> types;
+                vector<string> structElmName;
+                vector<LLVMValueRef> valrefs;
+                for (int i = 0; i < vals.size(); i++) {
+                    typeName += vals[i].type.name;
+                    types.push_back(vals[i].type);
+                    structElmName.push_back(to_string(i));
+                    valrefs.push_back(vals[i].llvmValue);
+                }
+                Type t(typeName, types, structElmName, this);
+                Value v(LLVMConstNamedStruct(t.llvmType, valrefs.data(), valrefs.size()), t, this, true);
+                return v;
+            }
             case tt_add: {
                 if (prio >= 3) return lval;
                 tokens.nextToken();
@@ -362,20 +466,23 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
             case tt_dot: {
                 if (prio >= 7) return lval;
                 tokens.nextToken();
-                if (tokens.getToken().type != tt_id) {
+                if (tokens.getToken().type != tt_id && tokens.getToken().type != tt_int) {
                     logError("Expected method or member");
                     tokens.pos = start;
                     return nullopt;
                 }
-                string str = *tokens.getToken().data.str;
+                string str;
+                if (tokens.getToken().type == tt_id) str = *tokens.getToken().data.str;
+                else
+                    str = to_string(tokens.getToken().data.uint);
                 tokens.nextToken();
                 if (tokens.getToken().type == tt_lpar) {
                     // TODO
                     assert(false);
                 } else {
                     bool found = false;
-                    for (int i = 0; i < lval.value().type.structElemNames.size(); i++) {
-                        if (lval.value().type.structElemNames[i] != str) {
+                    for (int i = 0; i < lval.value().type.elemNames.size(); i++) {
+                        if (lval.value().type.elemNames[i] != str) {
                             continue;
                         }
                         lval = lval.value().structVal(i);
@@ -875,29 +982,113 @@ Function* Module::prototypeFunction(TokenPositon start) {
     return &nameToFunction[funcName].back();
 }
 
+void Module::prototypeEnum(TokenPositon start) {
+    tokens.pos = start;
+    tokens.nextToken();
+    string name = *tokens.getToken().data.str;
+    nameToTypeStart[name] = start;
+    return;
+}
+
 void Module::prototypeStruct(TokenPositon start) {
     tokens.pos = start;
     tokens.nextToken();
     string name = *tokens.getToken().data.str;
-    nameToStructStart[name] = start;
+    nameToTypeStart[name] = start;
     return;
 }
 
-bool Module::implementStruct(TokenPositon start) {
+bool Module::implementEnum(TokenPositon start, bool secondPass) {
     tokens.pos = start;
     assert(tokens.getToken().type == tt_struct);
     tokens.nextToken();
     string name = *tokens.getToken().data.str;
-    if (nameToStructDone.find(name) != nameToStructDone.end()) {
-        if (nameToStructDone[name] == false) {
-            logError("Circular Dependency");
-            tokens.pos = start;
+    if (secondPass && nameToTypeDone[name] == false) return false;
+    if (!secondPass) {
+        if (nameToTypeDone.find(name) != nameToTypeDone.end()) {
+            if (nameToTypeDone[name] == false) {
+                logError("Circular Dependency");
+                tokens.pos = start;
+                return false;
+            } else {
+                return true;
+            }
+        }
+        nameToTypeDone[name] = false;
+    }
+    tokens.nextToken();
+    tokens.nextToken();
+    if (tokens.getToken().type != tt_endl) {
+        logError("Expected end line after {");
+        return false;
+    }
+    tokens.nextToken();
+
+    vector<Type> enumTypes;
+    vector<string> enumElementNames;
+    vector<int> enumElementValues;
+    int valueCounter = 0;
+    while (true) {
+        if (tokens.getToken().type == tt_rcur) break;
+        if (tokens.getToken().type != tt_id) {
+            logError("expected name of enum value");
             return false;
+        }
+        string elName = *tokens.getToken().data.str;
+        tokens.nextToken();
+        if (tokens.getToken().type == tt_endl) {
+            tokens.nextToken();
+            enumTypes.push_back(nameToType["void"].front());
+            enumElementNames.push_back(elName);
+            enumElementValues.push_back(valueCounter++);
+        } else if (tokens.getToken().type == tt_lpar) {
+            tokens.nextToken();
+            optional<Type> t = typeFromTokens();
+            if (!t.has_value()) {
+                return false;
+            }
+            if (tokens.getToken().type != tt_rpar) {
+                logError("expected closing )");
+                return false;
+            }
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_endl) {
+                logError("expected a newline after the closing ) when making an enum");
+                return false;
+            }
+            tokens.nextToken();
+            enumTypes.push_back(t.value());
+            enumElementNames.push_back(elName);
+            enumElementValues.push_back(valueCounter++);
         } else {
-            return true;
+            logError("expected a new line or a (type) newline");
+            return false;
         }
     }
-    nameToStructDone[name] = false;
+
+    Type Enum(name, enumTypes, enumElementNames, enumElementValues, this);
+    nameToType[name].push_back(Enum);
+    return true;
+}
+
+bool Module::implementStruct(TokenPositon start, bool secondPass) {
+    tokens.pos = start;
+    assert(tokens.getToken().type == tt_struct);
+    tokens.nextToken();
+    string name = *tokens.getToken().data.str;
+    if (secondPass && nameToTypeDone[name] == false) return false;
+    if (!secondPass) {
+        if (nameToTypeDone.find(name) != nameToTypeDone.end()) {
+            if (nameToTypeDone[name] == false) {
+                logError("Circular Dependency");
+                tokens.pos = start;
+                return false;
+            } else {
+                return true;
+            }
+        }
+        nameToTypeDone[name] = false;
+    }
     tokens.nextToken();
     tokens.nextToken();
     if (tokens.getToken().type != tt_endl) {
@@ -967,133 +1158,132 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
             break;
         }
 
-        optional<Type> type = typeFromTokens(false);
-        if (type.has_value()) {
-
-
-            // type
-            if (tokens.getToken().type != tt_id) {
-                logError("Expected variable name");
-                implementScopeRecoverError
-            }
-            string varName = *tokens.getToken().data.str;
-            LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
-            LLVMPositionBuilderAtEnd(builder, func.entry);
-            bool worked = scope.addVariable(Variable(varName, type.value(), this));
-            LLVMPositionBuilderAtEnd(builder, curBlock);
-            if (!worked) {
-                logError("Already have a variable with this name in scope");
-                implementScopeRecoverError
-            }
+        // break
+        if (tokens.getToken().type == tt_break) {
             tokens.nextToken();
-            if (tokens.getToken().type == tt_endl) continue;
-            if (tokens.getToken().type == tt_eq) {
+            int numBreak = 1;
+            if (tokens.getToken().type == tt_int) {
+                numBreak = tokens.getToken().data.uint;
                 tokens.nextToken();
-                optional<Value> val = parseStatment({ tt_endl }, scope);
-                if (val.has_value()) {
-                    Variable* var = scope.getVariableFromName(varName).value();
-                    optional<Value> valCast = val.value().implCast(var->value.type.actualType());
-                    if (valCast.has_value()) {
-                        var->store(valCast.value());
-                        continue;
-                    } else {
-                        logError("Type of assignment and value don't match. Assignment Type: " + var->value.type.actualType().name + " | Value Type: " + val.value().type.name, nullptr, true);
-                    }
-                    continue;
-                }
-                implementScopeRecoverError
-            } else {
-                logError("Expected an assinment or new line after variable declaration");
+            }
+            if (tokens.getToken().type != tt_endl) {
+                logError("Expected end line after break");
                 implementScopeRecoverError
             }
-
-
-
-        } else {
-
-
-
-            // break
-            if (tokens.getToken().type == tt_break) {
-                tokens.nextToken();
-                int numBreak = 1;
-                if (tokens.getToken().type == tt_int) {
-                    numBreak = tokens.getToken().data.uint;
-                    tokens.nextToken();
-                }
-                if (tokens.getToken().type != tt_endl) {
-                    logError("Expected end line after break");
-                    implementScopeRecoverError
-                }
-                Scope* s = &scope;
-                while (true) {
-                    if (s->canBreak) numBreak--;
-                    if (numBreak == 0) break;
-                    s = s->parent;
-                    if (s == nullptr) break;
-                }
-                if (s == nullptr || s->parent == nullptr) {
-                    logError("can't break that far", nullptr, true);
-                    implementScopeRecoverError
-                }
+            Scope* s = &scope;
+            while (true) {
+                if (s->canBreak) numBreak--;
+                if (numBreak == 0) break;
                 s = s->parent;
-                s->gotoLast();
-                tokens.nextToken();
-                if (tokens.getToken().type != tt_rcur) {
-                    logError("Must end scope after calling break");
-                    tokens.lastToken();
-                    continue;
-                }
-                return true;
+                if (s == nullptr) break;
             }
-
-
-            // continue
-            if (tokens.getToken().type == tt_continue) {
-                tokens.nextToken();
-                int numBreak = 1;
-                if (tokens.getToken().type == tt_int) {
-                    numBreak = tokens.getToken().data.uint;
-                    tokens.nextToken();
-                }
-                if (tokens.getToken().type != tt_endl) {
-                    logError("Expected end line after continue");
-                    implementScopeRecoverError
-                }
-                Scope* s = &scope;
-                while (true) {
-                    if (s->canBreak) numBreak--;
-                    if (numBreak == 0) break;
-                    s = s->parent;
-                    if (s == nullptr) break;
-                }
-                if (s == nullptr) {
-                    logError("can't continue that far", nullptr, true);
-                    implementScopeRecoverError
-                }
-                s->gotoFront();
-                tokens.nextToken();
-                if (tokens.getToken().type != tt_rcur) {
-                    logError("Must end scope after calling continue");
-                    tokens.lastToken();
-                    continue;
-                }
-                return true;
+            if (s == nullptr || s->parent == nullptr) {
+                logError("can't break that far", nullptr, true);
+                implementScopeRecoverError
             }
+            s = s->parent;
+            s->gotoLast();
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_rcur) {
+                logError("Must end scope after calling break");
+                tokens.lastToken();
+                continue;
+            }
+            return true;
+        }
 
 
-            //while
-            if (tokens.getToken().type == tt_while) {
-                LLVMBasicBlockRef merge_block = LLVMAppendBasicBlock(func.llvmValue, "merge");
-                scope.addBlock(merge_block);
+        // continue
+        if (tokens.getToken().type == tt_continue) {
+            tokens.nextToken();
+            int numBreak = 1;
+            if (tokens.getToken().type == tt_int) {
+                numBreak = tokens.getToken().data.uint;
                 tokens.nextToken();
-                LLVMBasicBlockRef whileCon = LLVMAppendBasicBlock(func.llvmValue, "whileCon");
-                LLVMBasicBlockRef whileBody = LLVMAppendBasicBlock(func.llvmValue, "whileBody");
-                Scope whileScope(&scope, whileCon, true);
-                whileScope.addBlock(whileBody);
+            }
+            if (tokens.getToken().type != tt_endl) {
+                logError("Expected end line after continue");
+                implementScopeRecoverError
+            }
+            Scope* s = &scope;
+            while (true) {
+                if (s->canBreak) numBreak--;
+                if (numBreak == 0) break;
+                s = s->parent;
+                if (s == nullptr) break;
+            }
+            if (s == nullptr) {
+                logError("can't continue that far", nullptr, true);
+                implementScopeRecoverError
+            }
+            s->gotoFront();
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_rcur) {
+                logError("Must end scope after calling continue");
+                tokens.lastToken();
+                continue;
+            }
+            return true;
+        }
 
-                whileScope.gotoFront();
-                LLVMPositionBuilderAtEnd(builder, whileCon);
+
+        //while
+        if (tokens.getToken().type == tt_while) {
+            LLVMBasicBlockRef merge_block = LLVMAppendBasicBlock(func.llvmValue, "merge");
+            scope.addBlock(merge_block);
+            tokens.nextToken();
+            LLVMBasicBlockRef whileCon = LLVMAppendBasicBlock(func.llvmValue, "whileCon");
+            LLVMBasicBlockRef whileBody = LLVMAppendBasicBlock(func.llvmValue, "whileBody");
+            Scope whileScope(&scope, whileCon, true);
+            whileScope.addBlock(whileBody);
+
+            whileScope.gotoFront();
+            LLVMPositionBuilderAtEnd(builder, whileCon);
+            optional<Value> val = parseStatment({ tt_lcur, tt_endl }, scope);
+            if (tokens.getToken().type == tt_endl) {
+                logError("Expected { to start scope");
+                implementScopeRecoverError
+            }
+            if (!val.has_value()) {
+                implementScopeRecoverError
+            }
+            val = val.value().actualValue();
+            Value zero = Value(LLVMConstInt(LLVMInt32Type(), 0, 0), nameToType["i32"].front(), this, true);
+            optional<Value> zeroAsVal = zero.cast(val.value().type);
+            if (!zeroAsVal.has_value() || (!zeroAsVal.value().type.isNumber())) {
+                logError("Expected if statment to have a bool or number as value");
+                implementScopeRecoverError
+            }
+            LLVMValueRef condition;
+            if (zeroAsVal.value().type.isFloat()) {
+                condition = LLVMBuildFCmp(builder, LLVMRealONE, zeroAsVal.value().llvmValue, val.value().llvmValue, "cmp");
+            } else {
+                condition = LLVMBuildICmp(builder, LLVMIntNE, zeroAsVal.value().llvmValue, val.value().llvmValue, "cmp");
+            }
+            LLVMBuildCondBr(builder, condition, whileBody, merge_block);
+
+            LLVMPositionBuilderAtEnd(builder, whileBody);
+            bool scopedBreaks = implementScope(tokens.pos, whileScope, func);
+            if (!scopedBreaks) whileScope.gotoFront();
+
+            assert(tokens.getToken().type == tt_rcur);
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_endl) {
+                logError("Nothing else should be on same line as }");
+                implementScopeRecoverError
+            }
+            LLVMPositionBuilderAtEnd(builder, merge_block);
+            continue;
+        }
+
+
+
+        //if
+        if (tokens.getToken().type == tt_if) {
+            LLVMBasicBlockRef merge_block = LLVMAppendBasicBlock(func.llvmValue, "merge");
+            scope.addBlock(merge_block);
+            while (true) {
+                tokens.nextToken();
                 optional<Value> val = parseStatment({ tt_lcur, tt_endl }, scope);
                 if (tokens.getToken().type == tt_endl) {
                     logError("Expected { to start scope");
@@ -1115,149 +1305,75 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 } else {
                     condition = LLVMBuildICmp(builder, LLVMIntNE, zeroAsVal.value().llvmValue, val.value().llvmValue, "cmp");
                 }
-                LLVMBuildCondBr(builder, condition, whileBody, merge_block);
+                LLVMBasicBlockRef then_block = LLVMAppendBasicBlock(func.llvmValue, "then");
+                LLVMBasicBlockRef else_block = LLVMAppendBasicBlock(func.llvmValue, "else");
+                LLVMBuildCondBr(builder, condition, then_block, else_block);
 
-                LLVMPositionBuilderAtEnd(builder, whileBody);
-                bool scopedBreaks = implementScope(tokens.pos, whileScope, func);
-                if (!scopedBreaks) whileScope.gotoFront();
+                LLVMPositionBuilderAtEnd(builder, then_block);
 
+                Scope ifScope(&scope, then_block, false);
+                bool scopedBreaks = implementScope(tokens.pos, ifScope, func);
+                if (!scopedBreaks) scope.gotoLast();
                 assert(tokens.getToken().type == tt_rcur);
                 tokens.nextToken();
                 if (tokens.getToken().type != tt_endl) {
                     logError("Nothing else should be on same line as }");
                     implementScopeRecoverError
                 }
-                LLVMPositionBuilderAtEnd(builder, merge_block);
-                continue;
-            }
+                tokens.nextToken();
 
-
-
-            //if
-            if (tokens.getToken().type == tt_if) {
-                LLVMBasicBlockRef merge_block = LLVMAppendBasicBlock(func.llvmValue, "merge");
-                scope.addBlock(merge_block);
-                while (true) {
+                Scope elseScope(&scope, else_block, false);
+                LLVMPositionBuilderAtEnd(builder, else_block);
+                if (tokens.getToken().type == tt_else) {
                     tokens.nextToken();
-                    optional<Value> val = parseStatment({ tt_lcur, tt_endl }, scope);
-                    if (tokens.getToken().type == tt_endl) {
-                        logError("Expected { to start scope");
-                        implementScopeRecoverError
-                    }
-                    if (!val.has_value()) {
-                        implementScopeRecoverError
-                    }
-                    val = val.value().actualValue();
-                    Value zero = Value(LLVMConstInt(LLVMInt32Type(), 0, 0), nameToType["i32"].front(), this, true);
-                    optional<Value> zeroAsVal = zero.cast(val.value().type);
-                    if (!zeroAsVal.has_value() || (!zeroAsVal.value().type.isNumber())) {
-                        logError("Expected if statment to have a bool or number as value");
-                        implementScopeRecoverError
-                    }
-                    LLVMValueRef condition;
-                    if (zeroAsVal.value().type.isFloat()) {
-                        condition = LLVMBuildFCmp(builder, LLVMRealONE, zeroAsVal.value().llvmValue, val.value().llvmValue, "cmp");
-                    } else {
-                        condition = LLVMBuildICmp(builder, LLVMIntNE, zeroAsVal.value().llvmValue, val.value().llvmValue, "cmp");
-                    }
-                    LLVMBasicBlockRef then_block = LLVMAppendBasicBlock(func.llvmValue, "then");
-                    LLVMBasicBlockRef else_block = LLVMAppendBasicBlock(func.llvmValue, "else");
-                    LLVMBuildCondBr(builder, condition, then_block, else_block);
-
-                    LLVMPositionBuilderAtEnd(builder, then_block);
-
-                    Scope ifScope(&scope, then_block, false);
-                    bool scopedBreaks = implementScope(tokens.pos, ifScope, func);
-                    if (!scopedBreaks) scope.gotoLast();
-                    assert(tokens.getToken().type == tt_rcur);
-                    tokens.nextToken();
-                    if (tokens.getToken().type != tt_endl) {
-                        logError("Nothing else should be on same line as }");
-                        implementScopeRecoverError
-                    }
-                    tokens.nextToken();
-
-                    Scope elseScope(&scope, else_block, false);
-                    LLVMPositionBuilderAtEnd(builder, else_block);
-                    if (tokens.getToken().type == tt_else) {
+                    if (tokens.getToken().type == tt_lcur) {
+                        scopedBreaks = implementScope(tokens.pos, elseScope, func);
+                        if (!scopedBreaks) scope.gotoLast();
+                        assert(tokens.getToken().type == tt_rcur);
                         tokens.nextToken();
-                        if (tokens.getToken().type == tt_lcur) {
-                            scopedBreaks = implementScope(tokens.pos, elseScope, func);
-                            if (!scopedBreaks) scope.gotoLast();
-                            assert(tokens.getToken().type == tt_rcur);
-                            tokens.nextToken();
-                            if (tokens.getToken().type != tt_endl) {
-                                logError("Nothing else should be on same line as }");
-                                implementScopeRecoverError
-                            }
-                            break;
-                        } else if (tokens.getToken().type == tt_if) {
-                            continue;
-                        } else {
-                            logError("Expected } after an if statment");
+                        if (tokens.getToken().type != tt_endl) {
+                            logError("Nothing else should be on same line as }");
                             implementScopeRecoverError
                         }
-                    } else {
-                        tokens.lastToken();
-                        scope.gotoLast();
                         break;
-                    }
-                }
-
-                LLVMPositionBuilderAtEnd(builder, merge_block);
-                continue;
-            }
-
-
-
-            // return
-            if (tokens.getToken().type == tt_ret) {
-                tokens.nextToken();
-                if (tokens.getToken().type == tt_endl) {
-                    if (func.returnType.name != "void") {
-                        if (func.name == "main") {
-                            LLVMBuildRet(builder, LLVMConstInt(LLVMInt32Type(), 0, 0));
-                            tokens.nextToken();
-                            tokens.nextToken();
-                            if (tokens.getToken().type != tt_rcur) {
-                                logError("returned last line so expected }");
-                                implementScopeRecoverError
-                            }
-                            return true;
-                        }
-                        logError("Expected value to return");
+                    } else if (tokens.getToken().type == tt_if) {
                         continue;
-                    }
-                    LLVMBuildRetVoid(builder);
-                    tokens.nextToken();
-                    if (tokens.getToken().type != tt_rcur) {
-                        logError("returned last line so expected }");
+                    } else {
+                        logError("Expected } after an if statment");
                         implementScopeRecoverError
                     }
-                    return true;
-                }
-                if (func.returnType.name == "void") {
-                    logError("Expected endline for return from void funciton");
-                    implementScopeRecoverError
-                }
-                optional<Value> val = parseStatment({ tt_endl }, scope);
-                if (!val.has_value()) {
-                    implementScopeRecoverError
-                }
-                if (func.returnType.isRef()) {
-                    if (func.returnType != val.value().type) {
-                        logError("Type of return and value don't match. return type: " + func.returnType.name + " | Value Type: " + val.value().type.name, nullptr, true);
-                        continue;
-                    }
-                    LLVMBuildRet(builder, val.value().llvmValue);
                 } else {
-                    optional<Value> valCast = val.value().implCast(func.returnType.actualType());
-                    if (!valCast.has_value()) {
-                        logError("Type of return and value don't match. return type: " + func.returnType.actualType().name + " | Value Type: " + val.value().type.actualType().name, nullptr, true);
-                        continue;
-                    }
-                    LLVMBuildRet(builder, valCast.value().llvmValue);
+                    tokens.lastToken();
+                    scope.gotoLast();
+                    break;
                 }
+            }
+
+            LLVMPositionBuilderAtEnd(builder, merge_block);
+            continue;
+        }
+
+
+
+        // return
+        if (tokens.getToken().type == tt_ret) {
+            tokens.nextToken();
+            if (tokens.getToken().type == tt_endl) {
+                if (func.returnType.name != "void") {
+                    if (func.name == "main") {
+                        LLVMBuildRet(builder, LLVMConstInt(LLVMInt32Type(), 0, 0));
+                        tokens.nextToken();
+                        tokens.nextToken();
+                        if (tokens.getToken().type != tt_rcur) {
+                            logError("returned last line so expected }");
+                            implementScopeRecoverError
+                        }
+                        return true;
+                    }
+                    logError("Expected value to return");
+                    continue;
+                }
+                LLVMBuildRetVoid(builder);
                 tokens.nextToken();
                 if (tokens.getToken().type != tt_rcur) {
                     logError("returned last line so expected }");
@@ -1265,21 +1381,93 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 }
                 return true;
             }
-
-
-
-            // statment
-            optional<Value> val = parseStatment({ tt_eq, tt_addeq, tt_subeq, tt_muleq, tt_diveq, tt_endl }, scope);
+            if (func.returnType.name == "void") {
+                logError("Expected endline for return from void funciton");
+                implementScopeRecoverError
+            }
+            optional<Value> val = parseStatment({ tt_endl }, scope);
             if (!val.has_value()) {
                 implementScopeRecoverError
             }
-            if (tokens.getToken().type == tt_endl) continue;
-            if (!val.value().type.isRef()) {
+            if (func.returnType.isRef()) {
+                if (func.returnType != val.value().type) {
+                    logError("Type of return and value don't match. return type: " + func.returnType.name + " | Value Type: " + val.value().type.name, nullptr, true);
+                    continue;
+                }
+                LLVMBuildRet(builder, val.value().llvmValue);
+            } else {
+                optional<Value> valCast = val.value().implCast(func.returnType.actualType());
+                if (!valCast.has_value()) {
+                    logError("Type of return and value don't match. return type: " + func.returnType.actualType().name + " | Value Type: " + val.value().type.actualType().name, nullptr, true);
+                    continue;
+                }
+                LLVMBuildRet(builder, valCast.value().llvmValue);
+            }
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_rcur) {
+                logError("returned last line so expected }");
+                implementScopeRecoverError
+            }
+            return true;
+        }
+
+
+
+        vector<Value> setVals;
+        bool worked = true;
+        while (true) {
+            optional<Type> type = typeFromTokens(false);
+            if (type.has_value()) {
+                // type
+                if (tokens.getToken().type != tt_id) {
+                    logError("Expected variable name");
+                    worked = false;
+                    break;
+                }
+                string varName = *tokens.getToken().data.str;
+                LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
+                LLVMPositionBuilderAtEnd(builder, func.entry);
+                bool worked = scope.addVariable(Variable(varName, type.value(), this));
+                LLVMPositionBuilderAtEnd(builder, curBlock);
+                if (!worked) {
+                    logError("Already have a variable with this name in scope");
+                    worked = false;
+                    break;
+                }
+                Variable* var = scope.getVariableFromName(varName).value();
+                Value val = var->value;
+                setVals.push_back(val);
+                tokens.nextToken();
+            } else {
+                // statment
+                optional<Value> val = parseStatment({ tt_eq, tt_addeq, tt_subeq, tt_muleq, tt_diveq, tt_endl, tt_com }, scope);
+                if (!val.has_value()) {
+                    worked = false;
+                    break;
+                }
+                setVals.push_back(val.value());
+            }
+            if (tokens.getToken().type == tt_com) {
+                tokens.nextToken();
+                continue;
+            }
+            break;
+        }
+        if (!worked) {
+            implementScopeRecoverError
+        }
+        if (tokens.getToken().type == tt_endl) continue;
+        for (int i = 0; i < setVals.size(); i++) {
+            Value val = setVals[i];
+            if (!val.type.isRef()) {
                 logError("Can't assign to a value on lhs", nullptr, true);
                 implementScopeRecoverError
             }
+        }
 
+        if (setVals.size() == 1) {
             optional<Value> rval;
+            Value val = setVals[0];
             if (tokens.getToken().type == tt_addeq) {
                 Token opEq = tokens.getToken();
                 tokens.nextToken();
@@ -1287,9 +1475,9 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 if (!rval.has_value()) {
                     implementScopeRecoverError
                 }
-                optional<Value> newVal = add(val.value(), rval.value());
+                optional<Value> newVal = add(val, rval.value());
                 if (!newVal.has_value()) {
-                    logError("Can't add types of " + val.value().type.name + " with " + rval.value().type.name, &opEq);
+                    logError("Can't add types of " + val.type.name + " with " + rval.value().type.name, &opEq);
                     implementScopeRecoverError
                 }
                 rval = newVal;
@@ -1300,9 +1488,9 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 if (!rval.has_value()) {
                     implementScopeRecoverError
                 }
-                optional<Value> newVal = sub(val.value(), rval.value());
+                optional<Value> newVal = sub(val, rval.value());
                 if (!newVal.has_value()) {
-                    logError("Can't sub types of " + val.value().type.name + " with " + rval.value().type.name, &opEq);
+                    logError("Can't sub types of " + val.type.name + " with " + rval.value().type.name, &opEq);
                     implementScopeRecoverError
                 }
                 rval = newVal;
@@ -1313,9 +1501,9 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 if (!rval.has_value()) {
                     implementScopeRecoverError
                 }
-                optional<Value> newVal = mul(val.value(), rval.value());
+                optional<Value> newVal = mul(val, rval.value());
                 if (!newVal.has_value()) {
-                    logError("Can't mul types of " + val.value().type.name + " with " + rval.value().type.name, &opEq);
+                    logError("Can't mul types of " + val.type.name + " with " + rval.value().type.name, &opEq);
                     implementScopeRecoverError
                 }
                 rval = newVal;
@@ -1326,9 +1514,9 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 if (!rval.has_value()) {
                     implementScopeRecoverError
                 }
-                optional<Value> newVal = div(val.value(), rval.value());
+                optional<Value> newVal = div(val, rval.value());
                 if (!newVal.has_value()) {
-                    logError("Can't div types of " + val.value().type.name + " with " + rval.value().type.name, &opEq);
+                    logError("Can't div types of " + val.type.name + " with " + rval.value().type.name, &opEq);
                     implementScopeRecoverError
                 }
                 rval = newVal;
@@ -1338,16 +1526,51 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 if (!rval.has_value()) {
                     implementScopeRecoverError
                 }
+            } else {
+                logError("expected an assignment operator");
+                implementScopeRecoverError
             }
 
-            optional<Value> valCast = rval.value().implCast(val.value().type.actualType());
+            optional<Value> valCast = rval.value().implCast(val.type.actualType());
             if (!valCast.has_value()) {
-                logError("Type of assignment and value don't match. Assignment Type: " + val.value().type.actualType().name + " | Value Type: " + rval.value().type.actualType().name, nullptr, true);
+                logError("Type of assignment and value don't match. Assignment Type: " + val.type.actualType().name + " | Value Type: " + rval.value().type.actualType().name, nullptr, true);
                 continue;
             }
-            val.value().store(valCast.value().actualValue());
-            continue;
+            val.store(valCast.value().actualValue());
+        } else {
+            optional<Value> rval;
+            if (tokens.getToken().type == tt_eq) {
+                tokens.nextToken();
+                rval = parseStatment({ tt_endl }, scope);
+                if (!rval.has_value()) {
+                    implementScopeRecoverError
+                }
+            } else {
+                logError("expected an assignment operator");
+                implementScopeRecoverError
+            }
+            if (!rval.value().type.isStruct()) {
+                logError("multiple assignment only work with a struct on the right hand side");
+                implementScopeRecoverError
+            }
+            if (setVals.size() != rval.value().type.elemNames.size()) {
+                logError("right hand side struct contains " + to_string(rval.value().type.elemNames.size()) + " values when setting " + to_string(setVals.size()) + " values", nullptr, true);
+                implementScopeRecoverError
+            }
+
+            for (int i = 0; i < setVals.size(); i++) {
+                Value val = setVals[i];
+                Value rsval = rval.value().structVal(i);
+                optional<Value> valCast = rsval.implCast(val.type.actualType());
+                if (!valCast.has_value()) {
+                    logError("Type of assignment and value don't match. Assignment Type: " + val.type.actualType().name + " | Value Type: " + rsval.type.actualType().name, nullptr, true);
+                    continue;
+                }
+                val.store(valCast.value().actualValue());
+            }
         }
+
+        continue;
     }
     if (scope.parent == nullptr) {
         return false;
@@ -1439,6 +1662,14 @@ bool Module::looksLikeType() {
                 tokens.nextToken();
                 break;
             }
+            case tt_com: {
+                tokens.nextToken();
+                if (!looksLikeType()) {
+                    tokens.pos = start;
+                    return false;
+                }
+                return true;
+            }
             default: {
                 return true;
                 break;
@@ -1480,6 +1711,37 @@ bool Module::looksLikeFunction() {
         tokens.pos = start;
         return false;
     }
+    int curStack = 1;
+    Token curStart = tokens.getToken();
+    while (curStack != 0) {
+        tokens.nextToken();
+        if (tokens.getToken().type == tt_eot) {
+            tokens.pos = start;
+            return false;
+        }
+        if (tokens.getToken().type == tt_eof) {
+            tokens.pos = start;
+            return false;
+        }
+        if (tokens.getToken().type == tt_rcur) curStack--;
+        if (tokens.getToken().type == tt_lcur) curStack++;
+    }
+    tokens.nextToken();
+    if (tokens.getToken().type == tt_endl) return true;
+    if (tokens.getToken().type == tt_eof) return true;
+
+    tokens.pos = start;
+    return false;
+}
+bool Module::looksLikeEnum() {
+    TokenPositon start = tokens.pos;
+    if (tokens.getToken().type != tt_enum) return false;
+    tokens.nextToken();
+    if (tokens.getToken().type != tt_id) {
+        tokens.pos = start;
+        return false;
+    }
+    tokens.nextToken();
     int curStack = 1;
     Token curStart = tokens.getToken();
     while (curStack != 0) {

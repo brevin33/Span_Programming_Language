@@ -12,12 +12,33 @@ Type::Type(LLVMTypeRef llvmType, const string& name, Module* module) {
 Type::Type(const string& name, vector<Type>& structTypes, vector<string>& struceElmNames, Module* module) {
     this->name = name;
     this->module = module;
-    this->structTypes = structTypes;
-    this->structElemNames = struceElmNames;
+    this->elemTypes = structTypes;
+    this->elemNames = struceElmNames;
     vector<LLVMTypeRef> llvmTypes;
     for (int i = 0; i < structTypes.size(); i++) {
         llvmTypes.push_back(structTypes[i].llvmType);
     }
+    this->llvmType = LLVMStructCreateNamed(LLVMGetGlobalContext(), name.c_str());
+    LLVMStructSetBody(llvmType, llvmTypes.data(), llvmTypes.size(), false);
+}
+
+Type::Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmNames, vector<int> enumElmValues, Module* module) {
+    this->name = name;
+    this->module = module;
+    this->elemTypes = enumTypes;
+    this->elemNames = enumElmNames;
+    this->enumValues = enumElmValues;
+    vector<LLVMTypeRef> llvmTypes;
+    llvmTypes.push_back(LLVMInt32Type());
+    LLVMTypeRef largestType;
+    int largestTypeSize = 0;
+    for (int i = 0; i < enumTypes.size(); i++) {
+        if (enumTypes[i].getBitWidth() > largestTypeSize) {
+            largestTypeSize = enumTypes[i].getBitWidth();
+            largestType = enumTypes[i].llvmType;
+        }
+    }
+    llvmTypes.push_back(largestType);
     this->llvmType = LLVMStructCreateNamed(LLVMGetGlobalContext(), name.c_str());
     LLVMStructSetBody(llvmType, llvmTypes.data(), llvmTypes.size(), false);
 }
@@ -114,6 +135,14 @@ bool Type::isVec() {
     return false;
 }
 
+bool Type::isEnum() {
+    return enumValues.size() != 0;
+}
+
+bool Type::isStruct() {
+    return elemNames.size() != 0 && enumValues.size() == 0;
+}
+
 Type Type::actualType() {
     Type t = *this;
     while (t.isRef()) {
@@ -164,4 +193,8 @@ u64 Type::getNumberWidth() {
     string n = name;
     n.erase(0, 1);
     return stoull(n);
+}
+
+u64 Type::getBitWidth() {
+    return LLVMSizeOfTypeInBits(LLVMGetModuleDataLayout(module->llvmModule), llvmType);
 }
