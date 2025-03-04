@@ -398,7 +398,11 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                     valrefs.push_back(vals[i].llvmValue);
                 }
                 Type t(typeName, types, structElmName, this);
-                Value v(LLVMConstNamedStruct(t.llvmType, valrefs.data(), valrefs.size()), t, this, true);
+                LLVMValueRef myStruct = LLVMGetUndef(t.llvmType);
+                for (int i = 0; i < vals.size(); i++) {
+                    myStruct = LLVMBuildInsertValue(builder, myStruct, valrefs[i], i, "inserted");
+                }
+                Value v(myStruct, t, this, true);
                 return v;
             }
             case tt_add: {
@@ -491,7 +495,9 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                         if (lval.value().type.elemNames[i] != str) {
                             continue;
                         }
-                        lval = lval.value().structVal(i);
+                        if (lval.value().type.isEnum()) lval = lval.value().enumVal(i);
+                        else
+                            lval = lval.value().structVal(i);
                         found = true;
                         break;
                     }
@@ -711,9 +717,17 @@ optional<Value> Module::parseValue(Scope& scope) {
                     // enum ops
                     for (int i = 0; i < type.value().elemNames.size(); i++) {
                         if (type.value().elemNames[i] == str) {
-                            tokens.nextToken();
                             if (type.value().elemTypes[i].name == "void") {
-                                Value e = createEnum(type.value(), nullptr, i);
+                                LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
+                                Scope* s = &scope;
+                                while (s->parent != nullptr) {
+                                    s = s->parent;
+                                }
+                                LLVMPositionBuilderAtEnd(builder, s->blocks.front());
+                                LLVMValueRef enumAlloca = LLVMBuildAlloca(builder, LLVMArrayType(LLVMInt8Type(), str.size() + 1), "enum");
+                                LLVMPositionBuilderAtEnd(builder, curBlock);
+
+                                Value e = createEnum(type.value(), nullptr, i, enumAlloca);
                                 return e;
                             } else {
                                 if (tokens.getToken().type != tt_lpar) {
@@ -727,7 +741,21 @@ optional<Value> Module::parseValue(Scope& scope) {
                                     tokens.pos = start;
                                     return nullopt;
                                 }
-                                Value e = createEnum(type.value(), &val.value(), i);
+                                val = val.value().implCast(type.value().elemTypes[i]);
+                                if (!val.has_value()) {
+                                    logError("given to enum doesn't match enum");
+                                    tokens.pos = start;
+                                    return nullopt;
+                                }
+                                LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
+                                Scope* s = &scope;
+                                while (s->parent != nullptr) {
+                                    s = s->parent;
+                                }
+                                LLVMPositionBuilderAtEnd(builder, s->blocks.front());
+                                LLVMValueRef enumAlloca = LLVMBuildAlloca(builder, LLVMArrayType(LLVMInt8Type(), str.size() + 1), "enum");
+                                LLVMPositionBuilderAtEnd(builder, curBlock);
+                                Value e = createEnum(type.value(), &val.value(), i, enumAlloca);
                                 tokens.nextToken();
                                 return e;
                             }

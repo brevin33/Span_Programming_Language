@@ -6,6 +6,6 @@ enum test{
 }
 
 int,int createTest(){
-    test t = test.thing2
-    return 7, 9
+    test t = test.thing(3)
+    return 7, t.thing 
 }
