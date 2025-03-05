@@ -119,8 +119,15 @@ optional<Value> Value::implCast(Type& type) {
         for (int i = 0; i < vals.size(); i++) {
             valrefs.push_back(vals[i].llvmValue);
         }
-        Value v(LLVMConstNamedStruct(type.llvmType, valrefs.data(), valrefs.size()), type, module, true);
+        LLVMValueRef myStruct = LLVMGetUndef(type.llvmType);
+        for (int i = 0; i < vals.size(); i++) {
+            myStruct = LLVMBuildInsertValue(builder, myStruct, valrefs[i], i, "inserted");
+        }
+        Value v(myStruct, type, module, true);
         return v;
+    }
+    if (type.staticEnum) {
+        // TODO: create enum if types make since
     }
 
     return nullopt;

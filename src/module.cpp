@@ -263,7 +263,7 @@ bool Module::typeFromTokensIsPtr() {
     }
 }
 
-optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma) {
+optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma, bool stopAtOr) {
     TokenPositon start = tokens.pos;
     if (tokens.getToken().type != tt_id) {
         if (logErrors) logError("Expected type");
@@ -328,28 +328,56 @@ optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma) {
                 type = type.vec(number);
                 break;
             }
+            case tt_bitor: {
+                if (stopAtOr) return type;
+                tokens.nextToken();
+                vector<Type> impleStructTypes;
+                impleStructTypes.push_back(type);
+                while (true) {
+                    optional<Type> nextType = typeFromTokens(logErrors, false, true);
+                    if (!nextType.has_value()) {
+                        tokens.pos = start;
+                        return nullopt;
+                    }
+                    impleStructTypes.push_back(nextType.value());
+                    if (tokens.getToken().type != tt_bitor) break;
+                    tokens.nextToken();
+                }
+                string typeName = "(";
+                vector<string> structElmName;
+                vector<int> enumValues;
+                for (int i = 0; i < impleStructTypes.size(); i++) {
+                    typeName += impleStructTypes[i].name + "|";
+                    structElmName.push_back(to_string(i));
+                    enumValues.push_back(i);
+                }
+                typeName += ")";
+                return Type(typeName, impleStructTypes, structElmName, enumValues, this, true);
+            }
             case tt_com: {
                 if (stopAtComma) return type;
                 tokens.nextToken();
                 vector<Type> impleStructTypes;
                 impleStructTypes.push_back(type);
                 while (true) {
-                    optional<Type> nextType = typeFromTokens(logErrors, true);
+                    optional<Type> nextType = typeFromTokens(logErrors, true, stopAtOr);
                     if (!nextType.has_value()) {
                         tokens.pos = start;
                         return nullopt;
                     }
                     impleStructTypes.push_back(nextType.value());
                     if (tokens.getToken().type != tt_com) break;
+                    if (tokens.getToken().type != tt_bitor) break;
                     tokens.nextToken();
                 }
-                string typeName = "";
+                string typeName = "(";
                 vector<string> structElmName;
                 for (int i = 0; i < impleStructTypes.size(); i++) {
                     typeName += impleStructTypes[i].name;
                     structElmName.push_back(to_string(i));
                 }
-                return Type(typeName, impleStructTypes, structElmName, this);
+                typeName += ")";
+                type = Type(typeName, impleStructTypes, structElmName, this);
             }
             default: {
                 return type;
@@ -387,7 +415,7 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                     tokens.pos = start;
                     return nullopt;
                 }
-                string typeName = "";
+                string typeName = "(";
                 vector<Type> types;
                 vector<string> structElmName;
                 vector<LLVMValueRef> valrefs;
@@ -397,6 +425,7 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                     structElmName.push_back(to_string(i));
                     valrefs.push_back(vals[i].llvmValue);
                 }
+                typeName += ")";
                 Type t(typeName, types, structElmName, this);
                 LLVMValueRef myStruct = LLVMGetUndef(t.llvmType);
                 for (int i = 0; i < vals.size(); i++) {
@@ -811,7 +840,7 @@ optional<Value> Module::parseValue(Scope& scope) {
                 return nullopt;
             }
             tokens.nextToken();
-            string typeName = "";
+            string typeName = "(";
             vector<Type> types;
             vector<string> structElmName;
             vector<LLVMValueRef> valrefs;
@@ -821,6 +850,7 @@ optional<Value> Module::parseValue(Scope& scope) {
                 structElmName.push_back(to_string(i));
                 valrefs.push_back(vals[i].llvmValue);
             }
+            typeName += ")";
             Type t(typeName, types, structElmName, this);
             Value v(LLVMConstNamedStruct(t.llvmType, valrefs.data(), valrefs.size()), t, this, true);
             return v;
@@ -1165,7 +1195,6 @@ bool Module::implementEnum(TokenPositon start, bool secondPass) {
     }
 
     Type Enum(name, enumTypes, enumElementNames, enumElementValues, this);
-    nameToType[name].push_back(Enum);
     nameToTypeDone[name] = true;
     return true;
 }
@@ -1220,7 +1249,7 @@ bool Module::implementStruct(TokenPositon start, bool secondPass) {
     }
 
     Type Struct(name, structTypes, structElementNames, this);
-    nameToType[name].push_back(Struct);
+    nameToTypeDone[name] = true;
     return true;
 }
 
@@ -1760,6 +1789,14 @@ bool Module::looksLikeType() {
                 }
                 tokens.nextToken();
                 break;
+            }
+            case tt_bitor: {
+                tokens.nextToken();
+                if (!looksLikeType()) {
+                    tokens.pos = start;
+                    return false;
+                }
+                return true;
             }
             case tt_com: {
                 tokens.nextToken();

@@ -7,6 +7,7 @@ Type::Type(LLVMTypeRef llvmType, const string& name, Module* module) {
     this->llvmType = llvmType;
     this->name = name;
     this->module = module;
+    if (nameToType[name].size() == 0) nameToType[name].push_back(*this);
 }
 
 Type::Type(const string& name, vector<Type>& structTypes, vector<string>& struceElmNames, Module* module) {
@@ -20,15 +21,17 @@ Type::Type(const string& name, vector<Type>& structTypes, vector<string>& struce
     }
     this->llvmType = LLVMStructCreateNamed(LLVMGetGlobalContext(), name.c_str());
     LLVMStructSetBody(llvmType, llvmTypes.data(), llvmTypes.size(), false);
+    if (nameToType[name].size() == 0) nameToType[name].push_back(*this);
 }
 
-Type::Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmNames, vector<int> enumElmValues, Module* module) {
+Type::Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmNames, vector<int> enumElmValues, Module* module, bool staticEnum) {
     this->name = name;
     this->module = module;
     this->elemTypes = enumTypes;
     this->elemNames = enumElmNames;
     this->enumValues = enumElmValues;
     vector<LLVMTypeRef> llvmTypes;
+    this->staticEnum = staticEnum;
     llvmTypes.push_back(LLVMInt32Type());
     LLVMTypeRef largestType;
     int largestTypeSize = 0;
@@ -41,13 +44,19 @@ Type::Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmN
     llvmTypes.push_back(largestType);
     this->llvmType = LLVMStructCreateNamed(LLVMGetGlobalContext(), name.c_str());
     LLVMStructSetBody(llvmType, llvmTypes.data(), llvmTypes.size(), false);
+    if (nameToType[name].size() == 0) nameToType[name].push_back(*this);
 }
 
 
 Type::Type(const string& name, Module* module) {
     // this is trash but i guess llvm doesn't keep pointer type info any more ????
     int baseTypeEnd = name.size();
-    for (int i = 0; i < name.size(); i++) {
+    int s = 0;
+    if (name.front() == '(') {
+        while (name[s] != ')')
+            s++;
+    }
+    for (int i = s; i < name.size(); i++) {
         if (name[i] == '*' || name[i] == '&' || name[i] == '[' || name[i] == '^') {
             baseTypeEnd = i;
             break;
@@ -92,7 +101,6 @@ bool Type::isInt() {
         if (name[i] < '0' || name[i] > '9') return false;
     }
     return true;
-    return false;
 }
 
 bool Type::isUInt() {
@@ -101,7 +109,6 @@ bool Type::isUInt() {
         if (name[i] < '0' || name[i] > '9') return false;
     }
     return true;
-    return false;
 }
 
 bool Type::isFloat() {

@@ -18,17 +18,17 @@ void setupBasicTypes() {
     for (int i = 1; i <= 512; i++) {
         string uname = "u" + to_string(i);
         string iname = "i" + to_string(i);
-        nameToType[uname].push_back(Type(LLVMIntType(i), uname, baseModule));
-        nameToType[iname].push_back(Type(LLVMIntType(i), iname, baseModule));
+        Type(LLVMIntType(i), uname, baseModule);
+        Type(LLVMIntType(i), iname, baseModule);
     }
-    nameToType["void"].push_back(Type(LLVMVoidType(), "void", baseModule));
+    Type(LLVMVoidType(), "void", baseModule);
 
     nameToType["int"].push_back(Type(LLVMIntType(32), "i32", baseModule));
     nameToType["uint"].push_back(Type(LLVMIntType(32), "u32", baseModule));
 
-    nameToType["f16"].push_back(Type(LLVMHalfType(), "f16", baseModule));
-    nameToType["f32"].push_back(Type(LLVMFloatType(), "f32", baseModule));
-    nameToType["f64"].push_back(Type(LLVMDoubleType(), "f64", baseModule));
+    Type(LLVMHalfType(), "f16", baseModule);
+    Type(LLVMFloatType(), "f32", baseModule);
+    Type(LLVMDoubleType(), "f64", baseModule);
 
     nameToType["half"].push_back(Type(LLVMHalfType(), "f16", baseModule));
     nameToType["float"].push_back(Type(LLVMFloatType(), "f32", baseModule));

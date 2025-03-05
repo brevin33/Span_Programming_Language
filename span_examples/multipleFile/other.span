@@ -1,11 +1,7 @@
 int printf(char* text, ...)
 
-enum test{
-    thing(int)
-    thing2
-}
 
 int,int createTest(){
-    test t = test.thing(3)
-    return 7, t.thing 
+    int | double t = 3
+    return 7, t.0
 }

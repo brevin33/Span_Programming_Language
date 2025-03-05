@@ -11,7 +11,7 @@ public:
 
     Type(const string& name, vector<Type>& structTypes, vector<string>& struceElmNames, Module* module);
 
-    Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmNames, vector<int> enumValues, Module* module);
+    Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmNames, vector<int> enumValues, Module* module, bool staticEnum = false);
 
     Type(const string& name, Module* module);
 
@@ -64,6 +64,7 @@ public:
     vector<Type> elemTypes;
     vector<string> elemNames;
     vector<int> enumValues;
+    bool staticEnum;
 
 private:
 private:

@@ -47,7 +47,7 @@ private:
     bool hasMain = false;
 
 private:
-    optional<Type> typeFromTokens(bool logErrors = true, bool stopAtComma = false);
+    optional<Type> typeFromTokens(bool logErrors = true, bool stopAtComma = false, bool stopAtOr = false);
 
     optional<Value> parseStatment(const vector<TokenType>& del, Scope& scope, int prio = INT_MIN);
 
