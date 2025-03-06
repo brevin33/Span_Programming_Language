@@ -2,6 +2,6 @@ int printf(char* text, ...)
 
 
 int,int createTest(){
-    int | double t = 3
-    return 7, t.0
+    i32 | i64 t = 3
+    return 7, t.i32
 }

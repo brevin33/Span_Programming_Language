@@ -103,7 +103,7 @@ optional<Value> Value::implCast(Type& type) {
             return v;
         }
     }
-    if (type.elemNames.size() != 0) {
+    if (type.isStruct()) {
         if (type.elemNames.size() != v.type.elemNames.size()) {
             return nullopt;
         }
@@ -127,7 +127,12 @@ optional<Value> Value::implCast(Type& type) {
         return v;
     }
     if (type.staticEnum) {
-        // TODO: create enum if types make since
+        for (int i = 0; i < type.elemNames.size(); i++) {
+            optional<Value> v2 = v.implCast(type.elemTypes[i]);
+            if (v2.has_value()) {
+                return createEnum(type, &v2.value(), i);
+            }
+        }
     }
 
     return nullopt;
@@ -203,11 +208,12 @@ Value Value::enumVal(int i) {
             lastV = v;
             v = v.refToVal();
         }
-        LLVMValueRef elementValue = LLVMBuildStructGEP2(builder, v.type.llvmType, lastV.llvmValue, 1, "extracted");
-        LLVMTypeRef typew = LLVMTypeOf(elementValue);
-        char* typeStr = LLVMPrintTypeToString(typew);
-        printf("LLVM Type: %s\n", typeStr);
-        LLVMDisposeMessage(typeStr);  // Free the allocated string
+        LLVMTypeRef structTypes[2];
+        structTypes[0] = LLVMInt32Type();
+        structTypes[1] = type.elemTypes[i].llvmType;
+        LLVMTypeRef realType = LLVMStructType(structTypes, 2, 0);
+        LLVMValueRef elementValue = LLVMBuildStructGEP2(builder, realType, lastV.llvmValue, 1, "extracted");
+        elementValue = LLVMBuildPointerCast(builder, elementValue, type.elemTypes[i].ref().llvmType, "extracted");
         return Value(elementValue, type.elemTypes[i].ref(), module, constant);
     } else {
         LLVMValueRef elementValue = LLVMBuildExtractValue(builder, llvmValue, 1, "extracted");
@@ -587,16 +593,16 @@ optional<Value> to(Value& lval, Type& rval) {
     return l.cast(rval);
 }
 
-Value createEnum(Type& enumType, Value* valptr, int enumVal, LLVMValueRef memory) {
+Value createEnum(Type& enumType, Value* valptr, int enumVal) {
     int bitsized = enumType.getBitWidth() - 32 - enumType.elemTypes[enumVal].getBitWidth();
-    Value v = Value(memory, enumType.ref(), enumType.module, false);
-    if (valptr != nullptr) {
-        LLVMValueRef elementValue = LLVMBuildStructGEP2(builder, enumType.llvmType, v.llvmValue, 1, "extracted");
-        elementValue = LLVMBuildPointerCast(builder, elementValue, enumType.elemTypes[enumVal].ptr().llvmType, "castToEnumType");
-        LLVMBuildStore(builder, valptr->llvmValue, elementValue);
-    }
-    LLVMValueRef elementValue = LLVMBuildStructGEP2(builder, enumType.llvmType, v.llvmValue, 0, "extracted");
-    LLVMBuildStore(builder, LLVMConstInt(LLVMInt32Type(), enumVal, 0), elementValue);
+    LLVMTypeRef ref[2];
+    ref[0] = LLVMInt32Type();
+    ref[1] = valptr->type.llvmType;
+    LLVMTypeRef structType = LLVMStructType(ref, 2, 0);
+    LLVMValueRef myStruct = LLVMGetUndef(structType);
+    myStruct = LLVMBuildInsertValue(builder, myStruct, LLVMConstInt(LLVMInt32Type(), enumVal, 0), 0, "inserted");
+    myStruct = LLVMBuildInsertValue(builder, myStruct, valptr->llvmValue, 1, "inserted");
+    Value v(myStruct, enumType, enumType.module, true);
     return v;
 }
 

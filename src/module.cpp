@@ -348,7 +348,7 @@ optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma, bool sto
                 vector<int> enumValues;
                 for (int i = 0; i < impleStructTypes.size(); i++) {
                     typeName += impleStructTypes[i].name + "|";
-                    structElmName.push_back(to_string(i));
+                    structElmName.push_back(impleStructTypes[i].name);
                     enumValues.push_back(i);
                 }
                 typeName += ")";
@@ -756,7 +756,7 @@ optional<Value> Module::parseValue(Scope& scope) {
                                 LLVMValueRef enumAlloca = LLVMBuildAlloca(builder, LLVMArrayType(LLVMInt8Type(), str.size() + 1), "enum");
                                 LLVMPositionBuilderAtEnd(builder, curBlock);
 
-                                Value e = createEnum(type.value(), nullptr, i, enumAlloca);
+                                Value e = createEnum(type.value(), nullptr, i);
                                 return e;
                             } else {
                                 if (tokens.getToken().type != tt_lpar) {
@@ -784,7 +784,7 @@ optional<Value> Module::parseValue(Scope& scope) {
                                 LLVMPositionBuilderAtEnd(builder, s->blocks.front());
                                 LLVMValueRef enumAlloca = LLVMBuildAlloca(builder, LLVMArrayType(LLVMInt8Type(), str.size() + 1), "enum");
                                 LLVMPositionBuilderAtEnd(builder, curBlock);
-                                Value e = createEnum(type.value(), &val.value(), i, enumAlloca);
+                                Value e = createEnum(type.value(), &val.value(), i);
                                 tokens.nextToken();
                                 return e;
                             }
@@ -852,7 +852,11 @@ optional<Value> Module::parseValue(Scope& scope) {
             }
             typeName += ")";
             Type t(typeName, types, structElmName, this);
-            Value v(LLVMConstNamedStruct(t.llvmType, valrefs.data(), valrefs.size()), t, this, true);
+            LLVMValueRef myStruct = LLVMGetUndef(t.llvmType);
+            for (int i = 0; i < vals.size(); i++) {
+                myStruct = LLVMBuildInsertValue(builder, myStruct, valrefs[i], i, "inserted");
+            }
+            Value v(myStruct, t, this, true);
             return v;
         }
         case tt_lpar: {

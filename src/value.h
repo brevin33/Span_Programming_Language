@@ -60,4 +60,4 @@ Value as(Value& lval, Type& rval);
 optional<Value> to(Value& lval, Type& rval);
 optional<Value> and (Value & lval, Value& rval);
 optional<Value> or (Value & lval, Value& rval);
-Value createEnum(Type& enumType, Value* valptr, int enumVal, LLVMValueRef memory);
+Value createEnum(Type& enumType, Value* valptr, int enumVal);
