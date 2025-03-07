@@ -35,6 +35,7 @@ enum TokenType {
     tt_ex,
     tt_le,
     tt_ret,
+    tt_case,
     tt_com,
     tt_semi,
     tt_eof,
@@ -53,6 +54,7 @@ enum TokenType {
     tt_struct,
     tt_diveq,
     tt_enum,
+    tt_switch,
 };
 
 union TokenData {
@@ -224,6 +226,14 @@ public:
                             }
                             if (str == "else") {
                                 token.type = tt_else;
+                                break;
+                            }
+                            if (str == "switch") {
+                                token.type = tt_switch;
+                                break;
+                            }
+                            if (str == "switch") {
+                                token.type = tt_case;
                                 break;
                             }
                             if (str == "for") {

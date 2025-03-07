@@ -1485,7 +1485,91 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
             continue;
         }
 
+        // switch
+        if (tokens.getToken().type == tt_switch) {
+            tokens.nextToken();
+            optional<Value> val = parseStatment({ tt_lcur }, scope);
+            if (!val.has_value() || (!val.value().type.isEnum() && val.value().type.actualType().isInt() && val.value().type.actualType().isUInt())) {
+                logError("Expected an int, uint, or a enum");
+                implementScopeRecoverError
+            }
+            val = val.value().actualValue();
+            Value switchNum;
+            if (val.value().type.isEnum()) {
+                switchNum = val.value().enumType().actualValue();
+            }
+            if (val.value().type.isInt()) {
+                switchNum = val.value().actualValue();
+            }
+            if (val.value().type.isUInt()) {
+                switchNum = val.value().actualValue();
+            } else {
+                assert(false);
+            }
 
+            vector<Scope> cases;
+            vector<i64> caseVals;
+            Scope default;
+            bool foundDefult = false;
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_endl) {
+                logError("Expected an endline after {");
+                implementScopeRecoverError
+            }
+            tokens.nextToken();
+            LLVMBasicBlockRef nextBlock = LLVMAppendBasicBlock(func.llvmValue, "afterSwitch");
+            LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
+            scope.addBlock(nextBlock);
+            bool worked = true;
+            while (true) {
+                while (tokens.getToken().type == tt_endl)
+                    tokens.nextToken();
+                // TODO: default
+                if (tokens.getToken().type != tt_case) {
+                    logError("Expected case");
+                    worked = false;
+                    break;
+                }
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_int) {
+                    logError("Expected value");
+                    worked = false;
+                    break;
+                }
+                caseVals.push_back(tokens.getToken().data.uint);
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_lcur) {
+                    logError("Expected {");
+                    worked = false;
+                    break;
+                }
+                LLVMBasicBlockRef caseBody = LLVMAppendBasicBlock(func.llvmValue, "caseBody");
+                LLVMPositionBuilderAtEnd(builder, caseBody);
+                Scope caseScope(&scope, caseBody, false);
+                bool exitedScope = implementScope(tokens.pos, caseScope, func);
+                if (!exitedScope) {
+                    scope.gotoLast();
+                }
+            }
+            if (!worked) {
+                implementScopeRecoverError
+            }
+            if (!foundDefult) {
+                logError("never found default in case statment");
+                implementScopeRecoverError
+            }
+            //todo all this
+
+            LLVMValueRef switchInst = LLVMBuildSwitch(builder, switchNum.llvmValue, defaultBlock, 2);  // 2 cases
+
+            // Create case blocks
+            LLVMBasicBlockRef case1Block = LLVMAppendBasicBlock(function, "case1");
+            LLVMBasicBlockRef case2Block = LLVMAppendBasicBlock(function, "case2");
+
+            // Add cases
+            LLVMAddCase(switchInst, LLVMConstInt(int32Type, 1, 0), case1Block);
+            LLVMAddCase(switchInst, LLVMConstInt(int32Type, 2, 0), case2Block);
+        }
 
         // return
         if (tokens.getToken().type == tt_ret) {

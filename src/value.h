@@ -32,6 +32,8 @@ public:
 
     Value enumVal(int i);
 
+    Value enumType();
+
     optional<Value> toBool();
 
     optional<Value> variadicCast();

@@ -221,6 +221,26 @@ Value Value::enumVal(int i) {
     }
 }
 
+Value Value::enumType() {
+    if (type.isRef() || type.isPtr()) {
+        Value v = *this;
+        Value lastV;
+        while (v.type.isRef() || v.type.isPtr()) {
+            lastV = v;
+            v = v.refToVal();
+        }
+        LLVMTypeRef structTypes[2];
+        structTypes[0] = LLVMInt32Type();
+        structTypes[1] = type.elemTypes[i].llvmType;
+        LLVMTypeRef realType = LLVMStructType(structTypes, 2, 0);
+        LLVMValueRef elementValue = LLVMBuildStructGEP2(builder, realType, lastV.llvmValue, 0, "extracted");
+        return Value(elementValue, nameToType["i32"].front().ref(), module, constant);
+    } else {
+        LLVMValueRef elementValue = LLVMBuildExtractValue(builder, llvmValue, 0, "extracted");
+        return Value(elementValue, nameToType["i32"].front(), module, constant);
+    }
+}
+
 optional<Value> Value::toBool() {
     Value zero = Value(LLVMConstInt(LLVMInt32Type(), 0, 0), nameToType["i32"].front(), module, true);
     optional<Value> zeroAsVal = zero.cast(type);
