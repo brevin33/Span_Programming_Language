@@ -1,3 +1,21 @@
+
+enum testenum{
+    x(i32)
+    y(i32)
+}
+
 void main(){
+    testenum e = testenum.x(3) 
+    switch e {
+        case x{
+            printf("%d\n", 1)
+        }
+        case y{
+            printf("%d\n", 8)
+        }
+        default{
+            printf("%d\n", 99)
+        }
+    }
     printf("%d\n", createTest().1)
 }

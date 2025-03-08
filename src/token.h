@@ -39,6 +39,7 @@ enum TokenType {
     tt_com,
     tt_semi,
     tt_eof,
+    tt_default,
     tt_eot,
     tt_elips,
     tt_if,
@@ -240,6 +241,10 @@ public:
                                 token.type = tt_for;
                                 break;
                             }
+                            if (str == "case") {
+                                token.type = tt_case;
+                                break;
+                            }
                             if (str == "while") {
                                 token.type = tt_while;
                                 break;
@@ -270,6 +275,10 @@ public:
                             }
                             if (str == "enum") {
                                 token.type = tt_enum;
+                                break;
+                            }
+                            if (str == "default") {
+                                token.type = tt_default;
                                 break;
                             }
                             if (str == "loop") {

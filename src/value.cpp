@@ -231,7 +231,7 @@ Value Value::enumType() {
         }
         LLVMTypeRef structTypes[2];
         structTypes[0] = LLVMInt32Type();
-        structTypes[1] = type.elemTypes[i].llvmType;
+        structTypes[1] = type.elemTypes.back().llvmType;
         LLVMTypeRef realType = LLVMStructType(structTypes, 2, 0);
         LLVMValueRef elementValue = LLVMBuildStructGEP2(builder, realType, lastV.llvmValue, 0, "extracted");
         return Value(elementValue, nameToType["i32"].front().ref(), module, constant);
