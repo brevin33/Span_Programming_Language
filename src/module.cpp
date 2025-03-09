@@ -399,8 +399,10 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                 vector<Value> vals;
                 vals.push_back(lval.value());
                 tokens.nextToken();
+                vector<TokenType> d = del;
+                d.push_back(tt_com);
                 while (true) {
-                    optional<Value> val = parseStatment({ tt_com, tt_endl }, scope);
+                    optional<Value> val = parseStatment(d, scope);
                     if (!val.has_value()) {
                         tokens.pos = start;
                         return nullopt;
@@ -410,7 +412,14 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                         tokens.nextToken();
                         continue;
                     }
-                    if (tokens.getToken().type == tt_endl) break;
+                    bool donwWithThis = false;
+                    for (int i = 0; i < del.size(); i++) {
+                        if (tokens.getToken().type == del[i]) {
+                            donwWithThis = true;
+                            break;
+                        }
+                    }
+                    if (donwWithThis) break;
                     logError("Expected a end line or a ,");
                     tokens.pos = start;
                     return nullopt;
@@ -776,14 +785,6 @@ optional<Value> Module::parseValue(Scope& scope) {
                                     tokens.pos = start;
                                     return nullopt;
                                 }
-                                LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
-                                Scope* s = &scope;
-                                while (s->parent != nullptr) {
-                                    s = s->parent;
-                                }
-                                LLVMPositionBuilderAtEnd(builder, s->blocks.front());
-                                LLVMValueRef enumAlloca = LLVMBuildAlloca(builder, LLVMArrayType(LLVMInt8Type(), str.size() + 1), "enum");
-                                LLVMPositionBuilderAtEnd(builder, curBlock);
                                 Value e = createEnum(type.value(), &val.value(), i);
                                 tokens.nextToken();
                                 return e;
@@ -1546,12 +1547,9 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                     tokens.nextToken();
                     continue;
                 }
-                if (tokens.getToken().type != tt_case) {
-                    logError("Expected case");
-                    worked = false;
-                    break;
+                if (tokens.getToken().type == tt_case) {
+                    tokens.nextToken();
                 }
-                tokens.nextToken();
                 LLVMBasicBlockRef caseBody = LLVMAppendBasicBlock(func.llvmValue, "caseBody");
                 LLVMPositionBuilderAtEnd(builder, caseBody);
                 Scope caseScope(&scope, caseBody, false);
@@ -1576,7 +1574,9 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                         break;
                     }
                     tokens.nextToken();
-                    //todo handel enum without values
+                    if (val.value().type.enumValues.size() == 0) {
+                        break;
+                    }
                     if (tokens.getToken().type != tt_lpar) {
                         logError("Expected (");
                         worked = false;
@@ -1601,20 +1601,48 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                         string varName = *tokens.getToken().data.str;
                         Variable var(varName, type.value(), this);
                         caseVars.push_back(var);
+                        tokens.nextToken();
+                        if (tokens.getToken().type != tt_com && tokens.getToken().type != tt_rpar) {
+                            logError("Expected , or )");
+                            worked = false;
+                            break;
+                        }
+                        if (tokens.getToken().type == tt_com) tokens.nextToken();
                     }
-                    if (!worked) { }
+                    if (!worked) {
+                        break;
+                    }
+                    tokens.nextToken();
+                    if (tokens.getToken().type != tt_lcur) {
+                        logError("Expected {");
+                        worked = false;
+                        break;
+                    }
                     LLVMPositionBuilderAtEnd(builder, caseBody);
                     if (caseVars.size() == 1) {
-                        if (caseVars[0].value.type != val.value().enumVal(enumIndex).type) {
+                        if (caseVars[0].value.type.actualType() != val.value().enumVal(enumIndex).type.actualType()) {
                             logError("Expected type to match enum types");
                             worked = false;
-                            implementScopeRecoverError
+                            break;
                         }
-                        //todo
+                        caseVars[0].store(val.value().enumVal(enumIndex).actualValue());
+                        caseScope.addVariable(caseVars[0]);
                     } else {
-                        //todo
+                        if (val.value().enumVal(enumIndex).type.elemTypes.size() != caseVars.size()) {
+                            logError("Expected number of variables to match number of enum values");
+                            worked = false;
+                            break;
+                        }
+                        for (int i = 0; i < val.value().enumVal(enumIndex).type.elemTypes.size(); i++) {
+                            if (caseVars[i].value.type.actualType() != val.value().enumVal(enumIndex).type.elemTypes[i].actualType()) {
+                                logError("Expected type to match enum types");
+                                worked = false;
+                                break;
+                            }
+                            caseVars[i].store(val.value().enumVal(enumIndex).structVal(i).actualValue());
+                            caseScope.addVariable(caseVars[i]);
+                        }
                     }
-                    //todo
                 } else {
                     if (tokens.getToken().type != tt_int) {
                         logError("Expected value");

@@ -1,17 +1,17 @@
 
 enum testenum{
-    x(i32)
+    x(i32, i32)
     y(i32)
 }
 
 void main(){
-    testenum e = testenum.x(3) 
+    testenum e = testenum.x(3, 4) 
     switch e {
-        case x{
-            printf("%d\n", 1)
+        x(i32 a, i32 b){
+            printf("%d %d\n", a, b)
         }
-        case y{
-            printf("%d\n", 8)
+        y(i32 a){
+            printf("%d\n", 9)
         }
         default{
             printf("%d\n", 99)
