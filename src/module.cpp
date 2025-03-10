@@ -305,7 +305,7 @@ optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma, bool sto
                 tokens.nextToken();
                 break;
             }
-            case tt_and: {
+            case tt_bitand: {
                 type = type.ref();
                 tokens.nextToken();
                 break;
@@ -442,6 +442,23 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                 }
                 Value v(myStruct, t, this, true);
                 return v;
+            }
+            case tt_lbar: {
+                tokens.nextToken();
+                optional<Value> rval = parseStatment({ tt_rbar }, scope);
+                if (!rval.has_value()) {
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                optional<Value> addVal = index(lval.value(), rval.value());
+                if (!addVal.has_value()) {
+                    logError("Can't add types of " + lval.value().type.name + " with " + rval.value().type.name);
+                    tokens.pos = start;
+                    return nullopt;
+                }
+                lval = addVal;
+                tokens.nextToken();
+                break;
             }
             case tt_add: {
                 if (prio >= 3) return lval;
@@ -1494,7 +1511,6 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 logError("Expected an int, uint, or a enum");
                 implementScopeRecoverError
             }
-            val = val.value().actualValue();
             Value switchNum;
             if (val.value().type.isEnum()) {
                 switchNum = val.value().enumType().actualValue();
@@ -1634,12 +1650,13 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                             break;
                         }
                         for (int i = 0; i < val.value().enumVal(enumIndex).type.elemTypes.size(); i++) {
-                            if (caseVars[i].value.type.actualType() != val.value().enumVal(enumIndex).type.elemTypes[i].actualType()) {
-                                logError("Expected type to match enum types");
-                                worked = false;
-                                break;
+                            optional<Value> valCast = val.value().enumVal(enumIndex).structVal(i).implCast(caseVars[i].value.type.dereference());
+                            if (!valCast.has_value()) {
+                                logError("Type of assignment and value don't match. Assignment Type: " + caseVars[i].value.type.dereference().name + " | Value Type: " + val.value().enumVal(enumIndex).structVal(i).type.name,
+                                    nullptr, true);
+                                continue;
                             }
-                            caseVars[i].store(val.value().enumVal(enumIndex).structVal(i).actualValue());
+                            caseVars[i].store(valCast.value());
                             caseScope.addVariable(caseVars[i]);
                         }
                     }
@@ -1864,13 +1881,12 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                 logError("expected an assignment operator");
                 implementScopeRecoverError
             }
-
-            optional<Value> valCast = rval.value().implCast(val.type.actualType());
+            optional<Value> valCast = rval.value().implCast(val.type.dereference());
             if (!valCast.has_value()) {
-                logError("Type of assignment and value don't match. Assignment Type: " + val.type.actualType().name + " | Value Type: " + rval.value().type.actualType().name, nullptr, true);
+                logError("Type of assignment and value don't match. Assignment Type: " + val.type.dereference().name + " | Value Type: " + rval.value().type.name, nullptr, true);
                 continue;
             }
-            val.store(valCast.value().actualValue());
+            val.store(valCast.value());
         } else {
             optional<Value> rval;
             if (tokens.getToken().type == tt_eq) {
@@ -1895,9 +1911,9 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
             for (int i = 0; i < setVals.size(); i++) {
                 Value val = setVals[i];
                 Value rsval = rval.value().structVal(i);
-                optional<Value> valCast = rsval.implCast(val.type.actualType());
+                optional<Value> valCast = rsval.implCast(val.type.dereference());
                 if (!valCast.has_value()) {
-                    logError("Type of assignment and value don't match. Assignment Type: " + val.type.actualType().name + " | Value Type: " + rsval.type.actualType().name, nullptr, true);
+                    logError("Type of assignment and value don't match. Assignment Type: " + val.type.dereference().name + " | Value Type: " + rsval.type.name, nullptr, true);
                     continue;
                 }
                 val.store(valCast.value().actualValue());

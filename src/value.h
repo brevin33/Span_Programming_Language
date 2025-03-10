@@ -48,6 +48,7 @@ private:
 private:
 };
 
+optional<Value> index(Value& lval, Value& rval);
 optional<Value> add(Value& lval, Value& rval);
 optional<Value> mul(Value& lval, Value& rval);
 optional<Value> div(Value& lval, Value& rval);

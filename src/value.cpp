@@ -103,6 +103,12 @@ optional<Value> Value::implCast(Type& type) {
             return v;
         }
     }
+    if (type.isPtr() && v.type.isPtr()) {
+        if (v.type.dereference().actualType().name == "void") {
+            v.type = type;
+            return v;
+        }
+    }
     if (type.isStruct()) {
         if (type.elemNames.size() != v.type.elemNames.size()) {
             return nullopt;
@@ -179,7 +185,7 @@ Value Value::refToVal() {
 Value Value::actualValue() {
     Value v = *this;
     while (v.type.isRef()) {
-        v = refToVal();
+        v = v.refToVal();
     }
     return v;
 }
@@ -400,6 +406,25 @@ void castNumberForBiop(Value& lval, Value& rval) {
     return;
 }
 
+optional<Value> index(Value& lval, Value& rval) {
+    Value l = lval.actualValue();
+    Value r = rval.actualValue();
+    if (l.type.isPtr() && (r.type.isInt() || r.type.isUInt())) {
+        LLVMValueRef val;
+        val = LLVMBuildGEP2(builder, l.type.dereference().actualType().llvmType, l.llvmValue, &r.llvmValue, 1, "index");
+        return Value(val, l.type.dereference(), l.module, l.constant && r.constant);
+    }
+    vector<Function>& funcs = nameToFunction["index"];
+    for (int i = 0; i < funcs.size(); i++) {
+        // TODO
+        assert(false);
+        Function& func = funcs[i];
+        if (func.paramNames.size() != 2) continue;
+        if (func.paramTypes[0] == lval.type && func.paramTypes[1] == rval.type) return func.call({ lval, rval }, activeModule);
+    }
+    return nullopt;
+}
+
 optional<Value> add(Value& lval, Value& rval) {
     Value l = lval.actualValue();
     Value r = rval.actualValue();
@@ -596,14 +621,16 @@ Value as(Value& lval, Type& rval) {
     Value l = lval.actualValue();
     int rbitsize = LLVMSizeOfTypeInBits(LLVMGetModuleDataLayout(activeModule->llvmModule), rval.llvmType);
     int lbitsize = LLVMSizeOfTypeInBits(LLVMGetModuleDataLayout(activeModule->llvmModule), lval.type.llvmType);
-    if (lbitsize < rbitsize) {
-        l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, LLVMIntType(lbitsize), "toint");
-        l.llvmValue = LLVMBuildZExt(builder, l.llvmValue, rval.llvmType, "upcast");
-    } else {
-        l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, LLVMIntType(lbitsize), "toint");
-        l.llvmValue = LLVMBuildTrunc(builder, l.llvmValue, rval.llvmType, "downcast");
+    if (!(l.type.isPtr() && rval.isPtr())) {
+        if (lbitsize < rbitsize) {
+            l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, LLVMIntType(lbitsize), "toint");
+            l.llvmValue = LLVMBuildZExt(builder, l.llvmValue, rval.llvmType, "upcast");
+        } else {
+            l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, LLVMIntType(lbitsize), "toint");
+            l.llvmValue = LLVMBuildTrunc(builder, l.llvmValue, rval.llvmType, "downcast");
+        }
+        l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, rval.llvmType, "bitcast");
     }
-    l.llvmValue = LLVMBuildBitCast(builder, l.llvmValue, rval.llvmType, "bitcast");
     l.type = rval;
     return l;
 }

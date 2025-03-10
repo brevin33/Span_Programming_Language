@@ -172,7 +172,7 @@ Type Type::dereference() {
 }
 
 Type Type::ptr() {
-    LLVMTypeRef ref = LLVMPointerType(llvmType, 0);
+    LLVMTypeRef ref = LLVMPointerType(LLVMInt32Type(), 0);
     string newName = name + '*';
     Type t = *this;
     t.name = newName;
