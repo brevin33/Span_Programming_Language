@@ -529,7 +529,6 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                 break;
             }
             case tt_dot: {
-                if (prio >= 7) return lval;
                 tokens.nextToken();
                 if (tokens.getToken().type != tt_id && tokens.getToken().type != tt_int) {
                     logError("Expected method or member");
@@ -542,8 +541,14 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                     str = to_string(tokens.getToken().data.uint);
                 tokens.nextToken();
                 if (tokens.getToken().type == tt_lpar) {
-                    // TODO
-                    assert(false);
+                    // method
+                    str = lval.value().type.actualType().name + "." + str;
+                    optional<Value> val = parseFunctionCall(str, scope, &lval.value());
+                    if (!val.has_value()) {
+                        tokens.pos = start;
+                        return nullopt;
+                    }
+                    lval = val;
                 } else {
                     bool found = false;
                     for (int i = 0; i < lval.value().type.elemNames.size(); i++) {
@@ -949,7 +954,7 @@ optional<Value> Module::parseValue(Scope& scope) {
     return nullopt;
 }
 
-optional<Value> Module::parseFunctionCall(string& name, Scope& scope) {
+optional<Value> Module::parseFunctionCall(string& name, Scope& scope, Value* caller) {
 
     tokens.lastToken();
     Token funcNameToken = tokens.getToken();
@@ -957,6 +962,9 @@ optional<Value> Module::parseFunctionCall(string& name, Scope& scope) {
 
     TokenPositon start = tokens.pos;
     vector<Value> vals;
+    if (caller != nullptr) {
+        vals.push_back(*caller);
+    }
     assert(tokens.getToken().type == tt_lpar);
     tokens.nextToken();
     if (tokens.getToken().type != tt_rpar) {
@@ -1056,8 +1064,18 @@ Function* Module::prototypeFunction(TokenPositon start) {
     optional<Type> type = typeFromTokens();
     if (!type.has_value()) return nullptr;
 
+    optional<Type> methodType = typeFromTokens(false);
+    if (methodType.has_value()) {
+        if (tokens.getToken().type != tt_dot) {
+            logError("Expected a dot . after a Type to make a method");
+            return nullptr;
+        } else {
+            tokens.nextToken();
+        }
+    }
     assert(tokens.getToken().type == tt_id);
     string funcName = *tokens.getToken().data.str;
+    if (methodType.has_value()) funcName = methodType.value().name + "." + funcName;
     tokens.nextToken();
 
     assert(tokens.getToken().type == tt_lpar);
@@ -1065,6 +1083,10 @@ Function* Module::prototypeFunction(TokenPositon start) {
 
     vector<Type> paramTypes;
     vector<string> paramNames;
+    if (methodType.has_value()) {
+        paramTypes.push_back(methodType.value());
+        paramNames.push_back("this");
+    }
     bool variadicArgs = false;
     if (tokens.getToken().type != tt_rpar) {
         while (true) {
@@ -1116,9 +1138,9 @@ Function* Module::prototypeFunction(TokenPositon start) {
             return nullptr;
         }
         hasMain = true;
-        nameToFunction[funcName].push_back(Function(nameToType["i32"].front(), funcName, paramTypes, paramNames, this, variadicArgs, external));
+        nameToFunction[funcName].push_back(Function(nameToType["i32"].front(), funcName, paramTypes, paramNames, this, variadicArgs, external, methodType));
     } else {
-        nameToFunction[funcName].push_back(Function(type.value(), funcName, paramTypes, paramNames, this, variadicArgs, external));
+        nameToFunction[funcName].push_back(Function(type.value(), funcName, paramTypes, paramNames, this, variadicArgs, external, methodType));
     }
     return &nameToFunction[funcName].back();
 }
@@ -1943,6 +1965,16 @@ void Module::implementFunction(TokenPositon start, Function& func) {
     func.entry = entry;
     LLVMPositionBuilderAtEnd(builder, entry);
     func.scope.addBlock(body);
+    if (func.methodOfType.has_value() && func.methodOfType.value().isStruct()) {
+        for (int i = 0; i < func.methodOfType.value().elemNames.size(); i++) {
+            Variable var(func.methodOfType.value().elemNames[i], func.methodOfType.value().elemTypes[i], func.getParamValue(0).structVal(i), this);
+            bool worked = func.scope.addVariable(var);
+            if (!worked) {
+                logError("Two parameters have the same name", nullptr, true);
+                return;
+            }
+        }
+    }
     for (int j = 0; j < func.paramNames.size(); j++) {
         Variable var(func.paramNames[j], func.paramTypes[j], func.getParamValue(j), this);
         bool worked = func.scope.addVariable(var);
@@ -2051,7 +2083,18 @@ string Module::dirName() {
 bool Module::looksLikeFunction() {
     TokenPositon start = tokens.pos;
     if (!looksLikeType()) return false;
-    if (tokens.getToken().type != tt_id) return false;
+    TokenPositon typeEnd = tokens.pos;
+    if (looksLikeType()) {
+        if (tokens.getToken().type != tt_dot) {
+            tokens.pos = typeEnd;
+        } else {
+            tokens.nextToken();
+        }
+    }
+    if (tokens.getToken().type != tt_id) {
+        tokens.pos = start;
+        return false;
+    }
     tokens.nextToken();
     if (tokens.getToken().type != tt_lpar) {
         tokens.pos = start;

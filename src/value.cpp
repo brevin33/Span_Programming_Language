@@ -414,6 +414,17 @@ optional<Value> index(Value& lval, Value& rval) {
         val = LLVMBuildGEP2(builder, l.type.dereference().actualType().llvmType, l.llvmValue, &r.llvmValue, 1, "index");
         return Value(val, l.type.dereference(), l.module, l.constant && r.constant);
     }
+    if (l.type.isVec() && (r.type.isInt() || r.type.isUInt())) {
+        if (lval.type.isRef()) {
+            LLVMValueRef val;
+            val = LLVMBuildGEP2(builder, lval.type.dereference().vecOfType().llvmType, lval.llvmValue, &r.llvmValue, 1, "index");
+            return Value(val, lval.type.dereference().vecOfType().ref(), l.module, l.constant && r.constant);
+        } else {
+            LLVMValueRef val;
+            val = LLVMBuildExtractElement(builder, l.llvmValue, r.llvmValue, "index");
+            return Value(val, lval.type.vecOfType(), l.module, l.constant && r.constant);
+        }
+    }
     vector<Function>& funcs = nameToFunction["index"];
     for (int i = 0; i < funcs.size(); i++) {
         // TODO

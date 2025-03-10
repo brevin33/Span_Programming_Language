@@ -45,6 +45,8 @@ public:
 
     Type vec(u64 num);
 
+    Type vecOfType();
+
     u64 getNumberWidth();
 
     u64 getBitWidth();

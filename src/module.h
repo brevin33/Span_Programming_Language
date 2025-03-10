@@ -53,7 +53,7 @@ private:
 
     optional<Value> parseValue(Scope& scope);
 
-    optional<Value> Module::parseFunctionCall(string& name, Scope& scope);
+    optional<Value> Module::parseFunctionCall(string& name, Scope& scope, Value* caller = nullptr);
 
     Function* prototypeFunction(TokenPositon start);
 

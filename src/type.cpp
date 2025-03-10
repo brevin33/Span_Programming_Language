@@ -84,6 +84,17 @@ Type::Type(const string& name, Module* module) {
                 baseType = baseType.ref();
                 break;
             }
+            case '[': {
+                i++;
+                int num = 0;
+                while (name[i] != ']') {
+                    num *= 10;
+                    num += name[i] - '0';
+                    i++;
+                }
+                baseType = baseType.vec(num);
+                break;
+            }
             default: {
                 assert(false);
             }
@@ -193,6 +204,17 @@ Type Type::vec(u64 num) {
     LLVMTypeRef ref = LLVMVectorType(llvmType, num);
     string newName = name + '[' + to_string(num) + ']';
     return Type(ref, newName, module);
+}
+
+Type Type::vecOfType() {
+    assert(isVec());
+    Type t = *this;
+    while (t.name.back() != '[') {
+        t.name.pop_back();
+    }
+    t.name.pop_back();
+    t.llvmType = LLVMGetElementType(llvmType);
+    return t;
 }
 
 u64 Type::getNumberWidth() {

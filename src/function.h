@@ -11,7 +11,7 @@ class Function {
 public:
     Function();
 
-    Function(const Type& returnType, const string& name, const vector<Type>& paramTypes, const vector<string> paramNames, Module* module, bool variadic, bool external);
+    Function(const Type& returnType, const string& name, const vector<Type>& paramTypes, const vector<string> paramNames, Module* module, bool variadic, bool external, optional<Type> methodOfType);
 
     Value getParamValue(int paramNumber);
 
@@ -31,6 +31,7 @@ public:
     bool variadic;
     bool external;
     std::unordered_map<u64, LLVMValueRef> moduleToFunc;
+    optional<Type> methodOfType;
 
 private:
     Module* module;
