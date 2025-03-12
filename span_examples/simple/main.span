@@ -7,6 +7,7 @@ struct test{
 }
 
 i32 test.getX(){
+    x = 3
     return y
 }
 
@@ -16,6 +17,6 @@ void main(){
     u8[100] b
     i32 i = 8
     b[i] = t.getX() 
-    a[i] = 1
+    a[i] = t.x
     printf("%d %d\n", a[i], b[i])
 }

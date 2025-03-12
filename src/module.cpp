@@ -1398,6 +1398,386 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
             return true;
         }
 
+        //for
+        if (tokens.getToken().type == tt_for) {
+            LLVMBasicBlockRef merge_block = LLVMAppendBasicBlock(func.llvmValue, "merge");
+            scope.addBlock(merge_block);
+            tokens.nextToken();
+            LLVMBasicBlockRef whileStart = LLVMAppendBasicBlock(func.llvmValue, "whileStart");
+            LLVMBasicBlockRef whileCon = LLVMAppendBasicBlock(func.llvmValue, "whileCon");
+            LLVMBasicBlockRef whileBody = LLVMAppendBasicBlock(func.llvmValue, "whileBody");
+            LLVMBasicBlockRef whileAfter = LLVMAppendBasicBlock(func.llvmValue, "whileAfter");
+
+            Scope whileScope(&scope, whileAfter, true);
+            whileScope.addBlock(whileStart);
+            whileScope.addBlock(whileCon);
+            whileScope.addBlock(whileBody);
+
+            LLVMBuildBr(builder, whileStart);
+            LLVMPositionBuilderAtEnd(builder, whileStart);
+
+            // really bad close this tab
+            // is setting value
+            {
+                vector<Value> setVals;
+                bool worked = true;
+                while (true) {
+                    optional<Type> type = typeFromTokens(false);
+                    if (type.has_value()) {
+                        // type
+                        if (tokens.getToken().type != tt_id) {
+                            logError("Expected variable name");
+                            worked = false;
+                            break;
+                        }
+                        string varName = *tokens.getToken().data.str;
+                        LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
+                        LLVMPositionBuilderAtEnd(builder, func.entry);
+                        bool worked = scope.addVariable(Variable(varName, type.value(), this));
+                        LLVMPositionBuilderAtEnd(builder, curBlock);
+                        if (!worked) {
+                            logError("Already have a variable with this name in scope");
+                            worked = false;
+                            break;
+                        }
+                        Variable* var = scope.getVariableFromName(varName).value();
+                        Value val = var->value;
+                        setVals.push_back(val);
+                        tokens.nextToken();
+                    } else {
+                        // statment
+                        optional<Value> val = parseStatment({ tt_eq, tt_addeq, tt_subeq, tt_muleq, tt_diveq, tt_endl, tt_com }, scope);
+                        if (!val.has_value()) {
+                            worked = false;
+                            break;
+                        }
+                        setVals.push_back(val.value());
+                    }
+                    if (tokens.getToken().type == tt_com) {
+                        tokens.nextToken();
+                        continue;
+                    }
+                    break;
+                }
+                if (!worked) {
+                    implementScopeRecoverError
+                }
+                if (tokens.getToken().type == tt_endl) continue;
+                for (int i = 0; i < setVals.size(); i++) {
+                    Value val = setVals[i];
+                    if (!val.type.isRef()) {
+                        logError("Can't assign to a value on lhs", nullptr, true);
+                        implementScopeRecoverError
+                    }
+                }
+
+                if (setVals.size() == 1) {
+                    optional<Value> rval;
+                    Value val = setVals[0];
+                    if (tokens.getToken().type == tt_addeq) {
+                        Token opEq = tokens.getToken();
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_semi }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                        optional<Value> newVal = add(val, rval.value());
+                        if (!newVal.has_value()) {
+                            logError("Can't add types of " + val.type.name + " with " + rval.value().type.name, &opEq);
+                            implementScopeRecoverError
+                        }
+                        rval = newVal;
+                    } else if (tokens.getToken().type == tt_subeq) {
+                        Token opEq = tokens.getToken();
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_semi }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                        optional<Value> newVal = sub(val, rval.value());
+                        if (!newVal.has_value()) {
+                            logError("Can't sub types of " + val.type.name + " with " + rval.value().type.name, &opEq);
+                            implementScopeRecoverError
+                        }
+                        rval = newVal;
+                    } else if (tokens.getToken().type == tt_muleq) {
+                        Token opEq = tokens.getToken();
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_semi }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                        optional<Value> newVal = mul(val, rval.value());
+                        if (!newVal.has_value()) {
+                            logError("Can't mul types of " + val.type.name + " with " + rval.value().type.name, &opEq);
+                            implementScopeRecoverError
+                        }
+                        rval = newVal;
+                    } else if (tokens.getToken().type == tt_diveq) {
+                        Token opEq = tokens.getToken();
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_semi }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                        optional<Value> newVal = div(val, rval.value());
+                        if (!newVal.has_value()) {
+                            logError("Can't div types of " + val.type.name + " with " + rval.value().type.name, &opEq);
+                            implementScopeRecoverError
+                        }
+                        rval = newVal;
+                    } else if (tokens.getToken().type == tt_eq) {
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_semi }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                    } else {
+                        logError("expected an assignment operator");
+                        implementScopeRecoverError
+                    }
+                    optional<Value> valCast = rval.value().implCast(val.type.dereference());
+                    if (!valCast.has_value()) {
+                        logError("Type of assignment and value don't match. Assignment Type: " + val.type.dereference().name + " | Value Type: " + rval.value().type.name, nullptr, true);
+                        continue;
+                    }
+                    val.store(valCast.value());
+                } else {
+                    optional<Value> rval;
+                    if (tokens.getToken().type == tt_eq) {
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_semi }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                    } else {
+                        logError("expected an assignment operator");
+                        implementScopeRecoverError
+                    }
+                    if (!rval.value().type.isStruct()) {
+                        logError("multiple assignment only work with a struct on the right hand side");
+                        implementScopeRecoverError
+                    }
+                    if (setVals.size() != rval.value().type.elemNames.size()) {
+                        logError("right hand side struct contains " + to_string(rval.value().type.elemNames.size()) + " values when setting " + to_string(setVals.size()) + " values", nullptr, true);
+                        implementScopeRecoverError
+                    }
+
+                    for (int i = 0; i < setVals.size(); i++) {
+                        Value val = setVals[i];
+                        Value rsval = rval.value().structVal(i);
+                        optional<Value> valCast = rsval.implCast(val.type.dereference());
+                        if (!valCast.has_value()) {
+                            logError("Type of assignment and value don't match. Assignment Type: " + val.type.dereference().name + " | Value Type: " + rsval.type.name, nullptr, true);
+                            continue;
+                        }
+                        val.store(valCast.value().actualValue());
+                    }
+                }
+            }
+            tokens.nextToken();
+
+            LLVMBuildBr(builder, whileCon);
+            LLVMPositionBuilderAtEnd(builder, whileCon);
+            optional<Value> branchVal = parseStatment({ tt_semi }, scope);
+            if (!branchVal.has_value()) {
+                implementScopeRecoverError
+            }
+            tokens.nextToken();
+
+            LLVMPositionBuilderAtEnd(builder, whileAfter);
+            {
+                vector<Value> setVals;
+                bool worked = true;
+                while (true) {
+                    optional<Type> type = typeFromTokens(false);
+                    if (type.has_value()) {
+                        // type
+                        if (tokens.getToken().type != tt_id) {
+                            logError("Expected variable name");
+                            worked = false;
+                            break;
+                        }
+                        string varName = *tokens.getToken().data.str;
+                        LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
+                        LLVMPositionBuilderAtEnd(builder, func.entry);
+                        bool worked = scope.addVariable(Variable(varName, type.value(), this));
+                        LLVMPositionBuilderAtEnd(builder, curBlock);
+                        if (!worked) {
+                            logError("Already have a variable with this name in scope");
+                            worked = false;
+                            break;
+                        }
+                        Variable* var = scope.getVariableFromName(varName).value();
+                        Value val = var->value;
+                        setVals.push_back(val);
+                        tokens.nextToken();
+                    } else {
+                        // statment
+                        optional<Value> val = parseStatment({ tt_eq, tt_addeq, tt_subeq, tt_muleq, tt_diveq, tt_endl, tt_com }, scope);
+                        if (!val.has_value()) {
+                            worked = false;
+                            break;
+                        }
+                        setVals.push_back(val.value());
+                    }
+                    if (tokens.getToken().type == tt_com) {
+                        tokens.nextToken();
+                        continue;
+                    }
+                    break;
+                }
+                if (!worked) {
+                    implementScopeRecoverError
+                }
+                if (tokens.getToken().type == tt_endl) continue;
+                for (int i = 0; i < setVals.size(); i++) {
+                    Value val = setVals[i];
+                    if (!val.type.isRef()) {
+                        logError("Can't assign to a value on lhs", nullptr, true);
+                        implementScopeRecoverError
+                    }
+                }
+
+                if (setVals.size() == 1) {
+                    optional<Value> rval;
+                    Value val = setVals[0];
+                    if (tokens.getToken().type == tt_addeq) {
+                        Token opEq = tokens.getToken();
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_lcur }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                        optional<Value> newVal = add(val, rval.value());
+                        if (!newVal.has_value()) {
+                            logError("Can't add types of " + val.type.name + " with " + rval.value().type.name, &opEq);
+                            implementScopeRecoverError
+                        }
+                        rval = newVal;
+                    } else if (tokens.getToken().type == tt_subeq) {
+                        Token opEq = tokens.getToken();
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_lcur }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                        optional<Value> newVal = sub(val, rval.value());
+                        if (!newVal.has_value()) {
+                            logError("Can't sub types of " + val.type.name + " with " + rval.value().type.name, &opEq);
+                            implementScopeRecoverError
+                        }
+                        rval = newVal;
+                    } else if (tokens.getToken().type == tt_muleq) {
+                        Token opEq = tokens.getToken();
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_lcur }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                        optional<Value> newVal = mul(val, rval.value());
+                        if (!newVal.has_value()) {
+                            logError("Can't mul types of " + val.type.name + " with " + rval.value().type.name, &opEq);
+                            implementScopeRecoverError
+                        }
+                        rval = newVal;
+                    } else if (tokens.getToken().type == tt_diveq) {
+                        Token opEq = tokens.getToken();
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_lcur }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                        optional<Value> newVal = div(val, rval.value());
+                        if (!newVal.has_value()) {
+                            logError("Can't div types of " + val.type.name + " with " + rval.value().type.name, &opEq);
+                            implementScopeRecoverError
+                        }
+                        rval = newVal;
+                    } else if (tokens.getToken().type == tt_eq) {
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_lcur }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                    } else {
+                        logError("expected an assignment operator");
+                        implementScopeRecoverError
+                    }
+                    optional<Value> valCast = rval.value().implCast(val.type.dereference());
+                    if (!valCast.has_value()) {
+                        logError("Type of assignment and value don't match. Assignment Type: " + val.type.dereference().name + " | Value Type: " + rval.value().type.name, nullptr, true);
+                        continue;
+                    }
+                    val.store(valCast.value());
+                } else {
+                    optional<Value> rval;
+                    if (tokens.getToken().type == tt_eq) {
+                        tokens.nextToken();
+                        rval = parseStatment({ tt_lcur }, scope);
+                        if (!rval.has_value()) {
+                            implementScopeRecoverError
+                        }
+                    } else {
+                        logError("expected an assignment operator");
+                        implementScopeRecoverError
+                    }
+                    if (!rval.value().type.isStruct()) {
+                        logError("multiple assignment only work with a struct on the right hand side");
+                        implementScopeRecoverError
+                    }
+                    if (setVals.size() != rval.value().type.elemNames.size()) {
+                        logError("right hand side struct contains " + to_string(rval.value().type.elemNames.size()) + " values when setting " + to_string(setVals.size()) + " values", nullptr, true);
+                        implementScopeRecoverError
+                    }
+
+                    for (int i = 0; i < setVals.size(); i++) {
+                        Value val = setVals[i];
+                        Value rsval = rval.value().structVal(i);
+                        optional<Value> valCast = rsval.implCast(val.type.dereference());
+                        if (!valCast.has_value()) {
+                            logError("Type of assignment and value don't match. Assignment Type: " + val.type.dereference().name + " | Value Type: " + rsval.type.name, nullptr, true);
+                            continue;
+                        }
+                        val.store(valCast.value().actualValue());
+                    }
+                }
+            }
+
+            LLVMBuildBr(builder, whileCon);
+
+
+            LLVMPositionBuilderAtEnd(builder, whileCon);
+
+            optional<Value> val = branchVal.value().actualValue();
+            Value zero = Value(LLVMConstInt(LLVMInt32Type(), 0, 0), nameToType["i32"].front(), this, true);
+            optional<Value> zeroAsVal = zero.cast(val.value().type);
+            if (!zeroAsVal.has_value() || (!zeroAsVal.value().type.isNumber())) {
+                logError("Expected if statment to have a bool or number as value");
+                implementScopeRecoverError
+            }
+            LLVMValueRef condition;
+            if (zeroAsVal.value().type.isFloat()) {
+                condition = LLVMBuildFCmp(builder, LLVMRealONE, zeroAsVal.value().llvmValue, val.value().llvmValue, "cmp");
+            } else {
+                condition = LLVMBuildICmp(builder, LLVMIntNE, zeroAsVal.value().llvmValue, val.value().llvmValue, "cmp");
+            }
+            LLVMBuildCondBr(builder, condition, whileBody, merge_block);
+
+            LLVMPositionBuilderAtEnd(builder, whileBody);
+            bool scopedBreaks = implementScope(tokens.pos, whileScope, func);
+            if (!scopedBreaks) LLVMBuildBr(builder, whileAfter);
+
+            assert(tokens.getToken().type == tt_rcur);
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_endl) {
+                logError("Nothing else should be on same line as }");
+                implementScopeRecoverError
+            }
+            LLVMPositionBuilderAtEnd(builder, merge_block);
+            continue;
+        }
+
 
         //while
         if (tokens.getToken().type == tt_while) {

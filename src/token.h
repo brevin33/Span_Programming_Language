@@ -509,6 +509,10 @@ public:
                                 token.echar = c;
                                 break;
                             }
+                            if (c + 1 < line.size() && line[c + 1] == '/') {
+                                c = line.size();
+                                continue;
+                            }
                             token.type = tt_div;
                             token.echar = c;
                             break;
