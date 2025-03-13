@@ -27,6 +27,7 @@ enum TokenType {
     tt_leeq,
     tt_greq,
     tt_gr,
+    tt_in,
     tt_neq,
     tt_for,
     tt_while,
@@ -223,6 +224,10 @@ public:
                             }
                             if (str == "if") {
                                 token.type = tt_if;
+                                break;
+                            }
+                            if (str == "in") {
+                                token.type = tt_in;
                                 break;
                             }
                             if (str == "else") {
