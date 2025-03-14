@@ -1424,7 +1424,127 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
             }
             tokens.pos = before;
             if (inForLoop) {
+                optional<Type> type = typeFromTokens();
+                if (tokens.getToken().type != tt_id) {
+                    logError("Expected variable name");
+                    implementScopeRecoverError
+                }
+                string varName = *tokens.getToken().data.str;
+                Value val;
+                if (type.has_value()) {
+                    if (type.value().isInt() || type.value().isUInt()) {
+                    } else {
+                        logError("must be int or uint");
+                        implementScopeRecoverError
+                    }
+                    LLVMBasicBlockRef curBlock = LLVMGetInsertBlock(builder);
+                    LLVMPositionBuilderAtEnd(builder, func.entry);
+                    bool worked = scope.addVariable(Variable(varName, type.value(), this));
+                    LLVMPositionBuilderAtEnd(builder, curBlock);
+                    if (!worked) {
+                        logError("failed to add varible");
+                        worked = false;
+                        implementScopeRecoverError
+                    }
+                    Variable* var = scope.getVariableFromName(varName).value();
+                    val = var->value;
+                } else {
+                    // todo: for pre existing variable
+                }
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_in) {
+                    logError("Expected in");
+                    implementScopeRecoverError
+                }
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_int) {
+                    logError("Expected int");
+                    implementScopeRecoverError
+                }
+                u64 start = tokens.getToken().data.uint;
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_elips && tokens.getToken().type != tt_elipseq) {
+                    logError("Expected ...");
+                    implementScopeRecoverError
+                }
+                bool includeEnd = tokens.getToken().type == tt_elipseq;
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_int) {
+                    logError("Expected int");
+                    implementScopeRecoverError
+                }
+                u64 end = tokens.getToken().data.uint;
+                tokens.nextToken();
+                if (tokens.getToken().type != tt_lcur) {
+                    logError("Expected {");
+                    implementScopeRecoverError
+                }
+                LLVMPositionBuilderAtEnd(builder, whileStart);
+                Variable* var = scope.getVariableFromName(varName).value();
+                var->value.type.getBitWidth();
+                Value startv = Value(LLVMConstInt(LLVMInt32Type(), start, 0), nameToType["i32"].front(), this, true);
+                optional<Value> startAsVal = startv.cast(var->value.type.dereference());
+                var->store(startAsVal.value());
+                LLVMBuildBr(builder, whileCon);
 
+                LLVMPositionBuilderAtEnd(builder, whileCon);
+                val = val.refToVal();
+                if (!startAsVal.has_value() || (!startAsVal.value().type.isNumber())) {
+                    logError("Expected if statment to have a bool or number as value");
+                    implementScopeRecoverError
+                }
+                LLVMValueRef condition;
+                Value endv = Value(LLVMConstInt(LLVMInt32Type(), end, 0), nameToType["i32"].front(), this, true);
+                optional<Value> endAsVal = endv.cast(var->value.type.dereference());
+                if (startAsVal.value().type.isFloat()) {
+                    if (includeEnd) {
+                        if (start < end) {
+                            condition = LLVMBuildFCmp(builder, LLVMRealOLE, endAsVal.value().llvmValue, val.llvmValue, "cmp");
+                        } else {
+                            condition = LLVMBuildFCmp(builder, LLVMRealOGT, endAsVal.value().llvmValue, val.llvmValue, "cmp");
+                        }
+                    } else {
+                        if (start < end) {
+                            condition = LLVMBuildFCmp(builder, LLVMRealOLT, endAsVal.value().llvmValue, val.llvmValue, "cmp");
+                        } else {
+                            condition = LLVMBuildFCmp(builder, LLVMRealOGE, endAsVal.value().llvmValue, val.llvmValue, "cmp");
+                        }
+                    }
+                } else {
+                    if (includeEnd) {
+                        if (start < end) {
+                            condition = LLVMBuildICmp(builder, LLVMIntSLE, endAsVal.value().llvmValue, val.llvmValue, "cmp");
+                        } else {
+                            condition = LLVMBuildICmp(builder, LLVMIntSGT, endAsVal.value().llvmValue, val.llvmValue, "cmp");
+                        }
+                    } else {
+                        if (start < end) {
+                            condition = LLVMBuildICmp(builder, LLVMIntSLT, endAsVal.value().llvmValue, val.llvmValue, "cmp");
+                        } else {
+                            condition = LLVMBuildICmp(builder, LLVMIntSGE, endAsVal.value().llvmValue, val.llvmValue, "cmp");
+                        }
+                    }
+                }
+                LLVMBuildCondBr(builder, condition, merge_block, whileBody);
+
+                LLVMPositionBuilderAtEnd(builder, whileAfter);
+                val = var->value;
+                val = val.refToVal();
+                i64 inc;
+                if (start < end) {
+                    inc = 1;
+                } else {
+                    inc = -1;
+                }
+                Value one = Value(inc, this);
+                optional<Value> valAddOpt = add(val, one);
+                if (!valAddOpt.has_value()) {
+                    logError("Failed to add values");
+                    implementScopeRecoverError
+                }
+                Value valAdd = valAddOpt.value();
+                var->store(valAdd);
+                LLVMBuildBr(builder, whileCon);
             } else {
 
                 // really bad close this tab

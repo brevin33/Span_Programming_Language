@@ -1,21 +1,8 @@
 int printf(char* text, ...)
 
 void main(){
-	int i = 0
-	while (i <= 100){
-		// can coninue out of multiple loops
-		while true{
-			printf("%d\n", i)
-			i += 2.4 to int 
-			continue 2
-		}
+	for int j in 100 ..= 0 {
+		printf("%d\n", j)
 	}
-
-	for int j = 0; j < 100; j += 1 {
-		// can also break out of multiple scopes
-		while true{
-			printf("%d\n", j)
-			break 1
-		}
-	}
+	printf("end")
 }

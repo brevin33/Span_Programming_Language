@@ -54,6 +54,7 @@ enum TokenType {
     tt_subeq,
     tt_muleq,
     tt_struct,
+    tt_elipseq,
     tt_diveq,
     tt_enum,
     tt_switch,
@@ -374,6 +375,12 @@ public:
                                     c += 2;
                                     token.echar = c;
                                     token.type = tt_elips;
+                                    break;
+                                }
+                                if (c + 2 < line.size() && line[c + 2] == '=') {
+                                    c += 2;
+                                    token.echar = c;
+                                    token.type = tt_elipseq;
                                     break;
                                 }
                             }
