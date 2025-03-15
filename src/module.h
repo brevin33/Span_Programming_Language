@@ -61,15 +61,15 @@ private:
 
     void prototypeEnum(TokenPositon start);
 
-    bool implementType(typeStartAndTypetype start, bool secondPass = false);
+    bool implementType(typeStartAndTypetype start, bool secondPass = false, const vector<Type>& templateTypes = {});
 
-    bool implementStruct(TokenPositon start, bool secondPass = false);
+    bool implementStruct(TokenPositon start, bool secondPass = false, const vector<Type>& templateTypes = {});
 
-    bool implementEnum(TokenPositon start, bool secondPass = false);
+    bool implementEnum(TokenPositon start, bool secondPass = false, const vector<Type>& templateTypes = {});
 
     bool typeFromTokensIsPtr();
 
-    void implementFunction(TokenPositon start, Function& func);
+    void implementFunction(TokenPositon start, Function& func, const vector<Type>& templateTypes = {});
 
     bool implementScope(TokenPositon start, Scope& scope, Function& func);
 

@@ -772,6 +772,10 @@ optional<Value> Module::parseValue(Scope& scope) {
                 }
                 string str = *tokens.getToken().data.str;
                 tokens.nextToken();
+                if (str == "size") {
+                    u64 size = type.value().getBitWidth() / 8;
+                    return Value(size, this);
+                }
                 if (type.value().isEnum()) {
                     TokenPositon enumStart = tokens.pos;
                     // enum ops
@@ -1153,11 +1157,11 @@ void Module::prototypeEnum(TokenPositon start) {
     return;
 }
 
-bool Module::implementType(typeStartAndTypetype start, bool secondPass) {
+bool Module::implementType(typeStartAndTypetype start, bool secondPass, const vector<Type>& templateTypes) {
     if (start.isStruct) {
-        return implementStruct(start.pos, secondPass);
+        return implementStruct(start.pos, secondPass, templateTypes);
     } else {
-        return implementEnum(start.pos, secondPass);
+        return implementEnum(start.pos, secondPass, templateTypes);
     }
     return false;
 }
@@ -1170,7 +1174,7 @@ void Module::prototypeStruct(TokenPositon start) {
     return;
 }
 
-bool Module::implementEnum(TokenPositon start, bool secondPass) {
+bool Module::implementEnum(TokenPositon start, bool secondPass, const vector<Type>& templateTypes) {
     tokens.pos = start;
     assert(tokens.getToken().type == tt_enum);
     tokens.nextToken();
@@ -1243,7 +1247,7 @@ bool Module::implementEnum(TokenPositon start, bool secondPass) {
     return true;
 }
 
-bool Module::implementStruct(TokenPositon start, bool secondPass) {
+bool Module::implementStruct(TokenPositon start, bool secondPass, const vector<Type>& templateTypes) {
     tokens.pos = start;
     assert(tokens.getToken().type == tt_struct);
     tokens.nextToken();
@@ -1457,93 +1461,88 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
                     implementScopeRecoverError
                 }
                 tokens.nextToken();
-                if (tokens.getToken().type != tt_int) {
+                LLVMPositionBuilderAtEnd(builder, whileStart);
+                optional<Value> start = parseStatment({ tt_elips, tt_elipseq }, scope);
+                if (!start.has_value()) {
+                    logError("Failed to parse start of for loop");
+                    implementScopeRecoverError
+                }
+                if (!start.value().type.actualType().isInt() && !start.value().type.actualType().isUInt()) {
                     logError("Expected int");
                     implementScopeRecoverError
                 }
-                u64 start = tokens.getToken().data.uint;
-                tokens.nextToken();
+                Variable* var = scope.getVariableFromName(varName).value();
+                optional<Value> startAsVal = start.value().actualValue().cast(var->value.type.dereference());
+                var->store(startAsVal.value());
                 if (tokens.getToken().type != tt_elips && tokens.getToken().type != tt_elipseq) {
-                    logError("Expected ...");
+                    logError("Expected ... or ..=");
                     implementScopeRecoverError
                 }
                 bool includeEnd = tokens.getToken().type == tt_elipseq;
                 tokens.nextToken();
-                if (tokens.getToken().type != tt_int) {
-                    logError("Expected int");
-                    implementScopeRecoverError
-                }
-                u64 end = tokens.getToken().data.uint;
-                tokens.nextToken();
-                if (tokens.getToken().type != tt_lcur) {
-                    logError("Expected {");
-                    implementScopeRecoverError
-                }
-                LLVMPositionBuilderAtEnd(builder, whileStart);
-                Variable* var = scope.getVariableFromName(varName).value();
-                var->value.type.getBitWidth();
-                Value startv = Value(LLVMConstInt(LLVMInt32Type(), start, 0), nameToType["i32"].front(), this, true);
-                optional<Value> startAsVal = startv.cast(var->value.type.dereference());
-                var->store(startAsVal.value());
-                LLVMBuildBr(builder, whileCon);
 
-                LLVMPositionBuilderAtEnd(builder, whileCon);
                 val = val.refToVal();
                 if (!startAsVal.has_value() || (!startAsVal.value().type.isNumber())) {
                     logError("Expected if statment to have a bool or number as value");
                     implementScopeRecoverError
                 }
                 LLVMValueRef condition;
-                Value endv = Value(LLVMConstInt(LLVMInt32Type(), end, 0), nameToType["i32"].front(), this, true);
-                optional<Value> endAsVal = endv.cast(var->value.type.dereference());
-                if (startAsVal.value().type.isFloat()) {
-                    if (includeEnd) {
-                        if (start < end) {
-                            condition = LLVMBuildFCmp(builder, LLVMRealOLE, endAsVal.value().llvmValue, val.llvmValue, "cmp");
-                        } else {
-                            condition = LLVMBuildFCmp(builder, LLVMRealOGT, endAsVal.value().llvmValue, val.llvmValue, "cmp");
-                        }
-                    } else {
-                        if (start < end) {
-                            condition = LLVMBuildFCmp(builder, LLVMRealOLT, endAsVal.value().llvmValue, val.llvmValue, "cmp");
-                        } else {
-                            condition = LLVMBuildFCmp(builder, LLVMRealOGE, endAsVal.value().llvmValue, val.llvmValue, "cmp");
-                        }
-                    }
-                } else {
-                    if (includeEnd) {
-                        if (start < end) {
-                            condition = LLVMBuildICmp(builder, LLVMIntSLE, endAsVal.value().llvmValue, val.llvmValue, "cmp");
-                        } else {
-                            condition = LLVMBuildICmp(builder, LLVMIntSGT, endAsVal.value().llvmValue, val.llvmValue, "cmp");
-                        }
-                    } else {
-                        if (start < end) {
-                            condition = LLVMBuildICmp(builder, LLVMIntSLT, endAsVal.value().llvmValue, val.llvmValue, "cmp");
-                        } else {
-                            condition = LLVMBuildICmp(builder, LLVMIntSGE, endAsVal.value().llvmValue, val.llvmValue, "cmp");
-                        }
-                    }
+                optional<Value> end = parseStatment({ tt_lcur }, scope);
+                if (!end.has_value()) {
+                    logError("Failed to parse end of for loop");
+                    implementScopeRecoverError
                 }
-                LLVMBuildCondBr(builder, condition, merge_block, whileBody);
+                if (!end.value().type.actualType().isInt() && !end.value().type.actualType().isUInt()) {
+                    logError("Expected number");
+                    implementScopeRecoverError
+                }
+                optional<Value> endAsVal = end.value().actualValue().cast(var->value.type.dereference());
+                optional<Value> startAsi64 = startAsVal.value().cast(nameToType["i64"].front());
+                optional<Value> endAsi64 = endAsVal.value().cast(nameToType["i64"].front());
+                optional<Value> endsubstart = sub(endAsi64.value(), startAsi64.value());
+                optional<Value> inc;
+                {
+                    LLVMTypeRef intType = LLVMInt64Type();
+                    LLVMValueRef zero = LLVMConstInt(intType, 0, 1);
+                    LLVMValueRef one = LLVMConstInt(intType, 1, 1);
+                    LLVMValueRef negOne = LLVMConstInt(intType, -1, 1);
+
+                    LLVMValueRef isPos = LLVMBuildICmp(builder, LLVMIntSGT, endsubstart.value().llvmValue, zero, "isPos");
+                    LLVMValueRef isNeg = LLVMBuildICmp(builder, LLVMIntSLT, endsubstart.value().llvmValue, zero, "isNeg");
+
+                    LLVMValueRef result = LLVMBuildSelect(builder, isPos, one, LLVMBuildSelect(builder, isNeg, negOne, zero, "selectNeg"), "selectPos");
+                    inc = Value(result, nameToType["i64"].front(), this).cast(var->value.type.dereference());
+                }
+                optional<Value> endVal = endAsVal;
+                if (includeEnd) {
+                    endVal = add(endAsi64.value(), inc.value());
+                    endVal = endVal.value().actualValue().cast(var->value.type.dereference());
+                }
+                LLVMBuildBr(builder, whileCon);
+                LLVMPositionBuilderAtEnd(builder, whileCon);
+                val = var->value;
+                val = val.refToVal();
+                if (startAsVal.value().type.isFloat()) {
+                    condition = LLVMBuildFCmp(builder, LLVMRealONE, endVal.value().llvmValue, val.llvmValue, "cmp");
+                } else {
+                    condition = LLVMBuildICmp(builder, LLVMIntNE, endVal.value().llvmValue, val.llvmValue, "cmp");
+                }
+                LLVMBuildCondBr(builder, condition, whileBody, merge_block);
+
+                if (tokens.getToken().type != tt_lcur) {
+                    logError("Expected {");
+                    implementScopeRecoverError
+                }
 
                 LLVMPositionBuilderAtEnd(builder, whileAfter);
                 val = var->value;
                 val = val.refToVal();
-                i64 inc;
-                if (start < end) {
-                    inc = 1;
-                } else {
-                    inc = -1;
-                }
-                Value one = Value(inc, this);
-                optional<Value> valAddOpt = add(val, one);
+                optional<Value> valAddOpt = add(val, inc.value());
                 if (!valAddOpt.has_value()) {
                     logError("Failed to add values");
                     implementScopeRecoverError
                 }
-                Value valAdd = valAddOpt.value();
-                var->store(valAdd);
+                var->store(valAddOpt.value());
                 LLVMBuildBr(builder, whileCon);
             } else {
 
@@ -2461,7 +2460,7 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
     return false;
 }
 
-void Module::implementFunction(TokenPositon start, Function& func) {
+void Module::implementFunction(TokenPositon start, Function& func, const vector<Type>& templateTypes) {
     if (func.external) return;
     tokens.pos = start;
 
@@ -2531,6 +2530,24 @@ bool Module::looksLikeType() {
         return false;
     }
     tokens.nextToken();
+    // templates
+    if (tokens.getToken().type == tt_le) {
+        tokens.nextToken();
+        while (true) {
+            if (tokens.getToken().type != tt_id) {
+                tokens.pos = start;
+                return false;
+            }
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_com) break;
+            tokens.nextToken();
+        }
+        if (tokens.getToken().type != tt_gr) {
+            tokens.pos = start;
+            return false;
+        }
+        tokens.nextToken();
+    }
     while (true) {
         switch (tokens.getToken().type) {
             case tt_mul: {
@@ -2607,6 +2624,24 @@ bool Module::looksLikeFunction() {
         return false;
     }
     tokens.nextToken();
+    // templates
+    if (tokens.getToken().type == tt_le) {
+        tokens.nextToken();
+        while (true) {
+            if (tokens.getToken().type != tt_id) {
+                tokens.pos = start;
+                return false;
+            }
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_com) break;
+            tokens.nextToken();
+        }
+        if (tokens.getToken().type != tt_gr) {
+            tokens.pos = start;
+            return false;
+        }
+        tokens.nextToken();
+    }
     if (tokens.getToken().type != tt_lpar) {
         tokens.pos = start;
         return false;
@@ -2654,6 +2689,24 @@ bool Module::looksLikeEnum() {
         return false;
     }
     tokens.nextToken();
+    // templates
+    if (tokens.getToken().type == tt_le) {
+        tokens.nextToken();
+        while (true) {
+            if (tokens.getToken().type != tt_id) {
+                tokens.pos = start;
+                return false;
+            }
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_com) break;
+            tokens.nextToken();
+        }
+        if (tokens.getToken().type != tt_gr) {
+            tokens.pos = start;
+            return false;
+        }
+        tokens.nextToken();
+    }
     int curStack = 1;
     Token curStart = tokens.getToken();
     while (curStack != 0) {
@@ -2686,6 +2739,24 @@ bool Module::looksLikeStruct() {
         return false;
     }
     tokens.nextToken();
+    // templates
+    if (tokens.getToken().type == tt_le) {
+        tokens.nextToken();
+        while (true) {
+            if (tokens.getToken().type != tt_id) {
+                tokens.pos = start;
+                return false;
+            }
+            tokens.nextToken();
+            if (tokens.getToken().type != tt_com) break;
+            tokens.nextToken();
+        }
+        if (tokens.getToken().type != tt_gr) {
+            tokens.pos = start;
+            return false;
+        }
+        tokens.nextToken();
+    }
     int curStack = 1;
     Token curStart = tokens.getToken();
     while (curStack != 0) {

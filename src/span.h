@@ -7,6 +7,8 @@
 #include "module.h"
 #include "variable.h"
 #include "scope.h"
+#include "type.h"
+
 #include "lld/Common/Driver.h"
 #include "llvm-c/TargetMachine.h"
 #include "llvm-c/Target.h"
@@ -20,5 +22,12 @@ extern Module* baseModule;
 extern unordered_map<string, vector<Type>> nameToType;
 extern unordered_map<string, vector<Function>> nameToFunction;
 extern Module* activeModule;
+
+struct templateType {
+    string name;
+    Type type;
+    templateType* parent;
+};
+extern templateType* activeTemplate;
 
 void compile(const std::string& dir);

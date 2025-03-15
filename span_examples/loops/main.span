@@ -1,7 +1,9 @@
 int printf(char* text, ...)
 
 void main(){
-	for int j in 100 ..= 0 {
+	u8 k = 3
+	u16 m = 199
+	for uint j in m ... k {
 		printf("%d\n", j)
 	}
 	printf("end")
