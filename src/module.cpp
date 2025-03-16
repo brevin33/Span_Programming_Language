@@ -270,33 +270,79 @@ optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma, bool sto
         return nullopt;
     }
     string name = *tokens.getToken().data.str;
-    tokens.nextToken();
-    auto t = nameToType.find(name);
     Type type;
-    if (t == nameToType.end()) {
-        auto s = nameToTypeStart.find(name);
-        if (s == nameToTypeStart.end()) {
-            if (logErrors) logError("Type doesn't exist");
-            tokens.pos = start;
-            return nullopt;
-        } else {
-            if (!typeFromTokensIsPtr()) {
-                if (implementType(s->second)) {
-                    type = nameToType.find(name)->second.front();
-                } else {
-                    tokens.pos = start;
-                    return nullopt;
-                }
-            } else {
-                type = Type(LLVMPointerType(LLVMInt1Type(), 0), name, this);
+    bool isTemplate = false;
+    tokens.nextToken();
+    if (activeTemplateName.size() != 0) {
+        for (int i = 0; i < activeTemplateName.back().size(); i++) {
+            if (activeTemplateName.back()[i] == name) {
+                name = activeTemplateType.back()[i].name;
+                type = activeTemplateType.back()[i];
+                isTemplate = true;
+                break;
             }
         }
-    } else {
-        if (t->second.size() != 1) {
-            tokens.pos = start;
-            if (logErrors) logError("Ambiguous type");
+    }
+    vector<Type> templateTypes;
+    if (tokens.getToken().type == tt_le) {
+        tokens.nextToken();
+        while (true) {
+            optional<Type> tempType = typeFromTokens(logErrors, false, false);
+            if (!tempType.has_value()) {
+                tokens.pos = start;
+                return nullopt;
+            }
+            templateTypes.push_back(tempType.value());
+            if (tokens.getToken().type != tt_gr) {
+                continue;
+            }
+            break;
         }
-        type = t->second[0];
+        if (tokens.getToken().type != tt_gr) {
+            if (logErrors) logError("Expected >");
+            tokens.pos = start;
+            return nullopt;
+        }
+        tokens.nextToken();
+    }
+    string nameBeforeTemplates = name;
+    if (templateTypes.size() > 0) {
+        name += "<";
+        for (int i = 0; i < templateTypes.size(); i++) {
+            name += templateTypes[i].name;
+            name += ",";
+        }
+        name += ">";
+    }
+    if (!isTemplate) {
+        auto t = nameToType.find(name);
+        if (t == nameToType.end()) {
+            auto s = nameToTypeStart.find(nameBeforeTemplates);
+            if (s == nameToTypeStart.end()) {
+                if (logErrors) logError("Type doesn't exist");
+                tokens.pos = start;
+                return nullopt;
+            } else {
+                if (!typeFromTokensIsPtr() || templateTypes.size() != 0) {
+                    TokenPositon tokenPosNow = tokens.pos;
+                    if (implementType(s->second, false, templateTypes)) {
+                        type = nameToType.find(name)->second.front();
+                        tokens.pos = tokenPosNow;
+                    } else {
+                        tokens.pos = start;
+                        return nullopt;
+                    }
+                } else {
+                    type = Type(LLVMPointerType(LLVMInt1Type(), 0), name, this);
+                }
+            }
+        } else {
+            if (t->second.size() != 1) {
+                tokens.pos = start;
+                if (logErrors) logError("Ambiguous type");
+            }
+            type = t->second[0];
+        }
     }
     while (true) {
         switch (tokens.getToken().type) {
@@ -551,6 +597,25 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                     lval = val;
                 } else {
                     bool found = false;
+                    if (str == "ptr") {
+                        if (!lval.value().type.isRef()) {
+                            logError("Can't get ptr of a non ref value");
+                            tokens.pos = start;
+                            return nullopt;
+                        }
+                        lval = lval.value().refToPtr();
+                        break;
+                    }
+                    if (str == "val") {
+                        if (!lval.value().type.actualType().isPtr()) {
+                            logError("Can't get val of a non ptr type");
+                            tokens.pos = start;
+                            return nullopt;
+                        }
+                        i64 zero = 0;
+                        lval = index(lval.value().actualValue(), Value(zero, this));
+                        break;
+                    }
                     for (int i = 0; i < lval.value().type.elemNames.size(); i++) {
                         if (lval.value().type.elemNames[i] != str) {
                             continue;
@@ -1259,16 +1324,59 @@ bool Module::implementStruct(TokenPositon start, bool secondPass, const vector<T
                 logError("Circular Dependency");
                 tokens.pos = start;
                 return false;
+            } else if (templateTypes.size() != 0) {
             } else {
                 return true;
             }
         }
-        nameToTypeDone[name] = false;
     }
     tokens.nextToken();
+    vector<string> templateNames;
+    if (templateTypes.size() != 0) {
+        name += "<";
+        for (int i = 0; i < templateTypes.size(); i++) {
+            name += templateTypes[i].name;
+            name += ",";
+        }
+        name += ">";
+    }
+    if (tokens.getToken().type == tt_le) {
+        tokens.nextToken();
+        while (true) {
+            if (tokens.getToken().type != tt_id) {
+                logError("Expected a type name");
+                return false;
+            }
+            templateNames.push_back(*tokens.getToken().data.str);
+            tokens.nextToken();
+            if (tokens.getToken().type == tt_gr) break;
+        }
+        if (tokens.getToken().type != tt_gr) {
+            logError("Expected a >");
+            return false;
+        }
+        tokens.nextToken();
+        if (templateTypes.size() == 0) {
+            nameToTypeDone[name] = true;
+            return true;
+        }
+        if (templateTypes.size() != templateNames.size()) {
+            logError("Expected " + to_string(templateNames.size()) + " template types");
+            return false;
+        }
+    } else {
+        if (templateTypes.size() != 0) {
+            logError("Expected " + to_string(templateNames.size()) + " template types");
+            return false;
+        }
+    }
+    activeTemplateName.push_back(templateNames);
+    activeTemplateType.push_back(templateTypes);
     tokens.nextToken();
     if (tokens.getToken().type != tt_endl) {
         logError("Expected end line after {");
+        activeTemplateName.pop_back();
+        activeTemplateType.pop_back();
         return false;
     }
     tokens.nextToken();
@@ -1277,18 +1385,30 @@ bool Module::implementStruct(TokenPositon start, bool secondPass, const vector<T
     vector<string> structElementNames;
     while (true) {
         if (tokens.getToken().type == tt_rcur) break;
+        if (tokens.getToken().type != tt_id) {
+            logError("expected name of struct value");
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
+            return false;
+        }
         optional<Type> t = typeFromTokens();
         if (!t.has_value()) {
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return false;
         }
         if (tokens.getToken().type != tt_id) {
             logError("expected name of struct value");
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return false;
         }
         string elName = *tokens.getToken().data.str;
         tokens.nextToken();
         if (tokens.getToken().type != tt_endl) {
             logError("expected endline after defining struct element");
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return false;
         }
         tokens.nextToken();
@@ -1298,6 +1418,8 @@ bool Module::implementStruct(TokenPositon start, bool secondPass, const vector<T
 
     Type Struct(name, structTypes, structElementNames, this);
     nameToTypeDone[name] = true;
+    activeTemplateName.pop_back();
+    activeTemplateType.pop_back();
     return true;
 }
 
@@ -2534,13 +2656,11 @@ bool Module::looksLikeType() {
     if (tokens.getToken().type == tt_le) {
         tokens.nextToken();
         while (true) {
-            if (tokens.getToken().type != tt_id) {
+            if (looksLikeType()) {
                 tokens.pos = start;
                 return false;
             }
-            tokens.nextToken();
-            if (tokens.getToken().type != tt_com) break;
-            tokens.nextToken();
+            if (tokens.getToken().type == tt_gr) break;
         }
         if (tokens.getToken().type != tt_gr) {
             tokens.pos = start;
@@ -2633,8 +2753,7 @@ bool Module::looksLikeFunction() {
                 return false;
             }
             tokens.nextToken();
-            if (tokens.getToken().type != tt_com) break;
-            tokens.nextToken();
+            if (tokens.getToken().type == tt_gr) break;
         }
         if (tokens.getToken().type != tt_gr) {
             tokens.pos = start;
@@ -2698,8 +2817,7 @@ bool Module::looksLikeEnum() {
                 return false;
             }
             tokens.nextToken();
-            if (tokens.getToken().type != tt_com) break;
-            tokens.nextToken();
+            if (tokens.getToken().type == tt_gr) break;
         }
         if (tokens.getToken().type != tt_gr) {
             tokens.pos = start;
@@ -2748,8 +2866,7 @@ bool Module::looksLikeStruct() {
                 return false;
             }
             tokens.nextToken();
-            if (tokens.getToken().type != tt_com) break;
-            tokens.nextToken();
+            if (tokens.getToken().type == tt_gr) break;
         }
         if (tokens.getToken().type != tt_gr) {
             tokens.pos = start;

@@ -26,6 +26,8 @@ public:
 
     Value refToVal();
 
+    Value refToPtr();
+
     Value actualValue();
 
     Value structVal(int i);

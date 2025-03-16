@@ -396,6 +396,10 @@ public:
                                 if (line[c] == '.') isFloat = true;
                                 c++;
                             }
+                            if (line[c - 1] == '.') {
+                                isFloat = false;
+                                c--;
+                            }
                             c--;
                             token.echar = c;
                             if (token.schar == token.echar && line[c] == '.') {

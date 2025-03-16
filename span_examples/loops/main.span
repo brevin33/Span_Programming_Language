@@ -1,8 +1,20 @@
 int printf(char* text, ...)
+void* malloc(u64 size)
+
+struct tempTest<T T2> {
+	T a
+	T2 b
+}
 
 void main(){
-	u8 k = 3
-	u16 m = 199
+	tempTest<i32*, i32 tempTest<i32 i8>> test
+	tempTest<u64 i3> test2
+	test2.a = 9 
+	test2.b = 1
+	test.a = malloc(i32.size), 6
+	test.a.0.val = 5
+	u8 k = test.a.0.val 
+	u16 m = test2.a 
 	for uint j in m ... k {
 		printf("%d\n", j)
 	}

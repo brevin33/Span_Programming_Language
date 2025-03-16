@@ -11,11 +11,11 @@ Module* baseModule;
 unordered_map<string, vector<Type>> nameToType;
 unordered_map<string, vector<Function>> nameToFunction;
 Module* activeModule;
-templateType* activeTemplate;
+vector<vector<string>> activeTemplateName;
+vector<vector<Type>> activeTemplateType;
 
 
 void setupBasicTypes() {
-    activeTemplate = nullptr;
     // number types
     for (int i = 1; i <= 512; i++) {
         string uname = "u" + to_string(i);

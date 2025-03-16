@@ -51,15 +51,18 @@ Type::Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmN
 Type::Type(const string& name, Module* module) {
     // this is trash but i guess llvm doesn't keep pointer type info any more ????
     int baseTypeEnd = name.size();
-    int s = 0;
-    if (name.front() == '(') {
-        while (name[s] != ')')
-            s++;
-    }
-    for (int i = s; i < name.size(); i++) {
+    for (int i = 0; i < name.size(); i++) {
         if (name[i] == '*' || name[i] == '&' || name[i] == '[' || name[i] == '^') {
             baseTypeEnd = i;
             break;
+        }
+        if (name[i] == '(') {
+            while (name[i] != ')')
+                i++;
+        }
+        if (name[i] == '<') {
+            while (name[i] != '>')
+                i++;
         }
     }
     string baseTypeName = name;

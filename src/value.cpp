@@ -182,6 +182,14 @@ Value Value::refToVal() {
     return v;
 }
 
+Value Value::refToPtr() {
+    assert(type.isRef());
+    Value v = *this;
+    v.type = v.type.actualType().ptr();
+    return v;
+}
+
+
 Value Value::actualValue() {
     Value v = *this;
     while (v.type.isRef()) {

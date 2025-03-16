@@ -23,11 +23,7 @@ extern unordered_map<string, vector<Type>> nameToType;
 extern unordered_map<string, vector<Function>> nameToFunction;
 extern Module* activeModule;
 
-struct templateType {
-    string name;
-    Type type;
-    templateType* parent;
-};
-extern templateType* activeTemplate;
+extern vector<vector<string>> activeTemplateName;
+extern vector<vector<Type>> activeTemplateType;
 
 void compile(const std::string& dir);
