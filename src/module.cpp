@@ -1251,16 +1251,59 @@ bool Module::implementEnum(TokenPositon start, bool secondPass, const vector<Typ
                 logError("Circular Dependency");
                 tokens.pos = start;
                 return false;
+            } else if (templateTypes.size() != 0) {
             } else {
                 return true;
             }
         }
-        nameToTypeDone[name] = false;
     }
     tokens.nextToken();
+    vector<string> templateNames;
+    if (templateTypes.size() != 0) {
+        name += "<";
+        for (int i = 0; i < templateTypes.size(); i++) {
+            name += templateTypes[i].name;
+            name += ",";
+        }
+        name += ">";
+    }
+    if (tokens.getToken().type == tt_le) {
+        tokens.nextToken();
+        while (true) {
+            if (tokens.getToken().type != tt_id) {
+                logError("Expected a type name");
+                return false;
+            }
+            templateNames.push_back(*tokens.getToken().data.str);
+            tokens.nextToken();
+            if (tokens.getToken().type == tt_gr) break;
+        }
+        if (tokens.getToken().type != tt_gr) {
+            logError("Expected a >");
+            return false;
+        }
+        tokens.nextToken();
+        if (templateTypes.size() == 0) {
+            nameToTypeDone[name] = true;
+            return true;
+        }
+        if (templateTypes.size() != templateNames.size()) {
+            logError("Expected " + to_string(templateNames.size()) + " template types");
+            return false;
+        }
+    } else {
+        if (templateTypes.size() != 0) {
+            logError("Expected " + to_string(templateNames.size()) + " template types");
+            return false;
+        }
+    }
+    activeTemplateName.push_back(templateNames);
+    activeTemplateType.push_back(templateTypes);
     tokens.nextToken();
     if (tokens.getToken().type != tt_endl) {
         logError("Expected end line after {");
+        activeTemplateName.pop_back();
+        activeTemplateType.pop_back();
         return false;
     }
     tokens.nextToken();
@@ -1273,6 +1316,8 @@ bool Module::implementEnum(TokenPositon start, bool secondPass, const vector<Typ
         if (tokens.getToken().type == tt_rcur) break;
         if (tokens.getToken().type != tt_id) {
             logError("expected name of enum value");
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return false;
         }
         string elName = *tokens.getToken().data.str;
@@ -1286,15 +1331,21 @@ bool Module::implementEnum(TokenPositon start, bool secondPass, const vector<Typ
             tokens.nextToken();
             optional<Type> t = typeFromTokens();
             if (!t.has_value()) {
+                activeTemplateName.pop_back();
+                activeTemplateType.pop_back();
                 return false;
             }
             if (tokens.getToken().type != tt_rpar) {
                 logError("expected closing )");
+                activeTemplateName.pop_back();
+                activeTemplateType.pop_back();
                 return false;
             }
             tokens.nextToken();
             if (tokens.getToken().type != tt_endl) {
                 logError("expected a newline after the closing ) when making an enum");
+                activeTemplateName.pop_back();
+                activeTemplateType.pop_back();
                 return false;
             }
             tokens.nextToken();
@@ -1303,12 +1354,16 @@ bool Module::implementEnum(TokenPositon start, bool secondPass, const vector<Typ
             enumElementValues.push_back(valueCounter++);
         } else {
             logError("expected a new line or a (type) newline");
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return false;
         }
     }
 
     Type Enum(name, enumTypes, enumElementNames, enumElementValues, this);
     nameToTypeDone[name] = true;
+    activeTemplateName.pop_back();
+    activeTemplateType.pop_back();
     return true;
 }
 
