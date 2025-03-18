@@ -5,7 +5,8 @@
 Function::Function() {
 }
 
-Function::Function(const Type& returnType, const string& name, const vector<Type>& paramTypes, const vector<string> paramNames, Module* module, bool variadic, bool external, optional<Type> methodOfType) {
+Function::Function(const Type& returnType, const string& name, const vector<Type>& paramTypes, const vector<string> paramNames, Module* module, bool variadic, bool external, optional<Type> methodOfType,
+    const vector<Type>& templateTypes, const vector<string>& templateNames) {
 
     this->returnType = returnType;
     this->name = name;
@@ -22,6 +23,8 @@ Function::Function(const Type& returnType, const string& name, const vector<Type
     this->llvmType = LLVMFunctionType(returnType.llvmType, llvmTypes, paramTypes.size(), variadic);
     this->llvmValue = LLVMAddFunction(module->llvmModule, name.c_str(), this->llvmType);
     this->methodOfType = methodOfType;
+    this->templateNames = templateNames;
+    this->templateTypes = templateTypes;
 }
 
 Value Function::getParamValue(int paramNumber) {

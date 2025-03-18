@@ -16,7 +16,7 @@ void main(){
 
 	tempTest<i32*, i32 tempTest<i32 i8>> test
 	test.a = malloc(i32.size), 6
-	test.a.0.val = 5
+	test.a.0.val = 8
 	u8 k = test.a.0.val 
 	u16 m = enumTest.a 
 	for uint j in m ... k {

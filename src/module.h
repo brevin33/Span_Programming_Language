@@ -55,7 +55,7 @@ private:
 
     optional<Value> Module::parseFunctionCall(string& name, Scope& scope, Value* caller = nullptr);
 
-    Function* prototypeFunction(TokenPositon start);
+    Function* prototypeFunction(TokenPositon start, const vector<Type>& templateTypes);
 
     void prototypeStruct(TokenPositon start);
 

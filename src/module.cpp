@@ -99,7 +99,7 @@ void Module::setupTypesAndFunctions() {
     // functions
     vector<Function*> functionDefIsGood(functionStarts.size());
     for (int i = 0; i < functionStarts.size(); i++) {
-        functionDefIsGood[i] = prototypeFunction(functionStarts[i]);
+        functionDefIsGood[i] = prototypeFunction(functionStarts[i], {});
     }
     for (int i = 0; i < functionStarts.size(); i++) {
         if (functionDefIsGood[i] != nullptr) {
@@ -1128,15 +1128,75 @@ optional<Value> Module::parseFunctionCall(string& name, Scope& scope, Value* cal
     return funcToCall->call(vals, this);
 }
 
-Function* Module::prototypeFunction(TokenPositon start) {
+Function* Module::prototypeFunction(TokenPositon start, const vector<Type>& templateTypes) {
     tokens.pos = start;
+
+    // handel templates
+    while (true) {
+        if (tokens.getToken().type == tt_endl) break;
+        if (tokens.getToken().type == tt_le) break;
+        tokens.nextToken();
+    }
+    vector<string> templateNames;
+    if (tokens.getToken().type == tt_endl) {
+        tokens.pos = start;
+    } else {
+        tokens.nextToken();
+        while (true) {
+            if (tokens.getToken().type != tt_id) {
+                logError("Expected a template name");
+                return nullptr;
+            }
+            string templateName = *tokens.getToken().data.str;
+            templateNames.push_back(templateName);
+            tokens.nextToken();
+            if (tokens.getToken().type == tt_gr) break;
+        }
+        // look for second templates
+        while (true) {
+            if (tokens.getToken().type == tt_endl) break;
+            if (tokens.getToken().type == tt_le) break;
+            tokens.nextToken();
+        }
+        if (tokens.getToken().type == tt_le) {
+            tokens.nextToken();
+            while (true) {
+                if (tokens.getToken().type != tt_id) {
+                    logError("Expected a template name");
+                    return nullptr;
+                }
+                string templateName = *tokens.getToken().data.str;
+                templateNames.push_back(templateName);
+                tokens.nextToken();
+                if (tokens.getToken().type == tt_gr) break;
+            }
+        }
+        tokens.pos = start;
+    }
+
+    if (templateTypes.size() == 0 && templateNames.size() != 0) {
+        return nullptr;
+    } else if (templateTypes.size() != templateNames.size()) {
+        logError("Expected " + to_string(templateNames.size()) + " template types", nullptr, true);
+        return nullptr;
+    } else {
+        activeTemplateName.push_back(templateNames);
+        activeTemplateType.push_back(templateTypes);
+    }
+
     optional<Type> type = typeFromTokens();
-    if (!type.has_value()) return nullptr;
+    if (!type.has_value()) {
+        activeTemplateName.pop_back();
+        activeTemplateType.pop_back();
+        return nullptr;
+    }
 
     optional<Type> methodType = typeFromTokens(false);
     if (methodType.has_value()) {
         if (tokens.getToken().type != tt_dot) {
             logError("Expected a dot . after a Type to make a method");
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return nullptr;
         } else {
             tokens.nextToken();
@@ -1164,6 +1224,8 @@ Function* Module::prototypeFunction(TokenPositon start) {
                 tokens.nextToken();
                 if (tokens.getToken().type != tt_rpar) {
                     logError("Expected a )");
+                    activeTemplateName.pop_back();
+                    activeTemplateType.pop_back();
                     return nullptr;
                 }
                 variadicArgs = true;
@@ -1171,10 +1233,16 @@ Function* Module::prototypeFunction(TokenPositon start) {
             }
 
             optional<Type> paramType = typeFromTokens();
-            if (!type.has_value()) return nullptr;
+            if (!type.has_value()) {
+                activeTemplateName.pop_back();
+                activeTemplateType.pop_back();
+                return nullptr;
+            }
 
             if (tokens.getToken().type != tt_id) {
                 logError("Expected parameter name");
+                activeTemplateName.pop_back();
+                activeTemplateType.pop_back();
                 return nullptr;
             }
             string paramName = *tokens.getToken().data.str;
@@ -1188,6 +1256,8 @@ Function* Module::prototypeFunction(TokenPositon start) {
                 tokens.nextToken();
                 continue;
             }
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             logError("Expected , or )");
             return nullptr;
         }
@@ -1200,17 +1270,23 @@ Function* Module::prototypeFunction(TokenPositon start) {
     if (funcName == "main") {
         if (type.value().name != "void" && type.value().name != "i32") {
             logError("return type of main must be int, i32 or void", nullptr, true);
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return nullptr;
         }
         if (hasMain) {
             logError("already has a main function. can't have multiple main", nullptr, true);
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return nullptr;
         }
         hasMain = true;
-        nameToFunction[funcName].push_back(Function(nameToType["i32"].front(), funcName, paramTypes, paramNames, this, variadicArgs, external, methodType));
+        nameToFunction[funcName].push_back(Function(nameToType["i32"].front(), funcName, paramTypes, paramNames, this, variadicArgs, external, methodType, templateTypes, templateNames));
     } else {
-        nameToFunction[funcName].push_back(Function(type.value(), funcName, paramTypes, paramNames, this, variadicArgs, external, methodType));
+        nameToFunction[funcName].push_back(Function(type.value(), funcName, paramTypes, paramNames, this, variadicArgs, external, methodType, templateTypes, templateNames));
     }
+    activeTemplateName.pop_back();
+    activeTemplateType.pop_back();
     return &nameToFunction[funcName].back();
 }
 
@@ -2639,6 +2715,8 @@ bool Module::implementScopeHelper(TokenPositon start, Scope& scope, Function& fu
 
 void Module::implementFunction(TokenPositon start, Function& func, const vector<Type>& templateTypes) {
     if (func.external) return;
+    activeTemplateName.push_back(func.templateNames);
+    activeTemplateType.push_back(func.templateTypes);
     tokens.pos = start;
 
     while (true) {
@@ -2658,6 +2736,8 @@ void Module::implementFunction(TokenPositon start, Function& func, const vector<
             bool worked = func.scope.addVariable(var);
             if (!worked) {
                 logError("Two parameters have the same name", nullptr, true);
+                activeTemplateName.pop_back();
+                activeTemplateType.pop_back();
                 return;
             }
         }
@@ -2667,6 +2747,8 @@ void Module::implementFunction(TokenPositon start, Function& func, const vector<
         bool worked = func.scope.addVariable(var);
         if (!worked) {
             logError("Two parameters have the same name", nullptr, true);
+            activeTemplateName.pop_back();
+            activeTemplateType.pop_back();
             return;
         }
     }
@@ -2677,6 +2759,8 @@ void Module::implementFunction(TokenPositon start, Function& func, const vector<
 
     LLVMPositionBuilderAtEnd(builder, entry);
     LLVMBuildBr(builder, body);
+    activeTemplateName.pop_back();
+    activeTemplateType.pop_back();
 }
 
 bool Module::implementScope(TokenPositon start, Scope& scope, Function& func) {
