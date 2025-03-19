@@ -1173,8 +1173,28 @@ Function* Module::prototypeFunction(TokenPositon start, const vector<Type>& temp
         }
         tokens.pos = start;
     }
+    // find function name
+    string earlyFindFuncName;
+    while (true) {
+        tokens.nextToken();
+        if (tokens.getToken().type == tt_le) {
+            tokens.nextToken();
+            int leStack = 1;
+            while (true) {
+                if (tokens.getToken().type == tt_le) leStack++;
+                if (tokens.getToken().type == tt_gr) leStack--;
+                if (leStack == 0) break;
+                tokens.nextToken();
+            }
+            tokens.nextToken();
+        }
+        if (tokens.getToken().type == tt_id) break;
+        earlyFindFuncName = *tokens.getToken().data.str;
+    }
+    tokens.pos = start;
 
     if (templateTypes.size() == 0 && templateNames.size() != 0) {
+        templateNameToFunctionStart[earlyFindFuncName] = start;
         return nullptr;
     } else if (templateTypes.size() != templateNames.size()) {
         logError("Expected " + to_string(templateNames.size()) + " template types", nullptr, true);

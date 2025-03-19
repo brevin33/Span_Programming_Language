@@ -22,6 +22,7 @@ extern Module* baseModule;
 extern unordered_map<string, vector<Type>> nameToType;
 extern unordered_map<string, vector<Function>> nameToFunction;
 extern Module* activeModule;
+extern unordered_map<string, TokenPositon> templateNameToFunctionStart;
 
 extern vector<vector<string>> activeTemplateName;
 extern vector<vector<Type>> activeTemplateType;

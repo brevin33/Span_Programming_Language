@@ -13,6 +13,7 @@ unordered_map<string, vector<Function>> nameToFunction;
 Module* activeModule;
 vector<vector<string>> activeTemplateName;
 vector<vector<Type>> activeTemplateType;
+unordered_map<string, TokenPositon> templateNameToFunctionStart;
 
 
 void setupBasicTypes() {
