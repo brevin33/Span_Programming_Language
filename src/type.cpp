@@ -10,7 +10,7 @@ Type::Type(LLVMTypeRef llvmType, const string& name, Module* module) {
     if (nameToType[name].size() == 0) nameToType[name].push_back(*this);
 }
 
-Type::Type(const string& name, vector<Type>& structTypes, vector<string>& struceElmNames, Module* module) {
+Type::Type(const string& name, vector<Type>& structTypes, vector<string>& struceElmNames, Module* module, const vector<Type>& tempalteTypes) {
     this->name = name;
     this->module = module;
     this->elemTypes = structTypes;
@@ -20,11 +20,13 @@ Type::Type(const string& name, vector<Type>& structTypes, vector<string>& struce
         llvmTypes.push_back(structTypes[i].llvmType);
     }
     this->llvmType = LLVMStructCreateNamed(LLVMGetGlobalContext(), name.c_str());
+    this->templateTypes = tempalteTypes;
     LLVMStructSetBody(llvmType, llvmTypes.data(), llvmTypes.size(), false);
     if (nameToType[name].size() == 0) nameToType[name].push_back(*this);
 }
 
-Type::Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmNames, vector<int> enumElmValues, Module* module, bool staticEnum) {
+Type::Type(const string& name, vector<Type>& enumTypes, vector<string>& enumElmNames, vector<int> enumElmValues, Module* module, bool staticEnum, const vector<Type>& tempalteTypes) {
+    this->templateTypes = tempalteTypes;
     this->name = name;
     this->module = module;
     this->elemTypes = enumTypes;

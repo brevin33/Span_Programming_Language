@@ -398,7 +398,7 @@ optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma, bool sto
                     enumValues.push_back(i);
                 }
                 typeName += ")";
-                return Type(typeName, impleStructTypes, structElmName, enumValues, this, true);
+                return Type(typeName, impleStructTypes, structElmName, enumValues, this, true, {});
             }
             case tt_com: {
                 if (stopAtComma) return type;
@@ -423,7 +423,7 @@ optional<Type> Module::typeFromTokens(bool logErrors, bool stopAtComma, bool sto
                     structElmName.push_back(to_string(i));
                 }
                 typeName += ")";
-                type = Type(typeName, impleStructTypes, structElmName, this);
+                type = Type(typeName, impleStructTypes, structElmName, this, templateTypes);
             }
             default: {
                 return type;
@@ -481,7 +481,7 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                     valrefs.push_back(vals[i].llvmValue);
                 }
                 typeName += ")";
-                Type t(typeName, types, structElmName, this);
+                Type t(typeName, types, structElmName, this, {});
                 LLVMValueRef myStruct = LLVMGetUndef(t.llvmType);
                 for (int i = 0; i < vals.size(); i++) {
                     myStruct = LLVMBuildInsertValue(builder, myStruct, valrefs[i], i, "inserted");
@@ -586,7 +586,10 @@ optional<Value> Module::parseStatment(const vector<TokenType>& del, Scope& scope
                 else
                     str = to_string(tokens.getToken().data.uint);
                 tokens.nextToken();
-                if (tokens.getToken().type == tt_lpar) {
+                if (tokens.getToken().type == tt_lpar || tokens.getToken().type == tt_le) {
+                    if (tokens.getToken().type == tt_le) {
+                        //TODO: template
+                    }
                     // method
                     str = lval.value().type.actualType().name + "." + str;
                     optional<Value> val = parseFunctionCall(str, scope, &lval.value());
@@ -943,7 +946,7 @@ optional<Value> Module::parseValue(Scope& scope) {
                 valrefs.push_back(vals[i].llvmValue);
             }
             typeName += ")";
-            Type t(typeName, types, structElmName, this);
+            Type t(typeName, types, structElmName, this, {});
             LLVMValueRef myStruct = LLVMGetUndef(t.llvmType);
             for (int i = 0; i < vals.size(); i++) {
                 myStruct = LLVMBuildInsertValue(builder, myStruct, valrefs[i], i, "inserted");
@@ -1023,7 +1026,7 @@ optional<Value> Module::parseValue(Scope& scope) {
     return nullopt;
 }
 
-optional<Value> Module::parseFunctionCall(string& name, Scope& scope, Value* caller) {
+optional<Value> Module::parseFunctionCall(string& name, Scope& scope, Value* caller, vector<Type>& templateTypes) {
 
     tokens.lastToken();
     Token funcNameToken = tokens.getToken();
@@ -1456,7 +1459,7 @@ bool Module::implementEnum(TokenPositon start, bool secondPass, const vector<Typ
         }
     }
 
-    Type Enum(name, enumTypes, enumElementNames, enumElementValues, this);
+    Type Enum(name, enumTypes, enumElementNames, enumElementValues, this, false, templateTypes);
     nameToTypeDone[name] = true;
     activeTemplateName.pop_back();
     activeTemplateType.pop_back();
@@ -1567,7 +1570,7 @@ bool Module::implementStruct(TokenPositon start, bool secondPass, const vector<T
         structElementNames.push_back(elName);
     }
 
-    Type Struct(name, structTypes, structElementNames, this);
+    Type Struct(name, structTypes, structElementNames, this, templateTypes);
     nameToTypeDone[name] = true;
     activeTemplateName.pop_back();
     activeTemplateType.pop_back();
