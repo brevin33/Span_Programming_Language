@@ -1,0 +1,50 @@
+int printf(char* text, ...)
+void* malloc(u64 size)
+void free(void* ptr)
+void* memcpy(void* dest, void* src, u64 size)
+void* memset(void* dest, u8 value, u64 size)
+
+struct list {
+	i32* data
+	u32 size
+	u32 cap
+}
+
+list createList(){
+	list l 
+	l.size = 0
+	l.cap = 0
+	l.data = 0 as i32*
+	return l
+}
+
+void list.push(i32 value){
+	if(size >= cap){
+		cap *= 2
+		void* newData = malloc(cap * i32.size)
+		if(data != 0){
+			memcpy(newData, data, size * i32.size)
+			free(data)
+		}
+	}
+	data[size] = value
+	size += 1
+}
+
+void list.set(i32 value, u64 index){
+	data[index] = value
+}
+
+i32 list.getValue(u64 size){
+	return data[size - 1]
+}
+
+void main(){
+	list l = createList();
+	l.push(3)
+	l.push(3)
+	l.push(3)
+	l.push(3)
+	l.push(3)
+	printf("%d\n", l.getValue(3))
+}

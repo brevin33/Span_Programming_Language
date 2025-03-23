@@ -1,30 +1,23 @@
 #pragma once
 #include "utils.h"
-#include "function.h"
-#include "value.h"
-#include "type.h"
 #include "token.h"
+#include <string>
+#include <iostream>
 #include "module.h"
-#include "variable.h"
-#include "scope.h"
-#include "type.h"
+#include "types.h"
 
-#include "lld/Common/Driver.h"
-#include "llvm-c/TargetMachine.h"
-#include "llvm-c/Target.h"
-#include <llvm-c/Core.h>
-#include <llvm-c/Analysis.h>
-#include <llvm-c/BitWriter.h>
+// All globlas are stored in a struct
+struct CompilerContext {
+    vector<Token> tokens;
+    bool hadCompileError = false;
+    vector<vector<string>> textByFileByLine;
+    vector<string> files;
+    LLVMContextRef llvmContext;
+    LLVMBuilderRef llvmBuilder;
+    Module* activeModule;
+    Types types;
+};
+extern CompilerContext context;
 
-extern LLVMContextRef context;
-extern LLVMBuilderRef builder;
-extern Module* baseModule;
-extern unordered_map<string, vector<Type>> nameToType;
-extern unordered_map<string, vector<Function>> nameToFunction;
-extern Module* activeModule;
-extern unordered_map<string, TokenPositon> templateNameToFunctionStart;
-
-extern vector<vector<string>> activeTemplateName;
-extern vector<vector<Type>> activeTemplateType;
-
-void compile(const std::string& dir);
+void compile(std::string dir);
+void logError(const string& err, Token token, bool wholeLine = false);

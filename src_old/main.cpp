@@ -1,13 +1,9 @@
+#include "span.h"
 #include <chrono>
 #include <thread>
-#include <iostream>
-#include "span.h"
-
 int main() {
     auto start = std::chrono::high_resolution_clock::now();
-
     compile("../../../span_examples/list");
-
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::nano> duration = end - start;
     std::cout << "Time: " << duration.count() / 1000000000 << " seconds" << std::endl;

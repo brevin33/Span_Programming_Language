@@ -118,6 +118,6 @@ set(lld_libs
     ${LLD_MACHO}
     )
 
-add_executable(spanLang "src/main.cpp" "src/span.cpp" "src/utils.cpp" "src/module.cpp" "src/function.cpp" "src/type.cpp" "src/value.cpp" "src/scope.cpp" "src/variable.cpp")
+add_executable(spanLang "src/main.cpp" "src/span.cpp" "src/span.h" "src/utils.cpp" "src/utils.h" "src/token.h" "src/token.cpp"  "src/module.h" "src/module.cpp" "src/types.h" "src/types.cpp")
 
 target_link_libraries(spanLang ${llvm_libs} ${lld_libs})

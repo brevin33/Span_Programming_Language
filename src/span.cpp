@@ -1,95 +1,45 @@
 #include "span.h"
-#include <filesystem>
-#include <fstream>
-#include <assert.h>
 
+CompilerContext context;
 
-
-LLVMContextRef context;
-LLVMBuilderRef builder;
-Module* baseModule;
-unordered_map<string, vector<Type>> nameToType;
-unordered_map<string, vector<Function>> nameToFunction;
-Module* activeModule;
-vector<vector<string>> activeTemplateName;
-vector<vector<Type>> activeTemplateType;
-unordered_map<string, TokenPositon> templateNameToFunctionStart;
-
-
-void setupBasicTypes() {
-    // number types
-    for (int i = 1; i <= 512; i++) {
-        string uname = "u" + to_string(i);
-        string iname = "i" + to_string(i);
-        Type(LLVMIntType(i), uname, baseModule);
-        Type(LLVMIntType(i), iname, baseModule);
+void logError(const string& err, Token token, bool wholeLine) {
+    context.hadCompileError = true;
+    std::cout << "\033[31m";
+    cout << "Error: " << err << endl;
+    std::cout << "\033[0m";
+    cout << removeSpaces(context.textByFileByLine[token.file][token.line]) << endl;
+    std::cout << "\033[31m";
+    if (wholeLine) {
+        for (int i = 0; i <= context.textByFileByLine[token.file][token.line].size(); i++) {
+            cout << "^";
+        }
+    } else {
+        bool startSpaces = true;
+        for (int i = 0; i < token.schar; i++) {
+            if (isspace(context.textByFileByLine[token.file][token.line][i]) && startSpaces) {
+                continue;
+            }
+            cout << " ";
+            startSpaces = false;
+        }
+        for (int i = token.schar; i <= token.echar; i++) {
+            cout << "^";
+        }
     }
-    Type(LLVMVoidType(), "void", baseModule);
-
-    nameToType["int"].push_back(Type(LLVMIntType(32), "i32", baseModule));
-    nameToType["uint"].push_back(Type(LLVMIntType(32), "u32", baseModule));
-
-    Type(LLVMHalfType(), "f16", baseModule);
-    Type(LLVMFloatType(), "f32", baseModule);
-    Type(LLVMDoubleType(), "f64", baseModule);
-
-    nameToType["half"].push_back(Type(LLVMHalfType(), "f16", baseModule));
-    nameToType["float"].push_back(Type(LLVMFloatType(), "f32", baseModule));
-    nameToType["double"].push_back(Type(LLVMDoubleType(), "f64", baseModule));
-
-    nameToType["char"].push_back(Type(LLVMIntType(8), "u8", baseModule));
-    nameToType["bool"].push_back(Type(LLVMIntType(1), "i1", baseModule));
+    std::cout << "\033[0m";
+    cout << endl;
+    cout << "Line: " << token.line << " | File: " << context.files[token.file] << endl;
+    cout << "-------------------------------------" << endl;
 }
 
-
-
-void compile(const std::string& dir) {
+void compile(std::string dir) {
     LLVMInitializeAllTargetInfos();
     LLVMInitializeAllTargets();
     LLVMInitializeAllTargetMCs();
     LLVMInitializeAllAsmPrinters();
     LLVMInitializeAllAsmParsers();
-
-    context = LLVMContextCreate();
-    builder = LLVMCreateBuilderInContext(context);
-    baseModule = new Module("base");
-    setupBasicTypes();
+    context.llvmContext = LLVMContextCreate();
+    context.llvmBuilder = LLVMCreateBuilderInContext(context.llvmContext);
 
     Module module(dir);
-    module.loadTokens();
-    module.findStarts();
-    module.setupTypesAndFunctions();
-
-    bool err = module.printResult();
-
-    cout << endl;
-    if (err) return;
-
-    char* irString = LLVMPrintModuleToString(module.llvmModule);
-    printf("%s\n", irString);
-    LLVMDisposeMessage(irString);
-
-    error_code ec;
-    fs::remove_all("Build", ec);
-
-    module.compileToObjFile("Build");
-
-    vector<string> objFiles;
-    for (const auto& entry : fs::directory_iterator("Build")) {
-        fs::path path = entry.path();
-        objFiles.push_back(path.string());
-    }
-    std::stringstream command;
-    // new: try doing this instead lld-link mycode.obj /out:myprogram.exe /subsystem:console /defaultlib:libcmt
-    command << "lld-link ";
-    for (const auto& file : objFiles) {
-        command << file << " ";
-    }
-    command << "/out:main.exe /subsystem:console /defaultlib:libcmt";
-    int result = std::system(command.str().c_str());
-    if (result == 0) {
-        std::cout << "Linking successful!" << std::endl;
-    } else {
-        std::cout << "Linking failed with error code: " << result << std::endl;
-    }
 }

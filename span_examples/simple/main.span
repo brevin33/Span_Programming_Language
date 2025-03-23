@@ -1,22 +1,5 @@
 int printf(char* text, ...)
-void* malloc(u64 size)
-
-struct test{
-    i32 x
-    i32 y
-}
-
-i32 test.getX(){
-    x = 3
-    return y
-}
 
 void main(){
-    test t = {1, 2}
-    u8* a = malloc(100)
-    u8[100] b
-    i32 i = 8
-    b[i] = t.getX() 
-    a[i] = t.x
-    printf("%d %d\n", a[i], b[i])
+    printf("%d %d\n", 2, 3)
 }

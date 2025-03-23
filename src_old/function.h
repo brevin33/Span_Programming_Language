@@ -34,6 +34,7 @@ public:
     std::unordered_map<u64, LLVMValueRef> moduleToFunc;
     optional<Type> methodOfType;
     vector<string> templateNames;
+    vector<Type> templateTypes;
     vector<Function> templateFunctions;
 
 private:
