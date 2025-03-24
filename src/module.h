@@ -1,6 +1,7 @@
 #pragma once
 #include "utils.h"
 #include "token.h"
+#include "function.h"
 
 
 class Module {
@@ -8,16 +9,16 @@ public:
     Module(const string& dir);
     void findStarts();
 
-    bool looksLikeType();
-    bool looksLikeFunction();
 
 public:
     // makes accessing tokens easier
-    const vector<Token>& tokens;
     vector<int> functionStarts;
+    unordered_map<string, functionPrototype> functionPrototypes;
     LLVMModuleRef llvmModule;
     string dir;
     int tokensStart;
     int tokensEnd;
-    int t;  // tokenPositon
+    bool hasMain = false;
 };
+bool looksLikeType();
+bool looksLikeFunction();

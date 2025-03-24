@@ -1,68 +1,77 @@
 #include "module.h"
 #include "span.h"
 
-Module::Module(const string& dir)
-    : tokens(context.tokens) {
+Module::Module(const string& dir) {
     this->dir = dir;
     llvmModule = LLVMModuleCreateWithName(dir.c_str());
-    context.activeModule = this;
+    c.activeModule = this;
 
-    int startFile = context.textByFileByLine.size();
+    int startFile = c.textByFileByLine.size();
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;
         fs::path path = entry.path();
         if (path.extension() != ".span") continue;
-        context.files.push_back(path.string());
-        context.textByFileByLine.push_back(splitStringByNewline(loadFileToString(path.string())));
+        c.files.push_back(path.string());
+        c.textByFileByLine.push_back(splitStringByNewline(loadFileToString(path.string())));
     }
-    this->tokensStart = getTokens(context.textByFileByLine, startFile);
-    this->tokensEnd = context.tokens.size();
-    int i = tokensStart;
+    this->tokensStart = getTokens(c.textByFileByLine, startFile);
+    this->tokensEnd = c.tokens.size();
+    c.pos = tokensStart;
+
+    findStarts();
+    for (int i = 0; i < functionStarts.size(); i++) {
+        optional<functionPrototype> proto = prototypeFunction(functionStarts[i]);
+        if (proto.has_value()) {
+            functionPrototypes[proto.value().name] = proto.value();
+        }
+    }
 }
 
-bool Module::looksLikeType() {
-    int start = t;
-    if (tokens[t].type != tt_id) {
-        t = start;
+
+
+bool looksLikeType() {
+    int start = c.pos;
+    if (c.tokens[c.pos].type != tt_id) {
+        c.pos = start;
         return false;
     }
-    t++;
+    c.pos++;
     while (true) {
-        switch (tokens[t].type) {
+        switch (c.tokens[c.pos].type) {
             case tt_mul: {
-                t++;
+                c.pos++;
                 break;
             }
             case tt_and: {
-                t++;
+                c.pos++;
                 break;
             }
             case tt_lbar: {
-                t++;
-                if (tokens[t].type != tt_int) {
-                    t = start;
+                c.pos++;
+                if (c.tokens[c.pos].type != tt_int) {
+                    c.pos = start;
                     return false;
                 }
-                t++;
-                if (tokens[t].type != tt_rbar) {
-                    t = start;
+                c.pos++;
+                if (c.tokens[c.pos].type != tt_rbar) {
+                    c.pos = start;
                     return false;
                 }
-                t++;
+                c.pos++;
                 break;
             }
             case tt_bitor: {
-                t++;
+                c.pos++;
                 if (!looksLikeType()) {
-                    t = start;
+                    c.pos = start;
                     return false;
                 }
                 return true;
             }
             case tt_com: {
-                t++;
+                c.pos++;
                 if (!looksLikeType()) {
-                    t = start;
+                    c.pos = start;
                     return false;
                 }
                 return true;
@@ -75,99 +84,100 @@ bool Module::looksLikeType() {
     }
 }
 
-bool Module::looksLikeFunction() {
-    int start = t;
+bool looksLikeFunction() {
+    int start = c.pos;
     if (!looksLikeType()) return false;
-    int typeEnd = t;
+    int typeEnd = c.pos;
     if (looksLikeType()) {
-        if (tokens[t].type != tt_dot) {
-            t = typeEnd;
+        if (c.tokens[c.pos].type != tt_dot) {
+            c.pos = typeEnd;
         } else {
-            t++;
+            c.pos++;
         }
     }
-    if (tokens[t].type != tt_id) {
-        t = start;
+    if (c.tokens[c.pos].type != tt_id) {
+        c.pos = start;
         return false;
     }
-    t++;
-    if (tokens[t].type != tt_lpar) {
-        t = start;
+    c.pos++;
+    if (c.tokens[c.pos].type != tt_lpar) {
+        c.pos = start;
         return false;
     }
     while (true) {
-        t++;
-        if (tokens[t].type == tt_rpar) break;
+        c.pos++;
+        if (c.tokens[c.pos].type == tt_rpar) break;
     }
-    t++;
-    if (tokens[t].type == tt_endl) {
+    c.pos++;
+    if (c.tokens[c.pos].type == tt_endl) {
         return true;
     }
-    if (tokens[t].type != tt_lcur) {
-        t = start;
+    if (c.tokens[c.pos].type != tt_lcur) {
+        c.pos = start;
         return false;
     }
     int curStack = 1;
-    Token curStart = tokens[t];
+    Token curStart = c.tokens[c.pos];
     while (curStack != 0) {
-        t++;
-        if (tokens[t].type == tt_eot) {
-            t = start;
+        c.pos++;
+        if (c.tokens[c.pos].type == tt_eot) {
+            c.pos = start;
             return false;
         }
-        if (tokens[t].type == tt_eof) {
-            t = start;
+        if (c.tokens[c.pos].type == tt_eof) {
+            c.pos = start;
             return false;
         }
-        if (tokens[t].type == tt_rcur) curStack--;
-        if (tokens[t].type == tt_lcur) curStack++;
+        if (c.tokens[c.pos].type == tt_rcur) curStack--;
+        if (c.tokens[c.pos].type == tt_lcur) curStack++;
     }
-    t++;
-    if (tokens[t].type == tt_endl) return true;
-    if (tokens[t].type == tt_eof) return true;
-    t = start;
+    c.pos++;
+    if (c.tokens[c.pos].type == tt_endl) return true;
+    if (c.tokens[c.pos].type == tt_eof) return true;
+    c.pos = start;
     return false;
 }
 
+
 void Module::findStarts() {
     while (true) {
-        int s = tokensStart;
+        int s = c.pos;
         if (looksLikeFunction()) {
             functionStarts.push_back(s);
-        } else if (tokens[t].type == tt_endl) {
-            t++;
+        } else if (c.tokens[c.pos].type == tt_endl) {
+            c.pos++;
             continue;
-        } else if (tokens[t].type == tt_eof) {
-            t++;
+        } else if (c.tokens[c.pos].type == tt_eof) {
+            c.pos++;
             continue;
-        } else if (tokens[t].type == tt_eot) {
+        } else if (c.tokens[c.pos].type == tt_eot) {
             return;
         } else {
-            logError("Don't know what this top level line is", tokens[t], true);
+            logError("Don't know what this top level line is", c.tokens[c.pos], true);
             while (true) {
-                if (tokens[t].type == tt_endl) break;
-                if (tokens[t].type == tt_eof) break;
-                if (tokens[t].type == tt_lcur) {
-                    Token curStart = tokens[t];
+                if (c.tokens[c.pos].type == tt_endl) break;
+                if (c.tokens[c.pos].type == tt_eof) break;
+                if (c.tokens[c.pos].type == tt_lcur) {
+                    Token curStart = c.tokens[c.pos];
                     int curStack = 1;
                     while (curStack != 0) {
-                        t++;
-                        if (tokens[t].type == tt_eot) return;
-                        if (tokens[t].type == tt_eof) break;
-                        if (tokens[t].type == tt_rcur) curStack--;
-                        if (tokens[t].type == tt_lcur) curStack++;
+                        c.pos++;
+                        if (c.tokens[c.pos].type == tt_eot) return;
+                        if (c.tokens[c.pos].type == tt_eof) break;
+                        if (c.tokens[c.pos].type == tt_rcur) curStack--;
+                        if (c.tokens[c.pos].type == tt_lcur) curStack++;
                     }
-                    if (tokens[t].type == tt_eof) {
+                    if (c.tokens[c.pos].type == tt_eof) {
                         logError("No closing bracket", curStart);
                         break;
                     }
-                    t++;
-                    if (tokens[t].type == tt_endl) break;
-                    if (tokens[t].type == tt_eof) break;
-                    if (tokens[t].type == tt_eot) return;
-                    logError("Right brackets should be on there own line", tokens[t]);
+                    c.pos++;
+                    if (c.tokens[c.pos].type == tt_endl) break;
+                    if (c.tokens[c.pos].type == tt_eof) break;
+                    if (c.tokens[c.pos].type == tt_eot) return;
+                    logError("Right brackets should be on there own line", c.tokens[c.pos]);
                 }
-                t++;
+                c.pos++;
             }
         }
     }

@@ -9,6 +9,7 @@
 // All globlas are stored in a struct
 struct CompilerContext {
     vector<Token> tokens;
+    int pos;
     bool hadCompileError = false;
     vector<vector<string>> textByFileByLine;
     vector<string> files;
@@ -17,7 +18,7 @@ struct CompilerContext {
     Module* activeModule;
     Types types;
 };
-extern CompilerContext context;
+extern CompilerContext c;
 
 void compile(std::string dir);
 void logError(const string& err, Token token, bool wholeLine = false);

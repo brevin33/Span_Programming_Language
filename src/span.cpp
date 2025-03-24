@@ -1,22 +1,22 @@
 #include "span.h"
 
-CompilerContext context;
+CompilerContext c;
 
 void logError(const string& err, Token token, bool wholeLine) {
-    context.hadCompileError = true;
+    c.hadCompileError = true;
     std::cout << "\033[31m";
     cout << "Error: " << err << endl;
     std::cout << "\033[0m";
-    cout << removeSpaces(context.textByFileByLine[token.file][token.line]) << endl;
+    cout << removeSpaces(c.textByFileByLine[token.file][token.line]) << endl;
     std::cout << "\033[31m";
     if (wholeLine) {
-        for (int i = 0; i <= context.textByFileByLine[token.file][token.line].size(); i++) {
+        for (int i = 0; i <= c.textByFileByLine[token.file][token.line].size(); i++) {
             cout << "^";
         }
     } else {
         bool startSpaces = true;
         for (int i = 0; i < token.schar; i++) {
-            if (isspace(context.textByFileByLine[token.file][token.line][i]) && startSpaces) {
+            if (isspace(c.textByFileByLine[token.file][token.line][i]) && startSpaces) {
                 continue;
             }
             cout << " ";
@@ -28,7 +28,7 @@ void logError(const string& err, Token token, bool wholeLine) {
     }
     std::cout << "\033[0m";
     cout << endl;
-    cout << "Line: " << token.line << " | File: " << context.files[token.file] << endl;
+    cout << "Line: " << token.line << " | File: " << c.files[token.file] << endl;
     cout << "-------------------------------------" << endl;
 }
 
@@ -38,8 +38,8 @@ void compile(std::string dir) {
     LLVMInitializeAllTargetMCs();
     LLVMInitializeAllAsmPrinters();
     LLVMInitializeAllAsmParsers();
-    context.llvmContext = LLVMContextCreate();
-    context.llvmBuilder = LLVMCreateBuilderInContext(context.llvmContext);
+    c.llvmContext = LLVMContextCreate();
+    c.llvmBuilder = LLVMCreateBuilderInContext(c.llvmContext);
 
     Module module(dir);
 }

@@ -1,4 +1,4 @@
-int printf(char* text, ...)
+i32 printf(i8* text, ...)
 
 void main(){
     printf("%d %d\n", 2, 3)

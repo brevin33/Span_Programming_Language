@@ -2,8 +2,8 @@
 #include "span.h"
 
 int getTokens(const vector<vector<string>>& textByFileByLine, int startFile) {
-    int startOfTokens = context.tokens.size();
-    vector<Token>& tokens = context.tokens;
+    int startOfTokens = c.tokens.size();
+    vector<Token>& tokens = c.tokens;
     for (u16 file = startFile; file < textByFileByLine.size(); file++) {
         for (u16 lineNum = 0; lineNum < textByFileByLine[file].size(); lineNum++) {
             const string& line = textByFileByLine[file][lineNum];
@@ -165,9 +165,9 @@ int getTokens(const vector<vector<string>>& textByFileByLine, int startFile) {
                                         ss << '\0';
                                         break;
                                     }
-                                    if (c + 1 < line.size() && line[c + 1] == 't') {
+                                    if (c + 1 < line.size() && line[c + 1] == 'c.t') {
                                         c += 2;
-                                        ss << '\t';
+                                        ss << '\c.t';
                                         break;
                                     }
                                 }

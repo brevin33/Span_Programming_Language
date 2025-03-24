@@ -6,15 +6,18 @@
 int main() {
     auto start = std::chrono::high_resolution_clock::now();
 
-    compile("../../../span_examples/list");
+    compile("../../../span_examples/simple");
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::nano> duration = end - start;
+    cout << "-------------------------------------" << endl;
     std::cout << "Time: " << duration.count() / 1000000000 << " seconds" << std::endl;
 
-    std::cout << "attempting to run:" << std::endl << std::endl;
+    std::cout << "attempting to run:" << std::endl;
+    cout << "-------------------------------------" << endl;
     int errorCode = std::system("main.exe");
-    std::cout << std::endl << std::endl;
+    cout << endl;
+    cout << "-------------------------------------" << endl;
     std::cout << "Error Code: " << errorCode << std::endl;
     return 0;
 }

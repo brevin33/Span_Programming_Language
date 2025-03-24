@@ -101,6 +101,11 @@ struct Token {
         }
     }
 
+    string& getStr() {
+        // Todo: look at template to replace if equal to template
+        return *this->data.str;
+    }
+
     // Copy assignment operator
     Token& operator=(const Token& other) {
         if (this == &other) return *this;
