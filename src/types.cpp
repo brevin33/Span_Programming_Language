@@ -167,7 +167,7 @@ Type createType(string name, LLVMTypeRef llvmType, TypeKind kind, const vector<T
     return Type(id);
 }
 
-optional<Type> typeFromTokens(bool logErrors, bool stopAtComma, bool stopAtOr) {
+optional<Type> parseType(bool logErrors, bool stopAtComma, bool stopAtOr) {
     int startPos = c.pos;
     if (c.tokens[c.pos].type != tt_id) {
         if (logErrors) logError("Expected type", c.tokens[c.pos]);
@@ -175,6 +175,8 @@ optional<Type> typeFromTokens(bool logErrors, bool stopAtComma, bool stopAtOr) {
         return nullopt;
     }
     string baseName = c.tokens[c.pos].getStr();
+    optional<templateTypes> tt = parseTemplateTypes();
+    optional<templateNames> tn = parseTemplateNames();
     optional<Type> base = getTypeFromName(baseName);
     if (!base.has_value()) {
         if (logErrors) logError("No type with this name", c.tokens[c.pos]);

@@ -3,18 +3,33 @@
 
 optional<functionPrototype> prototypeFunction(int startPos) {
     functionPrototype proto;
+    proto.startPosition = c.pos;
     int prevPos = c.pos;
     c.pos = startPos;
-    optional<Type> type = typeFromTokens();
-    if (!type.has_value()) {
+    optional<Type> returnType = parseType();
+    if (!returnType.has_value()) {
         c.pos = prevPos;
         return nullopt;
     }
-    proto.returnType = type.value();
+    proto.returnType = returnType.value();
+    proto.methodType = parseType(false);
+    if (proto.methodType.has_value()) {
+        proto.paramNames.push_back("this");
+        proto.paramTypes.push_back(proto.methodType.value());
+        if (c.tokens[c.pos].type != tt_dot) {
+            logError("Becauses ran into two types in a row. I expected a . to make a method", c.tokens[c.pos]);
+            c.pos = prevPos;
+            return nullopt;
+        }
+        c.pos++;
+    }
 
     assert(c.tokens[c.pos].type == tt_id);
     proto.name = c.tokens[c.pos].getStr();
     c.pos++;
+
+    // todo: figure out templates here more
+    proto.templates = parseTemplateNames(false);
 
     assert(c.tokens[c.pos].type == tt_lpar);
     c.pos++;
@@ -34,8 +49,8 @@ optional<functionPrototype> prototypeFunction(int startPos) {
                 break;
             }
 
-            optional<Type> paramType = typeFromTokens();
-            if (!type.has_value()) {
+            optional<Type> paramType = parseType();
+            if (!returnType.has_value()) {
                 c.pos = prevPos;
                 return nullopt;
             }
@@ -64,7 +79,7 @@ optional<functionPrototype> prototypeFunction(int startPos) {
     c.pos++;
 
     if (proto.name == "main") {
-        if (type.value().getName() != "void" && type.value().getName() != "i32") {
+        if (returnType.value().getName() != "void" && returnType.value().getName() != "i32") {
             logError("return type of main must be i32 or void", c.tokens[c.pos], true);
             c.pos = prevPos;
             return nullopt;
@@ -78,4 +93,8 @@ optional<functionPrototype> prototypeFunction(int startPos) {
     }
     c.pos = prevPos;
     return proto;
+}
+
+bool functionPrototype::isReal() {
+    return !templates.has_value();
 }

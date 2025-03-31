@@ -22,3 +22,5 @@ public:
 };
 bool looksLikeType();
 bool looksLikeFunction();
+bool looksLikeTemplateNames();
+bool looksLikeTemplateTypes();

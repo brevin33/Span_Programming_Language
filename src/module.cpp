@@ -35,6 +35,7 @@ bool looksLikeType() {
         c.pos = start;
         return false;
     }
+    looksLikeTemplateNames();
     c.pos++;
     while (true) {
         switch (c.tokens[c.pos].type) {
@@ -84,6 +85,42 @@ bool looksLikeType() {
     }
 }
 
+bool looksLikeTemplateTypes() {
+    int start = c.pos;
+    if (c.tokens[c.pos].type != tt_le) {
+        c.pos = start;
+        return false;
+    }
+    c.pos++;
+    while (true) {
+        if (c.tokens[c.pos].type == tt_gr) break;
+        if (!looksLikeType()) {
+            c.pos = start;
+            return false;
+        }
+    }
+    return true;
+}
+
+bool looksLikeTemplateNames() {
+    int start = c.pos;
+    if (c.tokens[c.pos].type != tt_le) {
+        c.pos = start;
+        return false;
+    }
+    c.pos++;
+    while (true) {
+        if (c.tokens[c.pos].type == tt_gr) break;
+        if (c.tokens[c.pos].type != tt_id) {
+            c.pos = start;
+            return false;
+        }
+        c.pos++;
+    }
+    return true;
+}
+
+
 bool looksLikeFunction() {
     int start = c.pos;
     if (!looksLikeType()) return false;
@@ -100,6 +137,7 @@ bool looksLikeFunction() {
         return false;
     }
     c.pos++;
+    looksLikeTemplateNames();
     if (c.tokens[c.pos].type != tt_lpar) {
         c.pos = start;
         return false;

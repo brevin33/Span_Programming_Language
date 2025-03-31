@@ -41,6 +41,7 @@ struct Types {
     vector<TypeKind> typeidToKind;
     vector<vector<Type>> typeidToEles;
     vector<vector<string>> typeidToEleNames;
+    vector <
 };
 
 
@@ -48,4 +49,4 @@ optional<Type> getTypeFromName(string typeName);
 
 Type createType(string name, LLVMTypeRef llvmType, TypeKind kind, const vector<Type>& eles = {}, const vector<string>& eleNames = {});
 
-optional<Type> typeFromTokens(bool logErrors = true, bool stopAtComma = false, bool stopAtOr = false);
+optional<Type> parseType(bool logErrors = true, bool stopAtComma = false, bool stopAtOr = false);
