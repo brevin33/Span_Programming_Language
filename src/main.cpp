@@ -1,23 +1,14 @@
-#include <chrono>
-#include <thread>
 #include <iostream>
-#include "span.h"
+#include <chrono>
+#include "language.h"
+using namespace std;
 
-int main() {
+void main() {
     auto start = std::chrono::high_resolution_clock::now();
 
-    compile("../../../span_examples/simple");
+    SpanProgram program("../../../span_examples/simple");
 
     auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::nano> duration = end - start;
-    cout << "-------------------------------------" << endl;
-    std::cout << "Time: " << duration.count() / 1000000000 << " seconds" << std::endl;
-
-    std::cout << "attempting to run:" << std::endl;
-    cout << "-------------------------------------" << endl;
-    int errorCode = std::system("main.exe");
-    cout << endl;
-    cout << "-------------------------------------" << endl;
-    std::cout << "Error Code: " << errorCode << std::endl;
-    return 0;
+    chrono::duration<double> duration = end - start;
+    cout << "Time: " << duration.count() << " seconds" << endl;
 }

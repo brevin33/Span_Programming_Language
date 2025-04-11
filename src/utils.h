@@ -1,104 +1,99 @@
 #pragma once
-#include <inttypes.h>
+#include <string>
 #include <vector>
-#include <unordered_map>
 #include <iostream>
 #include <sstream>
-#include <string>
-#include <fstream>
+#include <inttypes.h>
 #include <filesystem>
-#include <llvm-c/Core.h>
-#include <llvm-c/Target.h>
-#include <llvm-c/Analysis.h>
-#include <llvm-c/Support.h>
+#include <cassert>
 #include <optional>
-#include <assert.h>
-
+#include <fstream>
 using namespace std;
-namespace fs = std::filesystem;
 
 typedef uint64_t u64;
 typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
-
 typedef int64_t i64;
 typedef int32_t i32;
 typedef int16_t i16;
 typedef int8_t i8;
-
-typedef double f64;
 typedef float f32;
+typedef double f64;
 
-#define CASELETTER                                                                                                                                                                                                                   \
-    case 'a':                                                                                                                                                                                                                        \
-    case 'A':                                                                                                                                                                                                                        \
-    case 'b':                                                                                                                                                                                                                        \
-    case 'B':                                                                                                                                                                                                                        \
-    case 'c':                                                                                                                                                                                                                        \
-    case 'C':                                                                                                                                                                                                                        \
-    case 'd':                                                                                                                                                                                                                        \
-    case 'D':                                                                                                                                                                                                                        \
-    case 'e':                                                                                                                                                                                                                        \
-    case 'E':                                                                                                                                                                                                                        \
-    case 'f':                                                                                                                                                                                                                        \
-    case 'F':                                                                                                                                                                                                                        \
-    case 'g':                                                                                                                                                                                                                        \
-    case 'G':                                                                                                                                                                                                                        \
-    case 'h':                                                                                                                                                                                                                        \
-    case 'H':                                                                                                                                                                                                                        \
-    case 'i':                                                                                                                                                                                                                        \
-    case 'I':                                                                                                                                                                                                                        \
-    case 'j':                                                                                                                                                                                                                        \
-    case 'J':                                                                                                                                                                                                                        \
-    case 'k':                                                                                                                                                                                                                        \
-    case 'K':                                                                                                                                                                                                                        \
-    case 'l':                                                                                                                                                                                                                        \
-    case 'L':                                                                                                                                                                                                                        \
-    case 'm':                                                                                                                                                                                                                        \
-    case 'M':                                                                                                                                                                                                                        \
-    case 'n':                                                                                                                                                                                                                        \
-    case 'N':                                                                                                                                                                                                                        \
-    case 'o':                                                                                                                                                                                                                        \
-    case 'O':                                                                                                                                                                                                                        \
-    case 'p':                                                                                                                                                                                                                        \
-    case 'P':                                                                                                                                                                                                                        \
-    case 'q':                                                                                                                                                                                                                        \
-    case 'Q':                                                                                                                                                                                                                        \
-    case 'r':                                                                                                                                                                                                                        \
-    case 'R':                                                                                                                                                                                                                        \
-    case 's':                                                                                                                                                                                                                        \
-    case 'S':                                                                                                                                                                                                                        \
-    case 't':                                                                                                                                                                                                                        \
-    case 'T':                                                                                                                                                                                                                        \
-    case 'u':                                                                                                                                                                                                                        \
-    case 'U':                                                                                                                                                                                                                        \
-    case 'v':                                                                                                                                                                                                                        \
-    case 'V':                                                                                                                                                                                                                        \
-    case 'w':                                                                                                                                                                                                                        \
-    case 'W':                                                                                                                                                                                                                        \
-    case 'x':                                                                                                                                                                                                                        \
-    case 'X':                                                                                                                                                                                                                        \
-    case 'y':                                                                                                                                                                                                                        \
-    case 'Y':                                                                                                                                                                                                                        \
-    case 'z':                                                                                                                                                                                                                        \
-    case 'Z'
-
-#define CASENUMBER                                                                                                                                                                                                                   \
-    case '0':                                                                                                                                                                                                                        \
-    case '1':                                                                                                                                                                                                                        \
-    case '2':                                                                                                                                                                                                                        \
-    case '3':                                                                                                                                                                                                                        \
-    case '4':                                                                                                                                                                                                                        \
-    case '5':                                                                                                                                                                                                                        \
-    case '6':                                                                                                                                                                                                                        \
-    case '7':                                                                                                                                                                                                                        \
-    case '8':                                                                                                                                                                                                                        \
-    case '9'
+struct context { };
+extern context g;
 
 
-string loadFileToString(const string& filePath);
+static void makeRed() {
+    cout << "\033[31m";
+}
+static void makeGreen() {
+    cout << "\033[32m";
+}
+static void makeYellow() {
+    cout << "\033[33m";
+}
+static void makeBlue() {
+    cout << "\033[34m";
+}
+static void makeMagenta() {
+    cout << "\033[35m";
+}
+static void makeCyan() {
+    cout << "\033[36m";
+}
+static void makeWhite() {
+    cout << "\033[37m";
+}
+static void makeNormal() {
+    cout << "\033[0m";
+}
+static void makeBold() {
+    cout << "\033[1m";
+}
 
-vector<string> splitStringByNewline(const string& str);
+static void printLine() {
+    cout << "----------------------------------------" << endl;
+}
 
-string removeSpaces(const string& str);
+static optional<u64> getNumber(const string& str) {
+    istringstream iss(str);
+    u64 value;
+    iss >> value;
+    if (iss.fail()) {
+        return nullopt;
+    }
+    return value;
+}
+
+static optional<f64> getReal(const string& str) {
+    istringstream iss(str);
+    f64 value;
+    iss >> value;
+    if (iss.fail()) {
+        return nullopt;
+    }
+    return value;
+}
+
+static void logInfo(const string& message) {
+    makeBlue();
+    cout << "Info: " << message << endl;
+    makeNormal();
+    printLine();
+}
+
+static void logError(const string& message) {
+    makeRed();
+    cout << "Error: " << message << endl;
+    makeNormal();
+    printLine();
+}
+
+static void logWarning(const string& message) {
+    makeYellow();
+    cout << "Warning: " << message << endl;
+    makeNormal();
+    printLine();
+}
