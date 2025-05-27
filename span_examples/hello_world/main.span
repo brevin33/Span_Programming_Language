@@ -1,0 +1,6 @@
+// extern void* printf(const char* format, ...)
+
+int main(){
+	printf("hello world")
+	return 0
+}

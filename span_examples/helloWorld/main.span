@@ -1,5 +1,0 @@
-int printf(char* text, ...)
-
-void main(){
-    printf("Hello World")
-}
