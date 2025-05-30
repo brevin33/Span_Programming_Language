@@ -5,3 +5,4 @@
 #include "parser/tokens.h"
 #include "parser/logging.h"
 #include "parser/arena.h"
+#include "parser/type.h"

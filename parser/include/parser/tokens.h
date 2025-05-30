@@ -11,7 +11,6 @@ enum TokenType : u8 {
     tt_string,
     tt_char,
     tt_comment,
-    tt_eof,
     tt_lparen,
     tt_rparen,
     tt_lbrace,
@@ -50,6 +49,7 @@ enum TokenType : u8 {
     tt_for,
     tt_switch,
     tt_case,
+    tt_struct,
     tt_sptr,
     tt_not,
     tt_endline,
@@ -60,7 +60,19 @@ struct Token {
     TokenType type;
     u16 charStart;
     u16 charEnd;
+    u16 line;
     char* str;
+    std::string getString() const {
+        if (str) {
+            return std::string(str);
+        }
+        return "";
+    }
+};
+
+struct TokenPos {
+    u64 line;
+    u64 index;
 };
 
 struct Tokens {
@@ -74,7 +86,18 @@ struct Tokens {
     Token peekToken(int amount) const;
     Token prevToken() const;
     Token prevToken(int amount) const;
+    Token goBack(int amount);
+    Token goBack();
+    TokenPos getPosition() const {
+        return { line, index };
+    }
+    void setPosition(TokenPos pos) {
+        line = pos.line;
+        index = pos.index;
+    }
     std::vector<std::vector<Token>> tokensByLine;
+    std::string filename;
+    std::vector<std::string> lines;  // for printing errors
     u64 line;
     u64 index;
     Arena arena;

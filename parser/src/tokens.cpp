@@ -1,6 +1,8 @@
+#include "parser/tokens.h"
 #include "parser.h"
 #include <fstream>
 #include <sstream>
+#include <string>
 
 using namespace std;
 
@@ -85,8 +87,6 @@ std::string to_string(const TokenType& type) {
             return "tt_char";
         case tt_comment:
             return "tt_comment";
-        case tt_eof:
-            return "tt_eof";
         case tt_lparen:
             return "tt_lparen";
         case tt_rparen:
@@ -151,6 +151,8 @@ std::string to_string(const TokenType& type) {
             return "tt_error";
         case tt_return:
             return "tt_return";
+        case tt_struct:
+            return "tt_struct";
         case tt_if:
             return "tt_if";
         case tt_else:
@@ -505,9 +507,12 @@ Tokens::Tokens(std::string file)
     , index(0)
     , arena(2048) {
     std::ifstream infile(file);
+    filename = file;
 
     std::string lineContent;
+    int lineNumber = 0;
     while (std::getline(infile, lineContent)) {
+        lines.push_back(lineContent);  // Store the line for error reporting
         u64 i = 0;
         int inCommentStack = 0;
         tokensByLine.push_back(std::vector<Token>());
@@ -540,6 +545,7 @@ Tokens::Tokens(std::string file)
                 continue;
             }
             Token token = createToken(lineContent, i, *this);
+            token.line = lineNumber;  // Set the line number for the token
             tokensByLine.back().push_back(token);
         }
         Token endLineToken;
@@ -548,6 +554,7 @@ Tokens::Tokens(std::string file)
         endLineToken.charEnd = lineContent.size();
         endLineToken.str = nullptr;
         tokensByLine.back().push_back(endLineToken);
+        lineNumber++;
     }
     Token endFileToken;
     endFileToken.type = tt_endfile;
@@ -563,22 +570,22 @@ Tokens::Tokens(std::string file)
 
 Token Tokens::getToken() {
     if (line >= tokensByLine.size()) {
-        return Token { tt_eof, 0, 0, nullptr };
+        return Token { tt_endfile, 0, 0, 0, nullptr };
     }
     if (index >= tokensByLine[line].size()) {
         line++;
         index = 0;
-        return tokensByLine[line][index++];
+        return tokensByLine[line][index];
     }
     return tokensByLine[line][index++];
 }
 
 Token Tokens::peekToken() const {
     if (line >= tokensByLine.size()) {
-        return Token { tt_eof, 0, 0, nullptr };
+        return Token { tt_endfile, 0, 0, 0, nullptr };
     }
     if (index >= tokensByLine[line].size()) {
-        return Token { tt_endline, 0, 0, nullptr };
+        return Token { tt_endline, 0, 0, 0, nullptr };
     }
     return tokensByLine[line][index];
 }
@@ -593,7 +600,7 @@ Token Tokens::peekToken(int amount) const {
             index = 0;
         }
         if (line >= tokensByLine.size()) {
-            return Token { tt_eof, 0, 0, nullptr };
+            return Token { tt_endfile, 0, 0, 0, nullptr };
         }
         amount--;
     }
@@ -604,7 +611,7 @@ Token Tokens::prevToken() const {
     u64 line = this->line;
     u64 index = this->index;
     if (line == 0 && index == 0) {
-        return Token { tt_eof, 0, 0, nullptr };
+        return Token { tt_endfile, 0, 0, 0, nullptr };
     }
     if (index == 0) {
         line--;
@@ -621,7 +628,7 @@ Token Tokens::prevToken(int amount) const {
     while (amount > 0) {
         if (index == 0) {
             if (line == 0) {
-                return Token { tt_eof, 0, 0, nullptr };
+                return Token { tt_endfile, 0, 0, 0, nullptr };
             }
             line--;
             index = tokensByLine[line].size() - 1;
@@ -629,6 +636,34 @@ Token Tokens::prevToken(int amount) const {
             index--;
         }
         amount--;
+    }
+    return tokensByLine[line][index];
+}
+
+Token Tokens::goBack(int amount) {
+    while (amount > 0) {
+        if (index == 0) {
+            if (line == 0) {
+                return Token { tt_endfile, 0, 0, 0, nullptr };
+            }
+            line--;
+            index = tokensByLine[line].size() - 1;
+        } else {
+            index--;
+        }
+        amount--;
+    }
+    return tokensByLine[line][index];
+}
+Token Tokens::goBack() {
+    if (line == 0 && index == 0) {
+        return Token { tt_endfile, 0, 0, 0, nullptr };
+    }
+    if (index == 0) {
+        line--;
+        index = tokensByLine[line].size() - 1;
+    } else {
+        index--;
     }
     return tokensByLine[line][index];
 }
