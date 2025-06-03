@@ -1,74 +1,77 @@
 #pragma once
+
 #include "nice_ints.h"
-#include <vector>
-#include <string>
+#include "parser/tokens.h"
 
-enum TypeKind {
+typedef enum _TypeKind {
+    tk_invalid = 0,
     tk_void,
-    tk_sint,
-    tk_uint,
+    tk_bool,
+    tk_char,
+    tk_int,
     tk_float,
+    tk_uint,
     tk_struct,
-    tk_pointer,
+    tk_enum,
+    tk_ptr,
+    tk_ref,
     tk_array,
-};
+    tk_list,
+    tk_uptr,
+    tk_sptr,
+} TypeKind;
 
-struct EnumData;
-struct Type;
-extern std::vector<Type> gTypes;
+typedef u64 typeId;
 
+typedef struct _enumVals {
+    u64* enumValues;  // array of enum values
+    typeId* enumTypes;
+    u64 enumCount;  // number of enum values
+} EnumVals;
 
-struct TypeId {
-    u64 id;
-    bool operator==(const TypeId& other) const {
-        return id == other.id;
-    }
-    bool operator!=(const TypeId& other) const {
-        return id != other.id;
-    }
-    TypeKind getKind();
-    bool isInt();
-    bool isNumber();
-    u64 getNumberSize();
-    std::vector<Type>& getStructMembers();
-    std::vector<EnumData>& getEnumData();
-    TypeId getPointedToType();
-};
+typedef struct _Struct {
+    typeId* members;  // array of member offsets
+    u64 memberCount;  // number of members
+} StructVals;
 
+typedef struct _ArrayVals {
+    typeId elementType;  // type of the elements in the array
+    u64 size;  // size of the array
+} ArrayVals;
 
-struct Type {
-
-    bool isInt() const {
-        return kind == tk_sint || kind == tk_uint;
-    }
-
-    bool isNumber() const {
-        return kind == tk_sint || kind == tk_uint || kind == tk_float;
-    }
-
+typedef struct _Type {
     TypeKind kind;
-    std::string name;
+    char* name;
     union {
-        struct {
-            u64 numberSize;
-        } number;
-        struct {
-            std::vector<Type> members;
-        } structType;
-        struct {
-            std::vector<EnumData> underlyingTypes;
-        } enumType;
-        struct {
-            const TypeId pointedType;
-        } pointer;
+        StructVals structVals;  // for struct types
+        EnumVals enumVals;  // for enum types
+        typeId pointedToType;
+        ArrayVals arrayVals;  // for array types
+        typeId listType;
     };
-};
+} Type;
 
-struct EnumData {
-    TypeId type;
-    i64 idValue;
-};
 
-TypeId getTypeFromName(std::string& name, bool& error);
+void addType(Type* type);
 
-void addType(Type& type);
+typeId getTypeIdFromName(char* name);
+
+Type* getTypeFromId(typeId id);
+
+typeId getTypeIdFromToken(Token** token);
+
+typeId getTypeIdPtr(typeId id);
+
+typeId getTypeIdArray(typeId id, u64 size);
+
+typeId getTypeIdList(typeId id);
+
+typeId getTypeIdUptr(typeId id);
+
+typeId getTypeIdRef(typeId id);
+
+typeId getTypeIdUnamedStruct(typeId* structTypes, u64 structTypesCount);
+
+typeId getTypeIdUnamedEnum(typeId* enumTypes, u64 enumTypesCount);
+
+void freeTypes();

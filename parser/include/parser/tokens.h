@@ -1,108 +1,79 @@
 #pragma once
+
 #include "nice_ints.h"
 #include "arena.h"
-#include <string>
-#include <vector>
 
-enum TokenType : u8 {
+typedef enum _TokenType : u8 {
+    tt_error,
+    tt_eop,  // end of project
+    tt_eof,
+    tt_endl,
     tt_id,
+    tt_string,
     tt_int,
     tt_float,
-    tt_string,
     tt_char,
-    tt_comment,
-    tt_lparen,
-    tt_rparen,
-    tt_lbrace,
-    tt_rbrace,
-    tt_lbracket,
-    tt_rbracket,
-    tt_semicolon,
-    tt_colon,
-    tt_comma,
-    tt_plus,
-    tt_minus,
-    tt_multiply,
-    tt_divide,
-    tt_modulus,
-    tt_equal,
-    tt_assign,
-    tt_not_equal,
-    tt_less_than,
-    tt_greater_than,
-    tt_less_than_equal,
-    tt_greater_than_equal,
+    tt_add,
+    tt_sub,
+    tt_mul,
+    tt_div,
+    tt_mod,
     tt_and,
     tt_or,
     tt_xor,
-    tt_bitwise_and,
-    tt_bitwise_or,
-    tt_bitwise_xor,
-    tt_bitwise_not,
-    tt_shift_left,
-    tt_shift_right,
-    tt_error,
-    tt_return,
+    tt_not,
+    tt_eq,
+    tt_neq,
+    tt_lt,
+    tt_gt,
+    tt_leq,
+    tt_geq,
+    tt_assign,
+    tt_add_assign,
+    tt_sub_assign,
+    tt_mul_assign,
+    tt_div_assign,
+    tt_mod_assign,
+    tt_inc,
+    tt_dec,
+    tt_lparen,
+    tt_rparen,
+    tt_lbracket,
+    tt_rbracket,
+    tt_lbrace,
+    tt_rbrace,
+    tt_comma,
+    tt_semi,
+    tt_colon,
     tt_if,
     tt_else,
     tt_while,
     tt_for,
+    tt_return,
+    tt_break,
+    tt_continue,
     tt_switch,
     tt_case,
+    tt_default,
     tt_struct,
-    tt_sptr,
-    tt_not,
-    tt_endline,
-    tt_endfile,
-};
+    tt_enum,
+    tt_bool,
+    tt_bit_and,
+    tt_bit_or,
+} OurTokenType;
 
-struct Token {
-    TokenType type;
+
+typedef struct _Token {
+    OurTokenType type;
+    u8 file;
+    u16 line;
     u16 charStart;
     u16 charEnd;
-    u16 line;
     char* str;
-    std::string getString() const {
-        if (str) {
-            return std::string(str);
-        }
-        return "";
-    }
-};
+} Token;
 
-struct TokenPos {
-    u64 line;
-    u64 index;
-};
+u64 getTokenNumber(Token* token);
 
-struct Tokens {
-    Tokens(std::string file);
-    ~Tokens() {
-    }
-    Tokens(Tokens&&) noexcept = default;  // allow move
-    Tokens& operator=(Tokens&&) noexcept = default;
-    Token getToken();
-    Token peekToken() const;
-    Token peekToken(int amount) const;
-    Token prevToken() const;
-    Token prevToken(int amount) const;
-    Token goBack(int amount);
-    Token goBack();
-    TokenPos getPosition() const {
-        return { line, index };
-    }
-    void setPosition(TokenPos pos) {
-        line = pos.line;
-        index = pos.index;
-    }
-    std::vector<std::vector<Token>> tokensByLine;
-    std::string filename;
-    std::vector<std::string> lines;  // for printing errors
-    u64 line;
-    u64 index;
-    Arena arena;
-};
+Token* loadTokensFromDirectory(char** sourceFiles, u64 numberOfFiles, Arena* arena);
 
-std::string to_string(const TokenType& type);
-std::string to_string(const Token& token);
-std::string to_string(const Tokens& tokens);
+char* tokenToString(Token* token, void* buffer, u64 bufferSize);
