@@ -6,11 +6,9 @@
 typedef enum _TypeKind {
     tk_invalid = 0,
     tk_void,
-    tk_bool,
-    tk_char,
     tk_int,
-    tk_float,
     tk_uint,
+    tk_float,
     tk_struct,
     tk_enum,
     tk_ptr,
@@ -19,6 +17,10 @@ typedef enum _TypeKind {
     tk_list,
     tk_uptr,
     tk_sptr,
+    tk_const_int,
+    tk_const_uint,
+    tk_const_float,
+    tk_const_string,
 } TypeKind;
 
 typedef u64 typeId;
@@ -48,9 +50,11 @@ typedef struct _Type {
         typeId pointedToType;
         ArrayVals arrayVals;  // for array types
         typeId listType;
+        u64 numberSize;
     };
 } Type;
 
+void addBaseTypes();
 
 void addType(Type* type);
 

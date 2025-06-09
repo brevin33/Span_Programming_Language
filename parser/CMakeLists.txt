@@ -10,6 +10,10 @@ add_library(span_parser
 	src/tokens.c
 	src/files.c
 	src/type.c
+	src/function.c
+	src/scope.c
+	src/statment.c
+	src/expression.c
 )
 
 target_include_directories(span_parser

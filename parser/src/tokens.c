@@ -246,6 +246,12 @@ char* tokenToString(Token* token, void* buffer, u64 bufferSize) {
         case tt_char:
             sprintf_s((char*)buffer, bufferSize, "char");
             return buffer;
+        case tt_dot:
+            sprintf_s((char*)buffer, bufferSize, "dot");
+            return buffer;
+        case tt_elips:
+            sprintf_s((char*)buffer, bufferSize, "elips");
+            return buffer;
         default:
             sprintf_s((char*)buffer, bufferSize, "unknown_token");
             return buffer;
@@ -528,6 +534,9 @@ Token* loadTokensFromDirectory(char** sourceFiles, u64 fileCount, Arena* arena) 
                     if (fileContent[i + 1] == '=') {
                         tokens[tokenCount++] = (Token) { tt_leq, fileNumber, lineNumber, i, i + 1, "<=" };
                         i += 2;
+                    } else if (fileContent[i + 1] == '<') {
+                        tokens[tokenCount++] = (Token) { tt_lshift, fileNumber, lineNumber, i, i + 1, "<<" };
+                        i += 2;
                     } else {
                         tokens[tokenCount++] = (Token) { tt_lt, fileNumber, lineNumber, i, i, "<" };
                         i++;
@@ -537,6 +546,9 @@ Token* loadTokensFromDirectory(char** sourceFiles, u64 fileCount, Arena* arena) 
                 case '>': {
                     if (fileContent[i + 1] == '=') {
                         tokens[tokenCount++] = (Token) { tt_geq, fileNumber, lineNumber, i, i + 1, ">=" };
+                        i += 2;
+                    } else if (fileContent[i + 1] == '>') {
+                        tokens[tokenCount++] = (Token) { tt_rshift, fileNumber, lineNumber, i, i + 1, ">>" };
                         i += 2;
                     } else {
                         tokens[tokenCount++] = (Token) { tt_gt, fileNumber, lineNumber, i, i, ">" };
@@ -593,6 +605,16 @@ Token* loadTokensFromDirectory(char** sourceFiles, u64 fileCount, Arena* arena) 
                     tokens[tokenCount++] = (Token) { tt_endl, fileNumber, lineNumber, i, i, "\n" };
                     lineNumber++;
                     i++;
+                    break;
+                }
+                case '.': {
+                    if (fileContent[i + 1] == '.' && fileContent[i + 1] != '\0' && fileContent[i + 2] == '.') {
+                        tokens[tokenCount++] = (Token) { tt_elips, fileNumber, lineNumber, i, i + 1, "..." };
+                        i += 3;
+                    } else {
+                        tokens[tokenCount++] = (Token) { tt_dot, fileNumber, lineNumber, i, i, "." };
+                        i++;
+                    }
                     break;
                 }
                 default: {

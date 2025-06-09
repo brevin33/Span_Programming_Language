@@ -200,6 +200,7 @@ char* getLineFromTokensWithUnderLine(Token* tokens, u64 numberOfTokens, Project*
         buffer[bufferIndex++] = '\n';  // Add newline after the underline
         isCharEndOnSameLine = (charEndInLine >= nextLineStart && charEndInLine <= nextLineEnd);
     }
+    buffer[bufferIndex] = '\0';  // Null-terminate the buffer
     return buffer;
 }
 

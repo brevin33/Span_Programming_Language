@@ -60,6 +60,10 @@ typedef enum _TokenType : u8 {
     tt_bool,
     tt_bit_and,
     tt_bit_or,
+    tt_dot,
+    tt_elips,
+    tt_lshift,
+    tt_rshift,
 } OurTokenType;
 
 
@@ -72,7 +76,7 @@ typedef struct _Token {
     char* str;
 } Token;
 
-u64 getTokenNumber(Token* token);
+u64 getTokenInt(Token* token);
 
 Token* loadTokensFromDirectory(char** sourceFiles, u64 numberOfFiles, Arena* arena);
 

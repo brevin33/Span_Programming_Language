@@ -7,3 +7,7 @@
 #include "parser/files.h"
 #include "parser/tokens.h"
 #include "parser/type.h"
+#include "parser/function.h"
+#include "parser/scope.h"
+#include "parser/statment.h"
+#include "parser/expression.h"

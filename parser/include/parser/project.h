@@ -2,8 +2,9 @@
 #include "parser/nice_ints.h"
 #include "parser/arena.h"
 #include "parser/tokens.h"
+#include "parser/function.h"
 
-typedef struct Project {
+typedef struct _Project {
     char* directory;
     Token* tokens;
     char** sourceFiles;
@@ -11,6 +12,8 @@ typedef struct Project {
     u64 sourceFileCount;
     Token** functionStarts;
     u64 functionStartCount;
+    Function* functions;
+    u64 functionCount;
     Arena arena;
 } Project;
 

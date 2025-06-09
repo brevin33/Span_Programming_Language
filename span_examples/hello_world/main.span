@@ -1,6 +1,6 @@
 // extern void* printf(const char* format, ...)
 
 int main(){
-	printf("hello world")
-	return 0
+	i64 a = 4
+	i64 b = a + 3
 }

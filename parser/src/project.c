@@ -74,12 +74,16 @@ bool looksLikeFunction(Token** tokens) {
             return false;
         }
     }
+    if (token->type != tt_lbrace) {
+        return false;
+    }
     *tokens = token;
     return true;
 }
 
 Project createProject(const char* folder) {
-    Project project;
+    addBaseTypes();
+    Project project = { 0 };
     project.arena = createArena(1024 * 1024);
     u64 folderLength = 0;
     while (folder[folderLength] != '\0') {
@@ -121,6 +125,7 @@ Project createProject(const char* folder) {
     project.functionStartCount = 0;
     Token* token = project.tokens;
     while (token->type != tt_eop) {
+        Token* startToken = token;
         if (looksLikeFunction(&token)) {
             if (project.functionStartCount >= funcitonStartCapacity) {
                 funcitonStartCapacity *= 2;
@@ -128,7 +133,7 @@ Project createProject(const char* folder) {
                 memcpy(tempFunctionStarts, project.functionStarts, sizeof(Token*) * project.functionStartCount);
                 project.functionStarts = tempFunctionStarts;
             }
-            project.functionStarts[project.functionStartCount] = token;
+            project.functionStarts[project.functionStartCount] = startToken;
             project.functionStartCount++;
         } else if (token->type == tt_eof) {
             token++;
@@ -157,6 +162,20 @@ Project createProject(const char* folder) {
     }
 
 
+    for (u64 i = 0; i < project.functionStartCount; i++) {
+        Function* function = createFunctionFromTokens(project.functionStarts[i], &project);
+        if (function == NULL) {
+            logErrorToken("Failed to create function from tokens", &project, project.functionStarts[i]);
+        }
+        //printf("Function %s created with return type %s and %llu parameters\n", function->name, getTypeFromId(function->returnType)->name, function->parameterCount);
+    }
+
+    // Implement all functions
+    for (u64 i = 0; i < project.functionCount; i++) {
+        Function* function = &project.functions[i];
+        implementFunction(function, &project);
+        printf("Function %s implemented with %llu parameters\n", function->name, function->parameterCount);
+    }
 
     return project;
 }

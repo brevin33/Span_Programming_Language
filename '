@@ -27,7 +27,6 @@ void addBaseTypes() {
     addType(&intType);
     intType.name = "i64";
     intType.numberSize = 8;
-    addType(&intType);
 
     Type uintType = { .kind = tk_uint, .name = "u8", .numberSize = 1 };
     addType(&uintType);
@@ -39,13 +38,11 @@ void addBaseTypes() {
     addType(&uintType);
     uintType.name = "u64";
     uintType.numberSize = 8;
-    addType(&uintType);
 
     Type floatType = { .kind = tk_float, .name = "f32", .numberSize = 4 };
     addType(&floatType);
     floatType.name = "f64";
     floatType.numberSize = 8;
-    addType(&floatType);
 
     Type voidType = { .kind = tk_void, .name = "void" };
     addType(&voidType);
@@ -56,26 +53,17 @@ void addBaseTypes() {
     Type boolType = { .kind = tk_int, .name = "bool", .numberSize = 1 };
     addType(&boolType);
 
-    intType = (Type) { .kind = tk_int, .name = "int", .numberSize = 8 };
+    intType = (Type) { .kind = tk_int, .name = "int", .numberSize = 4 };
     addType(&intType);
 
-    uintType = (Type) { .kind = tk_uint, .name = "uint", .numberSize = 8 };
+    uintType = (Type) { .kind = tk_uint, .name = "uint", .numberSize = 4 };
     addType(&uintType);
 
-    floatType = (Type) { .kind = tk_float, .name = "float", .numberSize = 8 };
+    floatType = (Type) { .kind = tk_float, .name = "float", .numberSize = 4 };
     addType(&floatType);
     floatType.name = "double";
     floatType.numberSize = 8;
     addType(&floatType);
-
-    Type constInt = { .kind = tk_const_int, .name = "__const_int", .numberSize = 8 };
-    addType(&constInt);
-    Type constUint = { .kind = tk_const_uint, .name = "__const_uint", .numberSize = 8 };
-    addType(&constUint);
-    Type constFloat = { .kind = tk_const_float, .name = "__const_float", .numberSize = 8 };
-    addType(&constFloat);
-    Type constString = { .kind = tk_const_string, .name = "__const_uint" };
-    addType(&constString);
 }
 
 void addType(Type* type) {
