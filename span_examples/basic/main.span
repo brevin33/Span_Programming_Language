@@ -1,0 +1,9 @@
+i64 foo(i64 x, i64 y){
+	return foo
+}
+
+int main(){
+	i64 a = 4
+	i64 b = a + 3
+	i64 c = foo(a,b)
+}

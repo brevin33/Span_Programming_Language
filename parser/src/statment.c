@@ -213,7 +213,7 @@ Statment createStatmentFromTokens(Token** tokens, Function* function, Scope* sco
                 token = startToken;
                 Assignment assignment = createAssignmentFromTokens(&token, function, scope, project);
                 if (assignment.variableName == NULL) {
-                    return statement;  // Error in assignment
+                    return statement;
                 }
                 statement.type = st_assignment;
                 statement.assignment = arenaAlloc(&project->arena, sizeof(Assignment));

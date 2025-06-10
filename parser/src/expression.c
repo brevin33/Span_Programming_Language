@@ -21,7 +21,9 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
             token++;
             if (token->type == tt_lparen) {
                 //TODO: make this have helper function for doing it with methods in the same spot
-                FunctionExpresstion functionExpresstion;
+                Token* startToken = token - 1;  // Save the start token for error reporting
+                FunctionExpresstion functionExpresstion = { 0 };
+                token++;  // Skip the '('
                 while (true) {
                     if (token->type == tt_rparen) {
                         token++;
@@ -40,7 +42,7 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
                             memcpy(functionExpresstion.parameters, parameters, sizeof(Expresstion) * functionExpresstion.parameterCount);
                         }
                     }
-                    functionExpresstion.parameters[functionExpresstion.parameterCount] = parameter;
+                    functionExpresstion.parameters[functionExpresstion.parameterCount++] = parameter;
                     if (token->type == tt_comma) {
                         token++;
                         continue;
@@ -62,9 +64,8 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
                 for (u64 i = 0; i < functionExpresstion.parameterCount; i++) {
                     paramTypes[i] = functionExpresstion.parameters[i].tid;
                 }
-                Function* func = getFunctionFromNameAndParmeters(name, paramTypes, functionExpresstion.parameterCount, project, token);
+                Function* func = getFunctionFromNameAndParmeters(name, paramTypes, functionExpresstion.parameterCount, project, startToken);
                 if (func == NULL) {
-                    logErrorToken("Function not found: %s with %llu parameters", project, token, token->str, functionExpresstion.parameterCount);
                     expression.type = et_error;
                     return expression;
                 }
@@ -78,7 +79,7 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
             }
             Variable* variable = getVariableFromScope(scope, name);
             if (variable == NULL) {
-                logErrorToken("Variable not declared before use: %s", project, token, name);
+                logErrorToken("Variable not declared before use", project, token - 1);
                 expression.type = et_error;
                 return expression;
             }
@@ -161,33 +162,33 @@ Expresstion _createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels,
                 *tokens = token;
                 return lval;
             }
-            OurTokenType op = token->type;
-            i64 opPrec = biopPrecedence(op);
-            if (opPrec < 0) {
-                logError("Invalid operator in expression: %s", tokenToString(token, NULL, 0));
-                Expresstion expression = { 0 };
-                expression.type = et_error;
-                return expression;
-            }
-            if (opPrec >= prec) {
-                *tokens = token;
-                return lval;
-            }
-            token++;
-            Expresstion rhs = _createExpresstionFromTokensDels(tokens, dels, delsSize, function, scope, project, opPrec);
-            BiopExpresstion biop;
-            biop.left = arenaAlloc(&project->arena, sizeof(Expresstion));
-            memcpy(biop.left, &lval, sizeof(Expresstion));
-            biop.operator= op;
-            biop.right = arenaAlloc(&project->arena, sizeof(Expresstion));
-            memcpy(biop.right, &rhs, sizeof(Expresstion));
-            lval.type = et_biop;
-            //TODO: get type result of th biop
-            lval.tid = getBiopTypeResult(&biop, project);
-            lval.biopExpresstion = arenaAlloc(&project->arena, sizeof(BiopExpresstion));
-            memcpy(lval.biopExpresstion, &biop, sizeof(BiopExpresstion));
-            token++;
         }
+        OurTokenType op = token->type;
+        i64 opPrec = biopPrecedence(op);
+        if (opPrec < 0) {
+            char buf[256];
+            logErrorTokens("Invalid operator in expression: %s", project, token, 1, tokenToString(token, buf, sizeof(buf)));
+            Expresstion expression = { 0 };
+            expression.type = et_error;
+            return expression;
+        }
+        if (opPrec >= prec) {
+            *tokens = token;
+            return lval;
+        }
+        token++;
+        Expresstion rhs = _createExpresstionFromTokensDels(tokens, dels, delsSize, function, scope, project, opPrec);
+        BiopExpresstion biop;
+        biop.left = arenaAlloc(&project->arena, sizeof(Expresstion));
+        memcpy(biop.left, &lval, sizeof(Expresstion));
+        biop.operator= op;
+        biop.right = arenaAlloc(&project->arena, sizeof(Expresstion));
+        memcpy(biop.right, &rhs, sizeof(Expresstion));
+        lval.type = et_biop;
+        lval.tid = getBiopTypeResult(&biop, project);
+        lval.biopExpresstion = arenaAlloc(&project->arena, sizeof(BiopExpresstion));
+        memcpy(lval.biopExpresstion, &biop, sizeof(BiopExpresstion));
+        token++;
     }
 }
 Expresstion createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels, u64 delsSize, Function* function, Scope* scope, Project* project) {

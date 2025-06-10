@@ -30,7 +30,8 @@ Variable* getVariableFromTopScope(Scope* scope, const char* name) {
 
 Variable* getVariableFromScope(Scope* scope, const char* name) {
     for (u64 i = 0; i < scope->variableCount; i++) {
-        if (strcmp(scope->variables[i].name, name) == 0) {
+        char* varName = scope->variables[i].name;
+        if (strcmp(varName, name) == 0) {
             return &scope->variables[i];
         }
     }

@@ -205,10 +205,31 @@ char* getLineFromTokensWithUnderLine(Token* tokens, u64 numberOfTokens, Project*
 }
 
 void logErrorToken(char* error, Project* project, Token* token, ...) {
-    // just call logErrorTokens with a single token
+    // Use redvPrintf to print the error message in red
+    u64 numberOfTokens = 1;
     va_list args;
-    va_start(args, token);
-    logErrorTokens(error, project, token, 1, args);
+    va_start(args, numberOfTokens);
+    char* fileName = project->souceFileNames[token->file];
+    redPrintf("Error in file %s on line ", fileName);
+    int lastLine = -1;
+    for (u64 i = 0; i < numberOfTokens; i++) {
+        int line = token[i].line;
+        if (line != lastLine) {
+            if (lastLine != -1) {
+                redPrintf(", ");
+            }
+            redPrintf("%d", line);
+            lastLine = line;
+        }
+    }
+    redPrintf(": ");
+    redvPrintf(error, args);
+    printf("\n");
+    char* underlineStuff = getLineFromTokensWithUnderLine(token, numberOfTokens, project);
+    if (underlineStuff != NULL) {
+        printf("%s", underlineStuff);
+    }
+    printBar();
     va_end(args);
 }
 

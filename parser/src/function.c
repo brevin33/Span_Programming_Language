@@ -4,6 +4,7 @@
 #include "parser/tokens.h"
 #include "parser/type.h"
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 
 Function* createFunctionFromTokens(Token* tokens, Project* project) {
@@ -82,6 +83,7 @@ Function* createFunction(typeId returnType, char* name, typeId* parameters, char
     function->returnType = returnType;
     function->name = name;
     function->parameters = parameters;
+    function->parameterNames = parameterNames;
     function->parameterCount = parameterCount;
     function->startToken = startToken;
     if (project->functionCount % 10 == 0) {
@@ -98,7 +100,7 @@ void implementFunction(Function* function, Project* project) {
         Variable var = { 0 };
         var.name = function->parameterNames[i];
         var.type = function->parameters[i];
-        addVariableToScope(function->scope, &var, project);
+        if (var.name != NULL) addVariableToScope(function->scope, &var, project);
     }
     Token* token = function->startToken;
     while (token->type != tt_lbrace) {

@@ -73,6 +73,7 @@ bool looksLikeFunction(Token** tokens) {
         if (token->type == tt_lbrace || token->type == tt_rbrace || token->type == tt_eof) {
             return false;
         }
+        token++;
     }
     if (token->type != tt_lbrace) {
         return false;
@@ -167,7 +168,6 @@ Project createProject(const char* folder) {
         if (function == NULL) {
             logErrorToken("Failed to create function from tokens", &project, project.functionStarts[i]);
         }
-        //printf("Function %s created with return type %s and %llu parameters\n", function->name, getTypeFromId(function->returnType)->name, function->parameterCount);
     }
 
     // Implement all functions
