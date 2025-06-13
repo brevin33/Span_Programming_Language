@@ -52,6 +52,12 @@ bool looksLikeType(Token** tokens) {
 
 bool looksLikeFunction(Token** tokens) {
     Token* token = *tokens;
+    if (token->type == tt_extern || token->type == tt_extern_c) {
+        while (token->type != tt_endl)
+            token++;
+        *tokens = token;
+        return true;
+    }
     if (!looksLikeType(&token)) return false;
     if (token->type != tt_id) return false;
     token++;
@@ -162,7 +168,6 @@ Project createProject(const char* folder) {
         }
     }
 
-
     for (u64 i = 0; i < project.functionStartCount; i++) {
         Function* function = createFunctionFromTokens(project.functionStarts[i], &project);
         if (function == NULL) {
@@ -173,8 +178,19 @@ Project createProject(const char* folder) {
     // Implement all functions
     for (u64 i = 0; i < project.functionCount; i++) {
         Function* function = &project.functions[i];
+        if (function->type == ft_extern || function->type == ft_extern_c) {
+            continue;
+        }
         implementFunction(function, &project);
-        printf("Function %s implemented with %llu parameters\n", function->name, function->parameterCount);
+    }
+
+    // Implement all functions
+    for (u64 i = 0; i < project.functionCount; i++) {
+        Function* function = &project.functions[i];
+        if (function->type == ft_extern || function->type == ft_extern_c) {
+            continue;
+        }
+        implementFunction(function, &project);
     }
 
     return project;

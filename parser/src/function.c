@@ -9,6 +9,12 @@
 
 Function* createFunctionFromTokens(Token* tokens, Project* project) {
     Token* token = tokens;
+    FunctionType functionType = ft_normal;
+    if (token->type == tt_extern) {
+        functionType = ft_extern;
+    } else if (token->type == tt_extern_c) {
+        functionType = ft_extern_c;
+    }
 
     typeId returnType = getTypeIdFromToken(&token);
     if (returnType == 0) {
@@ -33,11 +39,20 @@ Function* createFunctionFromTokens(Token* tokens, Project* project) {
     typeId* parameters = NULL;
     char** parameterNames = NULL;
     u64 parameterCount = 0;
-
+    bool variadic = false;
 
     while (true) {
         if (token->type == tt_rparen) {
             token++;
+            break;
+        }
+        if (token->type == tt_elips) {
+            variadic = true;
+            token++;
+            if (token->type != tt_rparen) {
+                logErrorToken("Expected ')' after variadic parameter", project, token - 1);
+                return NULL;
+            }
             break;
         }
 
@@ -74,14 +89,16 @@ Function* createFunctionFromTokens(Token* tokens, Project* project) {
         }
     }
 
-    Function* function = createFunction(returnType, name, parameters, parameterNames, parameterCount, tokens, project);
+    Function* function = createFunction(returnType, name, parameters, parameterNames, parameterCount, tokens, project, variadic, functionType);
     return function;
 }
 
-Function* createFunction(typeId returnType, char* name, typeId* parameters, char** parameterNames, u64 parameterCount, Token* startToken, Project* project) {
+Function* createFunction(typeId returnType, char* name, typeId* parameters, char** parameterNames, u64 parameterCount, Token* startToken, Project* project, bool variadic, FunctionType type) {
     Function* function = arenaAlloc(&project->arena, sizeof(Function));
     function->returnType = returnType;
     function->name = name;
+    function->variadic = variadic;
+    function->type = type;
     function->parameters = parameters;
     function->parameterNames = parameterNames;
     function->parameterCount = parameterCount;

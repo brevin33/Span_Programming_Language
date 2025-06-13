@@ -233,6 +233,73 @@ Statment createStatmentFromTokens(Token** tokens, Function* function, Scope* sco
                 return statement;
             }
         }
+        case tt_return: {
+            token++;
+            Expresstion returnValue = createExpresstionFromTokens(&token, tt_endl, function, scope, project);
+            if (returnValue.type == et_error) {
+                return statement;
+            }
+            statement.type = st_return;
+            statement.returnValue = arenaAlloc(&project->arena, sizeof(Expresstion));
+            memcpy(statement.returnValue, &returnValue, sizeof(Expresstion));
+            *tokens = token;
+            return statement;
+        }
+        case tt_if: {
+            token++;
+            OurTokenType dels[] = { tt_endl, tt_lbrace };
+            Expresstion ifCondition = createExpresstionFromTokensDels(&token, dels, 2, function, scope, project);
+            if (ifCondition.type == et_error) {
+                return statement;
+            }
+            if (token->type == tt_lbrace) {
+                token++;
+                if (token->type != tt_endl) {
+                    logErrorToken("Can't have any more statments on line after if", project, token);
+                    statement.type = st_error;
+                    return statement;
+                }
+            }
+            statement.type = st_if;
+            statement.ifCondition = arenaAlloc(&project->arena, sizeof(Expresstion));
+            memcpy(statement.ifCondition, &ifCondition, sizeof(Expresstion));
+            *tokens = token;
+            return statement;
+        }
+        case tt_break: {
+            token++;
+            u64 breakLevel = 1;
+            if (token->type == tt_int) {
+                breakLevel = getTokenInt(token);
+                token++;
+            }
+            if (token->type != tt_endl) {
+                logErrorToken("Can't have any more statments on line after break", project, token);
+                statement.type = st_error;
+                return statement;
+            }
+            statement.type = st_break;
+            statement.breakLevel = breakLevel;
+            *tokens = token;
+            return statement;
+        }
+        case tt_continue: {
+            token++;
+            u64 continueLevel = 1;
+            if (token->type == tt_int) {
+                continueLevel = getTokenInt(token);
+                token++;
+            }
+            if (token->type != tt_endl) {
+                logErrorToken("Can't have any more statments on line after continue", project, token);
+                statement.type = st_error;
+                return statement;
+            }
+            statement.type = st_continue;
+            statement.continueLevel = continueLevel;
+            *tokens = token;
+            return statement;
+        }
         default: {
             logErrorToken("Unexpected token in statement", project, token);
             while (token->type != tt_endl && token->type != tt_eof) {

@@ -1,6 +1,5 @@
-// extern void* printf(const char* format, ...)
+extern_c int printf(char* txt, ...)
 
 int main(){
-	i64 a = 4
-	i64 b = a + 3
+	printf("hello world")
 }

@@ -57,6 +57,10 @@ typedef struct _Statment {
         Expresstion* expression;
         Assignment* assignment;
         Declaration* declaration;
+        Expresstion* returnValue;
+        Expresstion* ifCondition;
+        u64 breakLevel;
+        u64 continueLevel;
     };
 } Statment;
 

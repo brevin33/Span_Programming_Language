@@ -105,6 +105,8 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
             token++;
             break;
         }
+        case tt_string: {
+        }
         default: {
             logErrorToken("Invalid token for expression: %s", project, token, tokenToString(token, NULL, 0));
             return expression;

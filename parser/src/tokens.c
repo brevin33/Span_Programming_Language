@@ -2,6 +2,7 @@
 #include "parser.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define CASE_LETTER                                                                                                                                                                                                                  \
@@ -252,6 +253,12 @@ char* tokenToString(Token* token, void* buffer, u64 bufferSize) {
         case tt_elips:
             sprintf_s((char*)buffer, bufferSize, "elips");
             return buffer;
+        case tt_str_expr_start:
+            sprintf_s((char*)buffer, bufferSize, "str_expr_start");
+            return buffer;
+        case tt_str_expr_end:
+            sprintf_s((char*)buffer, bufferSize, "str_expr_end");
+            return buffer;
         default:
             sprintf_s((char*)buffer, bufferSize, "unknown_token");
             return buffer;
@@ -275,6 +282,531 @@ u64 getTokenInt(Token* token) {
     return value;
 }
 
+u64 escapeStringBufferSize = 2048;
+char* escapeStringBuffer = NULL;
+//uses the char* input as the buffer to write the escaped string to
+char* handelStringEscapes(char* str) {
+    if (escapeStringBuffer == NULL) {
+        escapeStringBuffer = malloc(escapeStringBufferSize);
+    }
+    char* buffer = escapeStringBuffer;
+    u64 size = 0;
+    for (char c = *str; c != '\0'; c = *(++str)) {
+        size++;
+        if (size >= escapeStringBufferSize) {
+            escapeStringBufferSize *= 2;
+            escapeStringBuffer = realloc(escapeStringBuffer, escapeStringBufferSize);
+        }
+        if (c == '\\') {
+            str++;
+            switch (*str) {
+                case 'n':
+                    *buffer++ = '\n';
+                    break;
+                case 'r':
+                    *buffer++ = '\r';
+                    break;
+                case 't':
+                    *buffer++ = '\t';
+                    break;
+                case '\\':
+                    *buffer++ = '\\';
+                    break;
+                case '"':
+                    *buffer++ = '"';
+                    break;
+                case '\'':
+                    *buffer++ = '\'';
+                    break;
+                case '0':
+                    *buffer++ = '\0';
+                    break;
+                case '{':
+                    *buffer++ = '{';
+                    break;
+                case 'v':
+                    *buffer++ = '\v';
+                    break;
+                case 'f':
+                    *buffer++ = '\f';
+                    break;
+                case 'a':
+                    *buffer++ = '\a';
+                    break;
+                case '?':
+                    *buffer++ = '\?';
+                    break;
+                default:
+                    *buffer++ = *str;
+                    break;
+            }
+        }
+    }
+    memcpy(str, buffer, size);
+    str[size] = '\0';
+    return str;
+}
+
+void addToken(char* fileContent, u64 fileNumber, u64* iRef, Token* tokens, u64* tokenCountRef, u64* tokenCapacityRef, u64* lineNumberRef, Arena* arena) {
+    u64 lineNumber = *lineNumberRef;
+    u64 i = *iRef;
+    u64 tokenCount = *tokenCountRef;
+    u64 tokenCapacity = *tokenCapacityRef;
+
+    while (true) {
+        if (fileContent[i] == '\r' || fileContent[i] == ' ' || fileContent[i] == '\t') {
+            i++;
+            continue;
+        }
+        if (fileContent[i] == '/' && fileContent[i + 1] == '/') {
+            // single line comment
+            while (fileContent[i] != '\n') {
+                i++;
+            }
+            continue;
+        }
+        if (fileContent[i] == '/' && fileContent[i + 1] == '*') {
+            // multi-line comment
+            u64 startLine = lineNumber;
+            i += 2;  // Skip the '/*'
+            while (fileContent[i] != '\0' && !(fileContent[i] == '*' && fileContent[i + 1] == '/')) {
+                if (fileContent[i] == '\n') {
+                    lineNumber++;
+                }
+                i++;
+            }
+            if (fileContent[i] == '\0') {
+                char* errorComment;
+                logError("Unterminated multi-line comment starting at line %u", startLine);
+                break;
+            }
+            i += 2;  // Skip the '*/'
+            continue;
+        }
+
+        int number = fileContent[i];
+
+        if (tokenCount >= tokenCapacity) {
+            tokenCapacity *= 2;
+            Token* tempTokens = (Token*)arenaAlloc(arena, sizeof(Token) * tokenCapacity);
+            memcpy(tempTokens, tokens, sizeof(Token) * (tokenCount - 1));
+            tokens = tempTokens;
+        }
+        switch (fileContent[i]) {
+            case '_':
+            CASE_LETTER: {
+                // Identifier or keyword
+                u64 start = i;
+                while (fileContent[i] == '_' || (fileContent[i] >= 'a' && fileContent[i] <= 'z') || (fileContent[i] >= 'A' && fileContent[i] <= 'Z') || (fileContent[i] >= '0' && fileContent[i] <= '9')) {
+                    i++;
+                }
+                u64 length = i - start;
+                char* identifier = (char*)arenaAlloc(arena, length + 1);
+                memcpy(identifier, &fileContent[start], length);
+                identifier[length] = '\0';
+                OurTokenType type = tt_id;  // Default type
+                if (strcmp(identifier, "if") == 0) type = tt_if;
+                else if (strcmp(identifier, "else") == 0)
+                    type = tt_else;
+                else if (strcmp(identifier, "while") == 0)
+                    type = tt_while;
+                else if (strcmp(identifier, "for") == 0)
+                    type = tt_for;
+                else if (strcmp(identifier, "return") == 0)
+                    type = tt_return;
+                else if (strcmp(identifier, "break") == 0)
+                    type = tt_break;
+                else if (strcmp(identifier, "continue") == 0)
+                    type = tt_continue;
+                else if (strcmp(identifier, "switch") == 0)
+                    type = tt_switch;
+                else if (strcmp(identifier, "case") == 0)
+                    type = tt_case;
+                else if (strcmp(identifier, "default") == 0)
+                    type = tt_default;
+                else if (strcmp(identifier, "struct") == 0)
+                    type = tt_struct;
+                else if (strcmp(identifier, "enum") == 0)
+                    type = tt_enum;
+                else if (strcmp(identifier, "true") == 0 || strcmp(identifier, "false") == 0)
+                    type = tt_bool;
+                else if (strcmp(identifier, "extern") == 0)
+                    type = tt_extern;
+                else if (strcmp(identifier, "extern_c") == 0)
+                    type = tt_extern_c;
+                tokens[tokenCount++] = (Token) { type, fileNumber, lineNumber, start, i - 1, identifier };
+                break;
+            }
+            case '"': {
+                // kinda bad but it works
+                u64 start = i;
+                bool isFormated = false;
+                if (fileContent[i + 1] == '"' && fileContent[i + 2] == '"') {
+                    // multi line string
+                    i += 3;  // Skip the opening triple quotes
+                    while (fileContent[i] != '\0' && !(fileContent[i] == '"' && fileContent[i + 1] == '"' && fileContent[i + 2] == '"')) {
+                        if (fileContent[i] == '\n') {
+                            lineNumber++;
+                        }
+                        if (fileContent[i] == '\\') {
+                            if (fileContent[i + 1] == '"') {  // Handle escaped quotes
+                                i++;
+                            }
+                        }
+                        if (fileContent[i] == '{') {
+                            u64 length;
+                            if (!isFormated) {
+                                length = i - start - 3;
+                            } else {
+                                length = i - start - 1;
+                            }
+                            char* stringContent = (char*)arenaAlloc(arena, length + 1);
+                            if (isFormated) {
+                                memcpy(stringContent, &fileContent[start + 1], length);
+                            } else {
+                                memcpy(stringContent, &fileContent[start + 3], length);
+                            }
+                            stringContent[length] = '\0';
+                            handelStringEscapes(stringContent);
+                            tokens[tokenCount++] = (Token) { tt_string, fileNumber, lineNumber, start, i - 1, stringContent };
+                            // add the str expr start token
+                            tokens[tokenCount++] = (Token) { tt_str_expr_start, fileNumber, lineNumber, i, i + 1, "{" };
+                            i++;
+                            while (tokens[tokenCount - 1].type != tt_rbrace) {
+                                addToken(fileContent, fileNumber, &i, tokens, &tokenCount, &tokenCapacity, &lineNumber, arena);
+                            }
+                            tokens[tokenCount - 1].type = tt_str_expr_end;
+                            isFormated = true;
+                            i--;
+                            start = i;
+                        }
+                        i++;
+                    }
+                    if (fileContent[i] == '\0') {
+                        logError("Unterminated multi-line string starting at line %u", lineNumber);
+                        break;
+                    }
+                    i += 3;  // Skip the closing triple quotes
+                    if (!isFormated) {
+                        u64 length = i - start - 6;  // Exclude the triple quotes
+                        char* stringContent = (char*)arenaAlloc(arena, length + 1);
+                        memcpy(stringContent, &fileContent[start + 3], length);
+                        stringContent[length] = '\0';
+                        handelStringEscapes(stringContent);
+                        tokens[tokenCount++] = (Token) { tt_string, fileNumber, lineNumber, start, i - 1, stringContent };
+                        break;
+                    } else {
+                        start++;
+                        u64 length = i - start - 3;
+                        char* stringContent = (char*)arenaAlloc(arena, length + 1);
+                        memcpy(stringContent, &fileContent[start], length);
+                        stringContent[length] = '\0';
+                        handelStringEscapes(stringContent);
+                        tokens[tokenCount++] = (Token) { tt_string, fileNumber, lineNumber, start, i - 1, stringContent };
+                        break;
+                    }
+                }
+                // Single line string
+                i++;
+                while (fileContent[i] != '\0' && fileContent[i] != '\n' && fileContent[i] != '"') {
+                    if (fileContent[i] == '\\') {
+                        if (fileContent[i + 1] == '"') {  // Handle escaped quotes
+                            i++;
+                        }
+                    }
+                    if (fileContent[i] == '{') {
+                        // formated expresstion in string
+                        // finish the string
+                        u64 length = i - start - 1;
+                        char* stringContent = (char*)arenaAlloc(arena, length + 1);
+                        memcpy(stringContent, &fileContent[start + 1], length);
+                        stringContent[length] = '\0';
+                        handelStringEscapes(stringContent);
+                        tokens[tokenCount++] = (Token) { tt_string, fileNumber, lineNumber, start, i - 1, stringContent };
+                        // add the str expr start token
+                        tokens[tokenCount++] = (Token) { tt_str_expr_start, fileNumber, lineNumber, i, i + 1, "{" };
+                        i++;
+                        while (tokens[tokenCount - 1].type != tt_rbrace) {
+                            addToken(fileContent, fileNumber, &i, tokens, &tokenCount, &tokenCapacity, &lineNumber, arena);
+                        }
+                        tokens[tokenCount - 1].type = tt_str_expr_end;
+                        isFormated = true;
+                        i--;
+                        start = i;
+                    }
+                    i++;
+                }
+                if (fileContent[i] == '\0' || fileContent[i] == '\n') {
+                    logError("Unterminated string starting at line %u", lineNumber);
+                    break;
+                }
+                i++;
+                if (!isFormated) {
+                    u64 length = i - start - 2;
+                    char* stringContent = (char*)arenaAlloc(arena, length + 1);
+                    memcpy(stringContent, &fileContent[start + 1], length);
+                    stringContent[length] = '\0';
+                    handelStringEscapes(stringContent);
+                    tokens[tokenCount++] = (Token) { tt_string, fileNumber, lineNumber, start, i - 1, stringContent };
+                    break;
+                } else {
+                    start++;
+                    u64 length = i - start - 1;
+                    char* stringContent = (char*)arenaAlloc(arena, length + 1);
+                    memcpy(stringContent, &fileContent[start], length);
+                    stringContent[length] = '\0';
+                    handelStringEscapes(stringContent);
+                    tokens[tokenCount++] = (Token) { tt_string, fileNumber, lineNumber, start, i - 1, stringContent };
+                    break;
+                }
+            }
+            CASE_NUMBER: {
+                // Integer or float
+                u64 start = i;
+                bool isFloat = false;
+                while (fileContent[i] >= '0' && fileContent[i] <= '9') {
+                    i++;
+                }
+                if (fileContent[i] == '.') {
+                    isFloat = true;
+                    i++;
+                    while (fileContent[i] >= '0' && fileContent[i] <= '9') {
+                        i++;
+                    }
+                }
+                u64 length = i - start;
+                char* numberStr = (char*)arenaAlloc(arena, length + 1);
+                memcpy(numberStr, &fileContent[start], length);
+                numberStr[length] = '\0';
+                OurTokenType type = isFloat ? tt_float : tt_int;
+                tokens[tokenCount++] = (Token) { type, fileNumber, lineNumber, start, i - 1, numberStr };
+                break;
+            }
+            case '\'': {
+                // Character literal
+                u64 start = i;
+                i++;  // Skip the opening quote
+                if (fileContent[i] == '\\') {
+                    i += 2;  // Skip the escape sequence
+                } else {
+                    i++;  // Skip the character
+                }
+                if (fileContent[i] != '\'') {
+                    logError("Unterminated character literal starting at line %u", lineNumber);
+                    break;
+                }
+                i++;  // Skip the closing quote
+                u64 length = i - start;
+                char* charStr = (char*)arenaAlloc(arena, length + 1);
+                memcpy(charStr, &fileContent[start], length);
+                charStr[length] = '\0';
+                tokens[tokenCount++] = (Token) { tt_char, fileNumber, lineNumber, start, i - 1, charStr };
+                break;
+            }
+            case '+': {
+                if (fileContent[i + 1] == '+') {
+                    tokens[tokenCount++] = (Token) { tt_inc, fileNumber, lineNumber, i, i + 1, "++" };
+                    i += 2;
+                } else if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_add_assign, fileNumber, lineNumber, i, i + 1, "+=" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_add, fileNumber, lineNumber, i, i, "+" };
+                    i++;
+                }
+                break;
+            }
+            case '-': {
+                if (fileContent[i + 1] == '-') {
+                    tokens[tokenCount++] = (Token) { tt_dec, fileNumber, lineNumber, i, i + 1, "--" };
+                    i += 2;
+                } else if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_sub_assign, fileNumber, lineNumber, i, i + 1, "-=" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_sub, fileNumber, lineNumber, i, i, "-" };
+                    i++;
+                }
+                break;
+            }
+            case '*': {
+                if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_mul_assign, fileNumber, lineNumber, i, i + 1, "*=" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_mul, fileNumber, lineNumber, i, i, "*" };
+                    i++;
+                }
+                break;
+            }
+            case '/': {
+                if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_div_assign, fileNumber, lineNumber, i, i + 1, "/=" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_div, fileNumber, lineNumber, i, i, "/" };
+                    i++;
+                }
+                break;
+            }
+            case '%': {
+                if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_mod_assign, fileNumber, lineNumber, i, i + 1, "%=" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_mod, fileNumber, lineNumber, i, i, "%" };
+                    i++;
+                }
+                break;
+            }
+            case '&': {
+                if (fileContent[i + 1] == '&') {
+                    tokens[tokenCount++] = (Token) { tt_and, fileNumber, lineNumber, i, i + 1, "&&" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_bit_and, fileNumber, lineNumber, i, i, "&" };
+                    i++;
+                }
+                break;
+            }
+            case '|': {
+                if (fileContent[i + 1] == '|') {
+                    tokens[tokenCount++] = (Token) { tt_or, fileNumber, lineNumber, i, i + 1, "||" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_bit_or, fileNumber, lineNumber, i, i, "|" };
+                    i++;
+                }
+                break;
+            }
+            case '^': {
+                tokens[tokenCount++] = (Token) { tt_xor, fileNumber, lineNumber, i, i, "^" };
+                i++;
+                break;
+            }
+            case '!': {
+                if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_neq, fileNumber, lineNumber, i, i + 1, "!=" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_not, fileNumber, lineNumber, i, i, "!" };
+                    i++;
+                }
+                break;
+            }
+            case '=': {
+                if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_eq, fileNumber, lineNumber, i, i + 1, "==" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_assign, fileNumber, lineNumber, i, i, "=" };
+                    i++;
+                }
+                break;
+            }
+            case '<': {
+                if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_leq, fileNumber, lineNumber, i, i + 1, "<=" };
+                    i += 2;
+                } else if (fileContent[i + 1] == '<') {
+                    tokens[tokenCount++] = (Token) { tt_lshift, fileNumber, lineNumber, i, i + 1, "<<" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_lt, fileNumber, lineNumber, i, i, "<" };
+                    i++;
+                }
+                break;
+            }
+            case '>': {
+                if (fileContent[i + 1] == '=') {
+                    tokens[tokenCount++] = (Token) { tt_geq, fileNumber, lineNumber, i, i + 1, ">=" };
+                    i += 2;
+                } else if (fileContent[i + 1] == '>') {
+                    tokens[tokenCount++] = (Token) { tt_rshift, fileNumber, lineNumber, i, i + 1, ">>" };
+                    i += 2;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_gt, fileNumber, lineNumber, i, i, ">" };
+                    i++;
+                }
+                break;
+            }
+            case '(': {
+                tokens[tokenCount++] = (Token) { tt_lparen, fileNumber, lineNumber, i, i, "(" };
+                i++;
+                break;
+            }
+            case ')': {
+                tokens[tokenCount++] = (Token) { tt_rparen, fileNumber, lineNumber, i, i, ")" };
+                i++;
+                break;
+            }
+            case '[': {
+                tokens[tokenCount++] = (Token) { tt_lbracket, fileNumber, lineNumber, i, i, "[" };
+                i++;
+                break;
+            }
+            case ']': {
+                tokens[tokenCount++] = (Token) { tt_rbracket, fileNumber, lineNumber, i, i, "]" };
+                i++;
+                break;
+            }
+            case '{': {
+                tokens[tokenCount++] = (Token) { tt_lbrace, fileNumber, lineNumber, i, i, "{" };
+                i++;
+                break;
+            }
+            case '}': {
+                tokens[tokenCount++] = (Token) { tt_rbrace, fileNumber, lineNumber, i, i, "}" };
+                i++;
+                break;
+            }
+            case ',': {
+                tokens[tokenCount++] = (Token) { tt_comma, fileNumber, lineNumber, i, i, "," };
+                i++;
+                break;
+            }
+            case ';': {
+                tokens[tokenCount++] = (Token) { tt_semi, fileNumber, lineNumber, i, i, ";" };
+                i++;
+                break;
+            }
+            case ':': {
+                tokens[tokenCount++] = (Token) { tt_colon, fileNumber, lineNumber, i, i, ":" };
+                i++;
+                break;
+            }
+            case '\n': {
+                tokens[tokenCount++] = (Token) { tt_endl, fileNumber, lineNumber, i, i, "\n" };
+                lineNumber++;
+                i++;
+                break;
+            }
+            case '.': {
+                if (fileContent[i + 1] == '.' && fileContent[i + 1] != '\0' && fileContent[i + 2] == '.') {
+                    tokens[tokenCount++] = (Token) { tt_elips, fileNumber, lineNumber, i, i + 1, "..." };
+                    i += 3;
+                } else {
+                    tokens[tokenCount++] = (Token) { tt_dot, fileNumber, lineNumber, i, i, "." };
+                    i++;
+                }
+                break;
+            }
+            default: {
+                logError("Unknown character '%c' at line %u", fileContent[i], lineNumber);
+                tokens[tokenCount++] = (Token) { tt_error, fileNumber, lineNumber, i, i, "error" };
+                i++;
+                break;
+            }
+        }
+        break;
+    }
+
+    *iRef = i;
+    *lineNumberRef = lineNumber;
+    *tokenCountRef = tokenCount;
+    *tokenCapacityRef = tokenCapacity;
+}
+
 Token* loadTokensFromDirectory(char** sourceFiles, u64 fileCount, Arena* arena) {
     u64 tokenCapacity = 1024 * fileCount;
     Token* tokens = (Token*)arenaAlloc(arena, sizeof(Token) * 1024 * fileCount);
@@ -284,346 +816,7 @@ Token* loadTokensFromDirectory(char** sourceFiles, u64 fileCount, Arena* arena) 
         u64 i = 0;
         u64 lineNumber = 1;
         while (fileContent[i] != '\0') {
-            if (fileContent[i] == '\r' || fileContent[i] == ' ' || fileContent[i] == '\t') {
-                i++;
-                continue;
-            }
-            if (fileContent[i] == '/' && fileContent[i + 1] == '/') {
-                // single line comment
-                while (fileContent[i] != '\n') {
-                    i++;
-                }
-                continue;
-            }
-            if (fileContent[i] == '/' && fileContent[i + 1] == '*') {
-                // multi-line comment
-                u64 startLine = lineNumber;
-                i += 2;  // Skip the '/*'
-                while (fileContent[i] != '\0' && !(fileContent[i] == '*' && fileContent[i + 1] == '/')) {
-                    if (fileContent[i] == '\n') {
-                        lineNumber++;
-                    }
-                    i++;
-                }
-                if (fileContent[i] == '\0') {
-                    char* errorComment;
-                    logError("Unterminated multi-line comment starting at line %u", startLine);
-                    break;
-                }
-                i += 2;  // Skip the '*/'
-                continue;
-            }
-
-            int number = fileContent[i];
-
-            if (tokenCount >= tokenCapacity) {
-                tokenCapacity *= 2;
-                Token* tempTokens = (Token*)arenaAlloc(arena, sizeof(Token) * tokenCapacity);
-                memcpy(tempTokens, tokens, sizeof(Token) * (tokenCount - 1));
-                tokens = tempTokens;
-            }
-            switch (fileContent[i]) {
-                case '_':
-                CASE_LETTER: {
-                    // Identifier or keyword
-                    u64 start = i;
-                    while (fileContent[i] == '_' || (fileContent[i] >= 'a' && fileContent[i] <= 'z') || (fileContent[i] >= 'A' && fileContent[i] <= 'Z') || (fileContent[i] >= '0' && fileContent[i] <= '9')) {
-                        i++;
-                    }
-                    u64 length = i - start;
-                    char* identifier = (char*)arenaAlloc(arena, length + 1);
-                    memcpy(identifier, &fileContent[start], length);
-                    identifier[length] = '\0';
-                    OurTokenType type = tt_id;  // Default type
-                    if (strcmp(identifier, "if") == 0) type = tt_if;
-                    else if (strcmp(identifier, "else") == 0)
-                        type = tt_else;
-                    else if (strcmp(identifier, "while") == 0)
-                        type = tt_while;
-                    else if (strcmp(identifier, "for") == 0)
-                        type = tt_for;
-                    else if (strcmp(identifier, "return") == 0)
-                        type = tt_return;
-                    else if (strcmp(identifier, "break") == 0)
-                        type = tt_break;
-                    else if (strcmp(identifier, "continue") == 0)
-                        type = tt_continue;
-                    else if (strcmp(identifier, "switch") == 0)
-                        type = tt_switch;
-                    else if (strcmp(identifier, "case") == 0)
-                        type = tt_case;
-                    else if (strcmp(identifier, "default") == 0)
-                        type = tt_default;
-                    else if (strcmp(identifier, "struct") == 0)
-                        type = tt_struct;
-                    else if (strcmp(identifier, "enum") == 0)
-                        type = tt_enum;
-                    else if (strcmp(identifier, "true") == 0 || strcmp(identifier, "false") == 0)
-                        type = tt_bool;
-                    tokens[tokenCount++] = (Token) { type, fileNumber, lineNumber, start, i - 1, identifier };
-                    break;
-                }
-                case '"': {
-                    // String literal
-                    u64 start = i;
-                    i++;  // Skip the opening quote
-                    while (fileContent[i] != '"' && fileContent[i] != '\0') {
-                        if (fileContent[i] == '\\') {
-                            i += 2;  // Skip the escape sequence
-                        } else {
-                            i++;  // Skip the character
-                        }
-                    }
-                    if (fileContent[i] == '\0') {
-                        logError("Unterminated string literal starting at line %u", lineNumber);
-                        break;
-                    }
-                    i++;  // Skip the closing quote
-                    u64 length = i - start - 2;
-                    char* stringLiteral = (char*)arenaAlloc(arena, length + 1);
-                    memcpy(stringLiteral, &fileContent[start] + 1, length);
-                    stringLiteral[length] = '\0';
-                    tokens[tokenCount++] = (Token) { tt_string, fileNumber, lineNumber, start, i - 1, stringLiteral };
-                    break;
-                }
-                CASE_NUMBER: {
-                    // Integer or float
-                    u64 start = i;
-                    bool isFloat = false;
-                    while (fileContent[i] >= '0' && fileContent[i] <= '9') {
-                        i++;
-                    }
-                    if (fileContent[i] == '.') {
-                        isFloat = true;
-                        i++;
-                        while (fileContent[i] >= '0' && fileContent[i] <= '9') {
-                            i++;
-                        }
-                    }
-                    u64 length = i - start;
-                    char* numberStr = (char*)arenaAlloc(arena, length + 1);
-                    memcpy(numberStr, &fileContent[start], length);
-                    numberStr[length] = '\0';
-                    OurTokenType type = isFloat ? tt_float : tt_int;
-                    tokens[tokenCount++] = (Token) { type, fileNumber, lineNumber, start, i - 1, numberStr };
-                    break;
-                }
-                case '\'': {
-                    // Character literal
-                    u64 start = i;
-                    i++;  // Skip the opening quote
-                    if (fileContent[i] == '\\') {
-                        i += 2;  // Skip the escape sequence
-                    } else {
-                        i++;  // Skip the character
-                    }
-                    if (fileContent[i] != '\'') {
-                        logError("Unterminated character literal starting at line %u", lineNumber);
-                        break;
-                    }
-                    i++;  // Skip the closing quote
-                    u64 length = i - start;
-                    char* charStr = (char*)arenaAlloc(arena, length + 1);
-                    memcpy(charStr, &fileContent[start], length);
-                    charStr[length] = '\0';
-                    tokens[tokenCount++] = (Token) { tt_char, fileNumber, lineNumber, start, i - 1, charStr };
-                    break;
-                }
-                case '+': {
-                    if (fileContent[i + 1] == '+') {
-                        tokens[tokenCount++] = (Token) { tt_inc, fileNumber, lineNumber, i, i + 1, "++" };
-                        i += 2;
-                    } else if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_add_assign, fileNumber, lineNumber, i, i + 1, "+=" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_add, fileNumber, lineNumber, i, i, "+" };
-                        i++;
-                    }
-                    break;
-                }
-                case '-': {
-                    if (fileContent[i + 1] == '-') {
-                        tokens[tokenCount++] = (Token) { tt_dec, fileNumber, lineNumber, i, i + 1, "--" };
-                        i += 2;
-                    } else if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_sub_assign, fileNumber, lineNumber, i, i + 1, "-=" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_sub, fileNumber, lineNumber, i, i, "-" };
-                        i++;
-                    }
-                    break;
-                }
-                case '*': {
-                    if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_mul_assign, fileNumber, lineNumber, i, i + 1, "*=" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_mul, fileNumber, lineNumber, i, i, "*" };
-                        i++;
-                    }
-                    break;
-                }
-                case '/': {
-                    if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_div_assign, fileNumber, lineNumber, i, i + 1, "/=" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_div, fileNumber, lineNumber, i, i, "/" };
-                        i++;
-                    }
-                    break;
-                }
-                case '%': {
-                    if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_mod_assign, fileNumber, lineNumber, i, i + 1, "%=" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_mod, fileNumber, lineNumber, i, i, "%" };
-                        i++;
-                    }
-                    break;
-                }
-                case '&': {
-                    if (fileContent[i + 1] == '&') {
-                        tokens[tokenCount++] = (Token) { tt_and, fileNumber, lineNumber, i, i + 1, "&&" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_bit_and, fileNumber, lineNumber, i, i, "&" };
-                        i++;
-                    }
-                    break;
-                }
-                case '|': {
-                    if (fileContent[i + 1] == '|') {
-                        tokens[tokenCount++] = (Token) { tt_or, fileNumber, lineNumber, i, i + 1, "||" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_bit_or, fileNumber, lineNumber, i, i, "|" };
-                        i++;
-                    }
-                    break;
-                }
-                case '^': {
-                    tokens[tokenCount++] = (Token) { tt_xor, fileNumber, lineNumber, i, i, "^" };
-                    i++;
-                    break;
-                }
-                case '!': {
-                    if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_neq, fileNumber, lineNumber, i, i + 1, "!=" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_not, fileNumber, lineNumber, i, i, "!" };
-                        i++;
-                    }
-                    break;
-                }
-                case '=': {
-                    if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_eq, fileNumber, lineNumber, i, i + 1, "==" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_assign, fileNumber, lineNumber, i, i, "=" };
-                        i++;
-                    }
-                    break;
-                }
-                case '<': {
-                    if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_leq, fileNumber, lineNumber, i, i + 1, "<=" };
-                        i += 2;
-                    } else if (fileContent[i + 1] == '<') {
-                        tokens[tokenCount++] = (Token) { tt_lshift, fileNumber, lineNumber, i, i + 1, "<<" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_lt, fileNumber, lineNumber, i, i, "<" };
-                        i++;
-                    }
-                    break;
-                }
-                case '>': {
-                    if (fileContent[i + 1] == '=') {
-                        tokens[tokenCount++] = (Token) { tt_geq, fileNumber, lineNumber, i, i + 1, ">=" };
-                        i += 2;
-                    } else if (fileContent[i + 1] == '>') {
-                        tokens[tokenCount++] = (Token) { tt_rshift, fileNumber, lineNumber, i, i + 1, ">>" };
-                        i += 2;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_gt, fileNumber, lineNumber, i, i, ">" };
-                        i++;
-                    }
-                    break;
-                }
-                case '(': {
-                    tokens[tokenCount++] = (Token) { tt_lparen, fileNumber, lineNumber, i, i, "(" };
-                    i++;
-                    break;
-                }
-                case ')': {
-                    tokens[tokenCount++] = (Token) { tt_rparen, fileNumber, lineNumber, i, i, ")" };
-                    i++;
-                    break;
-                }
-                case '[': {
-                    tokens[tokenCount++] = (Token) { tt_lbracket, fileNumber, lineNumber, i, i, "[" };
-                    i++;
-                    break;
-                }
-                case ']': {
-                    tokens[tokenCount++] = (Token) { tt_rbracket, fileNumber, lineNumber, i, i, "]" };
-                    i++;
-                    break;
-                }
-                case '{': {
-                    tokens[tokenCount++] = (Token) { tt_lbrace, fileNumber, lineNumber, i, i, "{" };
-                    i++;
-                    break;
-                }
-                case '}': {
-                    tokens[tokenCount++] = (Token) { tt_rbrace, fileNumber, lineNumber, i, i, "}" };
-                    i++;
-                    break;
-                }
-                case ',': {
-                    tokens[tokenCount++] = (Token) { tt_comma, fileNumber, lineNumber, i, i, "," };
-                    i++;
-                    break;
-                }
-                case ';': {
-                    tokens[tokenCount++] = (Token) { tt_semi, fileNumber, lineNumber, i, i, ";" };
-                    i++;
-                    break;
-                }
-                case ':': {
-                    tokens[tokenCount++] = (Token) { tt_colon, fileNumber, lineNumber, i, i, ":" };
-                    i++;
-                    break;
-                }
-                case '\n': {
-                    tokens[tokenCount++] = (Token) { tt_endl, fileNumber, lineNumber, i, i, "\n" };
-                    lineNumber++;
-                    i++;
-                    break;
-                }
-                case '.': {
-                    if (fileContent[i + 1] == '.' && fileContent[i + 1] != '\0' && fileContent[i + 2] == '.') {
-                        tokens[tokenCount++] = (Token) { tt_elips, fileNumber, lineNumber, i, i + 1, "..." };
-                        i += 3;
-                    } else {
-                        tokens[tokenCount++] = (Token) { tt_dot, fileNumber, lineNumber, i, i, "." };
-                        i++;
-                    }
-                    break;
-                }
-                default: {
-                    logError("Unknown character '%c' at line %u", fileContent[i], lineNumber);
-                    tokens[tokenCount++] = (Token) { tt_error, fileNumber, lineNumber, i, i, "error" };
-                    i++;
-                    break;
-                }
-            }
+            addToken(fileContent, fileNumber, &i, tokens, &tokenCount, &tokenCapacity, &lineNumber, arena);
         }
         // Add EOF token for each file
         if (tokenCount >= tokenCapacity) {

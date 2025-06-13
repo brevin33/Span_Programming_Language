@@ -1,5 +1,5 @@
 i64 foo(i64 x, i64 y){
-	return foo
+	return x + y 
 }
 
 int main(){

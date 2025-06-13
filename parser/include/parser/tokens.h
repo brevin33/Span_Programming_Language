@@ -64,6 +64,10 @@ typedef enum _TokenType : u8 {
     tt_elips,
     tt_lshift,
     tt_rshift,
+    tt_extern_c,
+    tt_extern,
+    tt_str_expr_start,
+    tt_str_expr_end,
 } OurTokenType;
 
 
