@@ -1,19 +1,25 @@
 #include "parser.h"
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-Arena createArena(u64 capacity) {
-    Arena arena;
-    arena.start = (void**)malloc(8 * sizeof(void*));
-    memset(arena.start, 0, 8 * sizeof(void*));
-    arena.blockCapacity = 8;
-    assert(arena.start != NULL && "Failed to allocate memory for arena start.");
-    arena.startIndex = 0;
-    arena.capacity = capacity;
-    arena.start[0] = malloc(capacity);
-    assert(arena.start[0] != NULL && "Failed to allocate memory for arena.");
-    arena.current = arena.start[0];
+Arena* createArena(u64 capacity) {
+    u64 totalSize = sizeof(Arena) + capacity;
+    char* mem = malloc(totalSize);
+    Arena* arena = (Arena*)mem;
+    mem += sizeof(Arena);
+
+    arena->start = (void**)malloc(8 * sizeof(void*));
+    memset(arena->start, 0, 8 * sizeof(void*));
+    arena->blockCapacity = 8;
+    assert(arena->start != NULL && "Failed to allocate memory for arena start.");
+
+    arena->startIndex = 0;
+    arena->capacity = capacity;
+    arena->start[0] = mem;
+    assert(arena->start[0] != NULL && "Failed to allocate memory for arena.");
+    arena->current = arena->start[0];
     return arena;
 }
 
@@ -54,12 +60,14 @@ void arenaReset(Arena* arena) {
 
 void arenaFree(Arena* arena) {
     assert(arena != NULL && "Arena pointer is NULL.");
-    for (u64 i = 0; i < arena->blockCapacity; i++) {
+    for (u64 i = 1; i < arena->blockCapacity; i++) {
         if (arena->start[i] != NULL) {
             free(arena->start[i]);
             arena->start[i] = NULL;
         }
     }
+    void* mem = arena->start[0] - sizeof(Arena);
+    free(mem);
     free(arena->start);
     arena->start = NULL;
     arena->blockCapacity = 0;

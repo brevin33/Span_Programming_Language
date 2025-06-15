@@ -7,11 +7,11 @@
 #include <string.h>
 
 
-Arena gTypesArena;
+Arena* gTypesArena;
 u64 gTypesCount = 0;
 u64 gTypesCapacity = 0;
 Type* gTypes = NULL;
-
+map gTypeMap;
 
 void addBaseTypes() {
     static bool exists = false;
@@ -82,7 +82,8 @@ void addType(Type* type) {
     if (gTypes == NULL) {
         gTypesArena = createArena(1024 * 1024);
         gTypesCapacity = 64;
-        gTypes = arenaAlloc(&gTypesArena, sizeof(Type) * gTypesCapacity);
+        gTypeMap = createMap();
+        gTypes = arenaAlloc(gTypesArena, sizeof(Type) * gTypesCapacity);
         if (gTypes == NULL) {
             fprintf(stderr, "Failed to allocate memory for types\n");
             exit(EXIT_FAILURE);
@@ -94,7 +95,7 @@ void addType(Type* type) {
     }
     if (gTypesCount >= gTypesCapacity) {
         gTypesCapacity *= 2;
-        Type* newTypes = arenaAlloc(&gTypesArena, sizeof(Type) * gTypesCapacity);
+        Type* newTypes = arenaAlloc(gTypesArena, sizeof(Type) * gTypesCapacity);
         if (newTypes == NULL) {
             fprintf(stderr, "Failed to allocate memory for resized types array\n");
             exit(EXIT_FAILURE);
@@ -104,22 +105,21 @@ void addType(Type* type) {
     }
     gTypes[gTypesCount] = *type;
     u64 nameLength = strlen(type->name) + 1;
-    gTypes[gTypesCount].name = arenaAlloc(&gTypesArena, nameLength);
-    if (gTypes[gTypesCount].name == NULL) {
-        fprintf(stderr, "Failed to allocate memory for type name\n");
-        exit(EXIT_FAILURE);
-    }
+    gTypes[gTypesCount].name = arenaAlloc(gTypesArena, nameLength);
     memcpy(gTypes[gTypesCount].name, type->name, nameLength);
+    if (mapGet(&gTypeMap, gTypes[gTypesCount].name) != NULL) {
+        return;
+    }
+    mapSet(&gTypeMap, gTypes[gTypesCount].name, (void*)gTypesCount);
     gTypesCount++;
 }
 
 typeId getTypeIdFromName(char* name) {
-    for (u64 i = 0; i < gTypesCount; i++) {
-        if (strcmp(gTypes[i].name, name) == 0) {
-            return i;
-        }
+    typeId* id = (typeId*)mapGet(&gTypeMap, name);
+    if (id == NULL) {
+        return 0;
     }
-    return 0;  // Type not found
+    return *id;
 }
 
 Type* getTypeFromId(typeId id) {
@@ -272,7 +272,7 @@ typeId getTypeIdPtr(typeId id) {
     if (existingTypeId != 0) {
         return existingTypeId;
     }
-    char* nameCopy = arenaAlloc(&gTypesArena, strlen(newTypeName) + 1);
+    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
     memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
     Type newType = { 0 };
     newType.kind = tk_ptr;
@@ -293,7 +293,7 @@ typeId getTypeIdArray(typeId id, u64 size) {
     if (existingTypeId != 0) {
         return existingTypeId;
     }
-    char* nameCopy = arenaAlloc(&gTypesArena, strlen(newTypeName) + 1);
+    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
     memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
     Type newType = { 0 };
     newType.kind = tk_array;
@@ -315,7 +315,7 @@ typeId getTypeIdList(typeId id) {
     if (existingTypeId != 0) {
         return existingTypeId;
     }
-    char* nameCopy = arenaAlloc(&gTypesArena, strlen(newTypeName) + 1);
+    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
     memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
     Type newType = { 0 };
     newType.kind = tk_list;
@@ -336,7 +336,7 @@ typeId getTypeIdUptr(typeId id) {
     if (existingTypeId != 0) {
         return existingTypeId;
     }
-    char* nameCopy = arenaAlloc(&gTypesArena, strlen(newTypeName) + 1);
+    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
     memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
     Type newType = { 0 };
     newType.kind = tk_uptr;
@@ -357,7 +357,7 @@ typeId getTypeIdRef(typeId id) {
     if (existingTypeId != 0) {
         return existingTypeId;
     }
-    char* nameCopy = arenaAlloc(&gTypesArena, strlen(newTypeName) + 1);
+    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
     memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
     Type newType = { 0 };
     newType.kind = tk_ref;
@@ -377,12 +377,12 @@ typeId getTypeIdUnamedStruct(typeId* structTypes, u64 structTypesCount) {
     if (existingTypeId != 0) {
         return existingTypeId;
     }
-    char* nameCopy = arenaAlloc(&gTypesArena, strlen(newTypeName) + 1);
+    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
     memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
     Type newType = { 0 };
     newType.kind = tk_struct;
     newType.name = nameCopy;
-    newType.structVals.members = arenaAlloc(&gTypesArena, sizeof(typeId) * structTypesCount);
+    newType.structVals.members = arenaAlloc(gTypesArena, sizeof(typeId) * structTypesCount);
     memcpy(newType.structVals.members, structTypes, sizeof(typeId) * structTypesCount);
     newType.structVals.memberCount = structTypesCount;
     addType(&newType);
@@ -399,13 +399,13 @@ typeId getTypeIdUnamedEnum(typeId* enumTypes, u64 enumTypesCount) {
     if (existingTypeId != 0) {
         return existingTypeId;
     }
-    char* nameCopy = arenaAlloc(&gTypesArena, strlen(newTypeName) + 1);
+    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
     memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
     Type newType = { 0 };
     newType.kind = tk_enum;
     newType.name = nameCopy;
-    newType.enumVals.enumValues = arenaAlloc(&gTypesArena, sizeof(u64) * enumTypesCount);
-    newType.enumVals.enumTypes = arenaAlloc(&gTypesArena, sizeof(typeId) * enumTypesCount);
+    newType.enumVals.enumValues = arenaAlloc(gTypesArena, sizeof(u64) * enumTypesCount);
+    newType.enumVals.enumTypes = arenaAlloc(gTypesArena, sizeof(typeId) * enumTypesCount);
     memcpy(newType.enumVals.enumValues, enumTypes, sizeof(u64) * enumTypesCount);
     memcpy(newType.enumVals.enumTypes, enumTypes, sizeof(typeId) * enumTypesCount);
     newType.enumVals.enumCount = enumTypesCount;
@@ -414,5 +414,5 @@ typeId getTypeIdUnamedEnum(typeId* enumTypes, u64 enumTypesCount) {
 }
 
 void freeTypes() {
-    arenaFree(&gTypesArena);
+    arenaFree(gTypesArena);
 }

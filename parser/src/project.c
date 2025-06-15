@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "parser/expression.h"
 #include "parser/logging.h"
 #include "parser/tokens.h"
 #include <stdio.h>
@@ -96,23 +97,23 @@ Project createProject(const char* folder) {
     while (folder[folderLength] != '\0') {
         folderLength++;
     }
-    project.directory = (char*)arenaAlloc(&project.arena, folderLength + 1);
+    project.directory = (char*)arenaAlloc(project.arena, folderLength + 1);
     memcpy(project.directory, folder, folderLength + 1);
 
     u64 fileCount = 0;
-    char** filesInDir = listFilesInDirectory(project.directory, &fileCount, &project.arena);
+    char** filesInDir = listFilesInDirectory(project.directory, &fileCount, project.arena);
     if (!filesInDir) {
         logError("Failed to list files in directory");
         return project;
     }
     project.souceFileNames = filesInDir;
-    project.sourceFiles = arenaAlloc(&project.arena, sizeof(char*) * fileCount);
+    project.sourceFiles = arenaAlloc(project.arena, sizeof(char*) * fileCount);
     project.sourceFileCount = fileCount;
 
     for (u64 fileNumber = 0; fileNumber < fileCount; fileNumber++) {
         char filePath[512];
         snprintf(filePath, sizeof(filePath), "%s/%s", project.directory, filesInDir[fileNumber]);
-        char* fileContent = readFile(filePath, &project.arena);
+        char* fileContent = readFile(filePath, project.arena);
         if (!fileContent) {
             logError("Failed to read file content");
             continue;
@@ -120,7 +121,7 @@ Project createProject(const char* folder) {
         project.sourceFiles[fileNumber] = fileContent;
     }
 
-    project.tokens = loadTokensFromDirectory(project.sourceFiles, project.sourceFileCount, &project.arena);
+    project.tokens = loadTokensFromDirectory(project.sourceFiles, project.sourceFileCount, project.arena);
     if (!project.tokens) {
         logError("Failed to load tokens from directory: %s", folder);
         project.tokens = NULL;
@@ -128,7 +129,7 @@ Project createProject(const char* folder) {
     }
 
     u64 funcitonStartCapacity = project.sourceFileCount * 10;
-    project.functionStarts = arenaAlloc(&project.arena, sizeof(Token*) * project.sourceFileCount * 10);
+    project.functionStarts = arenaAlloc(project.arena, sizeof(Token*) * project.sourceFileCount * 10);
     project.functionStartCount = 0;
     Token* token = project.tokens;
     while (token->type != tt_eop) {
@@ -136,7 +137,7 @@ Project createProject(const char* folder) {
         if (looksLikeFunction(&token)) {
             if (project.functionStartCount >= funcitonStartCapacity) {
                 funcitonStartCapacity *= 2;
-                Token** tempFunctionStarts = arenaAlloc(&project.arena, sizeof(Token*) * funcitonStartCapacity);
+                Token** tempFunctionStarts = arenaAlloc(project.arena, sizeof(Token*) * funcitonStartCapacity);
                 memcpy(tempFunctionStarts, project.functionStarts, sizeof(Token*) * project.functionStartCount);
                 project.functionStarts = tempFunctionStarts;
             }
@@ -168,29 +169,31 @@ Project createProject(const char* folder) {
         }
     }
 
+    functionId* functions = arenaAlloc(project.arena, sizeof(functionId) * 10);
+    u64 functionCount = 0;
+    u64 functionCapacity = 10;
     for (u64 i = 0; i < project.functionStartCount; i++) {
-        Function* function = createFunctionFromTokens(project.functionStarts[i], &project);
-        if (function == NULL) {
+        functionId function = createFunctionFromTokens(project.functionStarts[i], &project);
+        if (function == 0) {
             logErrorToken("Failed to create function from tokens", &project, project.functionStarts[i]);
         }
+        if (functionCount >= functionCapacity) {
+            functionCapacity *= 2;
+            functionId* newFunctions = arenaAlloc(project.arena, sizeof(functionId) * functionCapacity);
+            memcpy(newFunctions, functions, sizeof(functionId) * functionCount);
+            functions = newFunctions;
+        }
+        functions[functionCount++] = function;
     }
 
     // Implement all functions
-    for (u64 i = 0; i < project.functionCount; i++) {
-        Function* function = &project.functions[i];
+    for (u64 i = 0; i < functionCount; i++) {
+        functionId funcId = functions[i];
+        Function* function = getFunctionFromId(funcId);
         if (function->type == ft_extern || function->type == ft_extern_c) {
             continue;
         }
-        implementFunction(function, &project);
-    }
-
-    // Implement all functions
-    for (u64 i = 0; i < project.functionCount; i++) {
-        Function* function = &project.functions[i];
-        if (function->type == ft_extern || function->type == ft_extern_c) {
-            continue;
-        }
-        implementFunction(function, &project);
+        implementFunction(funcId, &project);
     }
 
     return project;

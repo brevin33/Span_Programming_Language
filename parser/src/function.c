@@ -1,3 +1,4 @@
+#include "parser/function.h"
 #include "parser.h"
 #include "parser/logging.h"
 #include "parser/scope.h"
@@ -7,7 +8,12 @@
 #include <stdio.h>
 #include <string.h>
 
-Function* createFunctionFromTokens(Token* tokens, Project* project) {
+Function* gFunctions = NULL;
+u64 gFunctionCount = 0;
+u64 gFunctionCapacity = 0;
+map gNameToFunctionsWithSameName;
+
+functionId createFunctionFromTokens(Token* tokens, Project* project) {
     Token* token = tokens;
     FunctionType functionType = ft_normal;
     if (token->type == tt_extern) {
@@ -19,20 +25,20 @@ Function* createFunctionFromTokens(Token* tokens, Project* project) {
     typeId returnType = getTypeIdFromToken(&token);
     if (returnType == 0) {
         logErrorToken("Expected return type", project, token);
-        return NULL;
+        return 0;
     }
 
     if (token->type != tt_id) {
         logErrorToken("Expected function name", project, token);
-        return NULL;
+        return 0;
     }
-    char* name = arenaAlloc(&project->arena, strlen(token->str) + 1);
+    char* name = arenaAlloc(project->arena, strlen(token->str) + 1);
     memcpy(name, token->str, strlen(token->str) + 1);
     token++;
 
     if (token->type != tt_lparen) {
         logErrorToken("Expected '(' after function name", project, token);
-        return NULL;
+        return 0;
     }
     token++;
 
@@ -51,7 +57,7 @@ Function* createFunctionFromTokens(Token* tokens, Project* project) {
             token++;
             if (token->type != tt_rparen) {
                 logErrorToken("Expected ')' after variadic parameter", project, token - 1);
-                return NULL;
+                return 0;
             }
             break;
         }
@@ -59,20 +65,20 @@ Function* createFunctionFromTokens(Token* tokens, Project* project) {
         typeId paramType = getTypeIdFromToken(&token);
         if (paramType == 0) {
             logErrorToken("Expected parameter type", project, token);
-            return NULL;
+            return 0;
         }
         char* paramName = NULL;
         if (token->type == tt_id) {
-            paramName = arenaAlloc(&project->arena, strlen(token->str) + 1);
+            paramName = arenaAlloc(project->arena, strlen(token->str) + 1);
             memcpy(paramName, token->str, strlen(token->str) + 1);
             token++;
         } else {
             logErrorToken("Expected parameter name", project, token);
-            return NULL;
+            return 0;
         }
         if (parameterCount % 10 == 0) {
-            parameters = arenaAlloc(&project->arena, sizeof(typeId) * (parameterCount + 10));
-            parameterNames = arenaAlloc(&project->arena, sizeof(char*) * (parameterCount + 10));
+            parameters = arenaAlloc(project->arena, sizeof(typeId) * (parameterCount + 10));
+            parameterNames = arenaAlloc(project->arena, sizeof(char*) * (parameterCount + 10));
         }
         parameters[parameterCount] = paramType;
         parameterNames[parameterCount++] = paramName;
@@ -85,33 +91,103 @@ Function* createFunctionFromTokens(Token* tokens, Project* project) {
             break;
         } else {
             logErrorToken("Unexpected token in function parameters", project, token);
-            return NULL;
+            return 0;
         }
     }
 
-    Function* function = createFunction(returnType, name, parameters, parameterNames, parameterCount, tokens, project, variadic, functionType);
-    return function;
+    functionId functionId = createFunction(returnType, name, parameters, parameterNames, parameterCount, tokens, project, variadic, functionType);
+    return functionId;
 }
 
-Function* createFunction(typeId returnType, char* name, typeId* parameters, char** parameterNames, u64 parameterCount, Token* startToken, Project* project, bool variadic, FunctionType type) {
-    Function* function = arenaAlloc(&project->arena, sizeof(Function));
-    function->returnType = returnType;
-    function->name = name;
-    function->variadic = variadic;
-    function->type = type;
-    function->parameters = parameters;
-    function->parameterNames = parameterNames;
-    function->parameterCount = parameterCount;
-    function->startToken = startToken;
-    if (project->functionCount % 10 == 0) {
-        project->functions = arenaAlloc(&project->arena, sizeof(Function) * (project->functionCount + 10));
+char* getMangledName(Function* function, Project* project) {
+    char* baseName = function->name;
+    u64 length = strlen(baseName);
+    u64 capacity = length * 2;
+    char* mangledName = arenaAlloc(project->arena, capacity + 1);
+    memcpy(mangledName, baseName, length);
+    for (u64 i = 0; i < function->parameterCount; i++) {
+        char* parameterName = function->parameterNames[i];
+        u64 parameterLength = strlen(parameterName);
+        u64 ogLength = length;
+        length += parameterLength + 1;
+        if (length >= capacity) {
+            capacity *= 2;
+            char* newMangledName = arenaAlloc(project->arena, capacity * 2 + 1);
+            memcpy(newMangledName, mangledName, length);
+            mangledName = newMangledName;
+        }
+        mangledName[ogLength] = '_';
+        memcpy(mangledName + ogLength + 1, parameterName, parameterLength);
     }
-    project->functions[project->functionCount++] = *function;
-    return function;
+    mangledName[length] = '\0';
+    return mangledName;
 }
 
-void implementFunction(Function* function, Project* project) {
-    function->scope = arenaAlloc(&project->arena, sizeof(Scope));
+functionId createFunction(typeId returnType, char* name, typeId* parameters, char** parameterNames, u64 parameterCount, Token* startToken, Project* project, bool variadic, FunctionType type) {
+    Function function;
+    function.returnType = returnType;
+    function.name = name;
+    function.variadic = variadic;
+    function.type = type;
+    function.parameters = parameters;
+    function.parameterNames = parameterNames;
+    function.parameterCount = parameterCount;
+    function.startToken = startToken;
+    char* mangledName = getMangledName(&function, project);
+    function.mangledName = mangledName;
+
+    if (gFunctionCount >= gFunctionCapacity) {
+        if (gFunctions == NULL) {
+            gNameToFunctionsWithSameName = createMap();
+            gFunctionCapacity = 1024;
+            gFunctionCount = 1;
+            gFunctions = arenaAlloc(project->arena, sizeof(Function) * gFunctionCapacity);
+        } else {
+            gFunctionCapacity *= 2;
+            Function* newFunctions = arenaAlloc(project->arena, sizeof(Function) * gFunctionCapacity);
+            if (newFunctions != NULL) {
+                memcpy(newFunctions, gFunctions, sizeof(Function) * gFunctionCount);
+                gFunctions = newFunctions;
+            }
+        }
+    }
+    gFunctions[gFunctionCount] = function;
+    Function* inListPtr = &gFunctions[gFunctionCount];
+    void* existing = mapGet(&gNameToFunctionsWithSameName, function.name);
+    if (existing == NULL) {
+        FunctionsWithSameName* functionsWithSameName = arenaAlloc(project->arena, sizeof(FunctionsWithSameName));
+        functionsWithSameName->functions = arenaAlloc(project->arena, sizeof(functionId) * 1);
+        functionsWithSameName->count = 1;
+        functionsWithSameName->capacity = 1;
+        mapSet(&gNameToFunctionsWithSameName, function.name, (void*)functionsWithSameName);
+        functionsWithSameName->functions[0] = gFunctionCount;
+    } else {
+        FunctionsWithSameName* functionsWithSameName = *(FunctionsWithSameName**)existing;
+        if (functionsWithSameName->count >= functionsWithSameName->capacity) {
+            functionsWithSameName->capacity *= 2;
+            void* newMemory = arenaAlloc(project->arena, sizeof(functionId) * functionsWithSameName->capacity);
+            memcpy(newMemory, functionsWithSameName->functions, sizeof(functionId) * functionsWithSameName->count);
+            functionsWithSameName->functions = newMemory;
+        }
+        Function* existingFunction = NULL;
+        for (u64 i = 0; i < functionsWithSameName->count; i++) {
+            if (strcmp(function.mangledName, gFunctions[functionsWithSameName->functions[i]].mangledName) == 0) {
+                existingFunction = &gFunctions[functionsWithSameName->functions[i]];
+                break;
+            }
+        }
+        if (existingFunction != NULL) {
+            logErrorToken("Multiple functions with the same name and parameters", project, startToken);
+            return 0;
+        }
+        functionsWithSameName->functions[functionsWithSameName->count++] = gFunctionCount;
+    }
+    return gFunctionCount++;
+}
+
+void implementFunction(functionId funcId, Project* project) {
+    Function* function = getFunctionFromId(funcId);
+    function->scope = arenaAlloc(project->arena, sizeof(Scope));
     memset(function->scope, 0, sizeof(Scope));
     for (u64 i = 0; i < function->parameterCount; i++) {
         Variable var = { 0 };
@@ -123,13 +199,19 @@ void implementFunction(Function* function, Project* project) {
     while (token->type != tt_lbrace) {
         token++;
     }
-    implementScope(function->scope, function, token, project);
+    implementScope(function->scope, funcId, token, project);
 }
 
-Function* getFunctionFromNameAndParmeters(const char* name, typeId* parameters, u64 parameterCount, Project* project, Token* tokenForError) {
-    for (u64 i = 0; i < project->functionCount; i++) {
-        Function* func = &project->functions[i];
-        if (strcmp(func->name, name) == 0 && func->parameterCount == parameterCount) {
+functionId getFunctionFromNameAndParmeters(const char* name, typeId* parameters, u64 parameterCount, Project* project, Token* tokenForError) {
+    FunctionsWithSameName** functionsWithSameNamePtr = (FunctionsWithSameName**)mapGet(&gNameToFunctionsWithSameName, name);
+    if (functionsWithSameNamePtr == NULL) {
+        return 0;
+    }
+    FunctionsWithSameName* functionsWithSameNamer = *functionsWithSameNamePtr;
+    for (u64 i = 0; i < functionsWithSameNamer->count; i++) {
+        functionId functionId = functionsWithSameNamer->functions[i];
+        Function* func = &gFunctions[functionId];
+        if (func->parameterCount == parameterCount) {
             bool match = true;
             for (u64 j = 0; j < parameterCount; j++) {
                 if (func->parameters[j] != parameters[j]) {
@@ -138,52 +220,49 @@ Function* getFunctionFromNameAndParmeters(const char* name, typeId* parameters, 
                 }
             }
             if (match) {
-                return func;
+                return functionId;
             }
         }
     }
+
     // now check for implisit casts
     // make sure that if multiple implicit casts are possible we error out
-    Function* foundMatchs[10];
-    u64 foundCount = 0;
-    for (u64 i = 0; i < project->functionCount; i++) {
-        Function* func = &project->functions[i];
-        if (strcmp(func->name, name) == 0 && func->parameterCount == parameterCount) {
+    functionId matchFunc = 0;
+    for (u64 i = 0; i < functionsWithSameNamer->count; i++) {
+        functionId functionId = functionsWithSameNamer->functions[i];
+        Function* func = &gFunctions[functionId];
+        if (func->parameterCount == parameterCount) {
             bool match = true;
             for (u64 j = 0; j < parameterCount; j++) {
-                if (!canStaticCast(parameters[j], func->parameters[j], project)) {
+                if (!canImplCast(parameters[j], func->parameters[j], project)) {
                     match = false;
                     break;
                 }
             }
             if (match) {
-                if (foundCount >= 10) {
-                    logErrorToken("Too many functions found with the same name and compatible parameters: %s with %llu parameters", project, tokenForError, name, parameterCount);
-                    return NULL;
+                if (matchFunc != 0) {
+                    logErrorToken("Multiple functions found with the same name and compatible parameters: %s", project, tokenForError, name);
+                    return 0;
                 }
-                foundMatchs[foundCount++] = func;
+                matchFunc = functionId;
             }
         }
     }
-    if (foundCount == 0) {
-        logErrorToken("Function not found: %s with %llu parameters that match the given input", project, tokenForError, name, parameterCount);
-        return NULL;
-    }
-    if (foundCount > 1) {
-        logErrorToken("Multiple functions found with the same name and compatible parameters: %s with %llu parameters", project, tokenForError, name, parameterCount);
-        return NULL;
-    }
-    assert(foundCount == 1 && "Found more than one function with the same name and compatible parameters");
-    return foundMatchs[0];
+    return matchFunc;
 }
 
-Function* getFunctionForBiop(BiopExpresstion* biop, Project* project) {
+Function* getFunctionFromId(functionId functionId) {
+    assert(functionId != 0);
+    return &gFunctions[functionId];
+}
+
+functionId getFunctionForBiop(BiopExpresstion* biop, Project* project) {
     // This function should return the function that matches the biop expression
     // For now, we will just return NULL as a placeholder
-    return NULL;
+    return 0;
 }
 
-bool canStaticCast(typeId from, typeId to, Project* project) {
+bool canImplCast(typeId from, typeId to, Project* project) {
     if (from == to) {
         return true;  // No cast needed
     }
@@ -360,8 +439,9 @@ typeId getBiopTypeResult(BiopExpresstion* biop, Project* project) {
         }
     }
 
-    Function* func = getFunctionForBiop(biop, project);
-    if (func != NULL) {
+    functionId funcId = getFunctionForBiop(biop, project);
+    Function* func = getFunctionFromId(funcId);
+    if (funcId != 0) {
         return func->returnType;
     }
 

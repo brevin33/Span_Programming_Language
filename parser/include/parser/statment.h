@@ -68,8 +68,8 @@ typedef struct _Statment {
 struct _Function;
 typedef struct _Function Function;
 
-Statment createStatmentFromTokens(Token** tokens, Function* function, Scope* scope, Project* project);
+Statment createStatmentFromTokens(Token** tokens, functionId function, Scope* scope, Project* project);
 
-Assignment createAssignmentFromTokens(Token** tokens, Function* function, Scope* scope, Project* project);
+Assignment createAssignmentFromTokens(Token** tokens, functionId function, Scope* scope, Project* project);
 
-Declaration createDeclarationFromTokens(Token** tokens, Function* function, Scope* scope, Project* project);
+Declaration createDeclarationFromTokens(Token** tokens, functionId function, Scope* scope, Project* project);

@@ -4,7 +4,7 @@
 #include "parser/type.h"
 #include <string.h>
 
-Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* scope, Project* project) {
+Expresstion createSingleExpresstion(Token** tokens, functionId funcId, Scope* scope, Project* project) {
     Expresstion expression = { 0 };
     expression.type = et_error;
     Token* token = *tokens;
@@ -30,14 +30,14 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
                         break;
                     }
                     OurTokenType dels[] = { tt_comma, tt_rparen };
-                    Expresstion parameter = createExpresstionFromTokensDels(&token, dels, 2, function, scope, project);
+                    Expresstion parameter = createExpresstionFromTokensDels(&token, dels, 2, funcId, scope, project);
                     if (parameter.type == et_error) {
                         expression.type = et_error;
                         return expression;
                     }
                     if (functionExpresstion.parameterCount % 10 == 0) {
                         Expresstion* parameters = functionExpresstion.parameters;
-                        functionExpresstion.parameters = arenaAlloc(&project->arena, sizeof(Expresstion) * (functionExpresstion.parameterCount + 10));
+                        functionExpresstion.parameters = arenaAlloc(project->arena, sizeof(Expresstion) * (functionExpresstion.parameterCount + 10));
                         if (parameters) {
                             memcpy(functionExpresstion.parameters, parameters, sizeof(Expresstion) * functionExpresstion.parameterCount);
                         }
@@ -64,16 +64,17 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
                 for (u64 i = 0; i < functionExpresstion.parameterCount; i++) {
                     paramTypes[i] = functionExpresstion.parameters[i].tid;
                 }
-                Function* func = getFunctionFromNameAndParmeters(name, paramTypes, functionExpresstion.parameterCount, project, startToken);
-                if (func == NULL) {
+                functionId fId = getFunctionFromNameAndParmeters(name, paramTypes, functionExpresstion.parameterCount, project, startToken);
+                if (fId == 0) {
                     expression.type = et_error;
                     return expression;
                 }
-                functionExpresstion.func = func;
+                Function* func = getFunctionFromId(fId);
+                functionExpresstion.func = fId;
 
                 expression.type = et_function;
                 expression.tid = func->returnType;
-                expression.functionExpresstion = arenaAlloc(&project->arena, sizeof(FunctionExpresstion));
+                expression.functionExpresstion = arenaAlloc(project->arena, sizeof(FunctionExpresstion));
                 memcpy(expression.functionExpresstion, &functionExpresstion, sizeof(FunctionExpresstion));
                 break;
             }
@@ -84,7 +85,7 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
                 return expression;
             }
             expression.type = et_variable;
-            expression.variable = arenaAlloc(&project->arena, strlen(name) + 1);
+            expression.variable = arenaAlloc(project->arena, strlen(name) + 1);
             memcpy(expression.variable, name, strlen(name) + 1);
             expression.tid = variable->type;
             break;
@@ -92,7 +93,7 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
         case tt_int: {
             expression.type = et_int;
             expression.tid = getTypeIdFromName("__const_uint");
-            expression.number = arenaAlloc(&project->arena, strlen(token->str) + 1);
+            expression.number = arenaAlloc(project->arena, strlen(token->str) + 1);
             memcpy(expression.number, token->str, strlen(token->str) + 1);
             token++;
             break;
@@ -100,7 +101,7 @@ Expresstion createSingleExpresstion(Token** tokens, Function* function, Scope* s
         case tt_float: {
             expression.type = et_float;
             expression.tid = getTypeIdFromName("__const_float");
-            expression.number = arenaAlloc(&project->arena, strlen(token->str) + 1);
+            expression.number = arenaAlloc(project->arena, strlen(token->str) + 1);
             memcpy(expression.number, token->str, strlen(token->str) + 1);
             token++;
             break;
@@ -151,9 +152,10 @@ i64 biopPrecedence(OurTokenType type) {
     }
 }
 
-Expresstion _createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels, u64 delsSize, Function* function, Scope* scope, Project* project, i64 prec) {
+Expresstion _createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels, u64 delsSize, functionId funcId, Scope* scope, Project* project, i64 prec) {
+    Function* function = getFunctionFromId(funcId);
     Token* token = *tokens;
-    Expresstion lval = createSingleExpresstion(&token, function, scope, project);
+    Expresstion lval = createSingleExpresstion(&token, funcId, scope, project);
     if (lval.type == et_error) {
         return lval;
     }
@@ -179,24 +181,25 @@ Expresstion _createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels,
             return lval;
         }
         token++;
-        Expresstion rhs = _createExpresstionFromTokensDels(tokens, dels, delsSize, function, scope, project, opPrec);
+        Expresstion rhs = _createExpresstionFromTokensDels(tokens, dels, delsSize, funcId, scope, project, opPrec);
         BiopExpresstion biop;
-        biop.left = arenaAlloc(&project->arena, sizeof(Expresstion));
+        biop.left = arenaAlloc(project->arena, sizeof(Expresstion));
         memcpy(biop.left, &lval, sizeof(Expresstion));
         biop.operator= op;
-        biop.right = arenaAlloc(&project->arena, sizeof(Expresstion));
+        biop.right = arenaAlloc(project->arena, sizeof(Expresstion));
         memcpy(biop.right, &rhs, sizeof(Expresstion));
         lval.type = et_biop;
         lval.tid = getBiopTypeResult(&biop, project);
-        lval.biopExpresstion = arenaAlloc(&project->arena, sizeof(BiopExpresstion));
+        lval.biopExpresstion = arenaAlloc(project->arena, sizeof(BiopExpresstion));
+
         memcpy(lval.biopExpresstion, &biop, sizeof(BiopExpresstion));
         token++;
     }
 }
-Expresstion createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels, u64 delsSize, Function* function, Scope* scope, Project* project) {
-    return _createExpresstionFromTokensDels(tokens, dels, delsSize, function, scope, project, INT64_MAX);
+Expresstion createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels, u64 delsSize, functionId funcId, Scope* scope, Project* project) {
+    return _createExpresstionFromTokensDels(tokens, dels, delsSize, funcId, scope, project, INT64_MAX);
 }
 
-Expresstion createExpresstionFromTokens(Token** tokens, OurTokenType del, Function* function, Scope* scope, Project* project) {
-    return createExpresstionFromTokensDels(tokens, &del, 1, function, scope, project);
+Expresstion createExpresstionFromTokens(Token** tokens, OurTokenType del, functionId funcId, Scope* scope, Project* project) {
+    return createExpresstionFromTokensDels(tokens, &del, 1, funcId, scope, project);
 }

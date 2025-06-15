@@ -10,7 +10,7 @@ typedef struct _Arena {
     void* current;
 } Arena;
 
-Arena createArena(u64 capacity);
+Arena* createArena(u64 capacity);
 
 void* arenaAlloc(Arena* arena, u64 size);
 

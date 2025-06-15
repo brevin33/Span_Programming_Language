@@ -6,7 +6,7 @@
 void addStatementToScope(Scope* scope, Statment* statement, Project* project) {
     if (scope->statementCount >= scope->statementCapacity) {
         scope->statementCapacity = scope->statementCapacity ? scope->statementCapacity * 2 : 16;
-        Statment* newStatements = arenaAlloc(&project->arena, sizeof(Statment) * scope->statementCapacity);
+        Statment* newStatements = arenaAlloc(project->arena, sizeof(Statment) * scope->statementCapacity);
         if (!newStatements) {
             logError("Failed to allocate memory for statements in scope");
             return;
@@ -44,7 +44,7 @@ Variable* getVariableFromScope(Scope* scope, const char* name) {
 void addVariableToScope(Scope* scope, Variable* variable, Project* project) {
     if (scope->variableCount >= scope->variableCapacity) {
         scope->variableCapacity = scope->variableCapacity ? scope->variableCapacity * 2 : 16;
-        Variable* newVariables = arenaAlloc(&project->arena, sizeof(Variable) * scope->variableCapacity);
+        Variable* newVariables = arenaAlloc(project->arena, sizeof(Variable) * scope->variableCapacity);
         if (!newVariables) {
             logError("Failed to allocate memory for variables in scope");
             return;
@@ -57,8 +57,9 @@ void addVariableToScope(Scope* scope, Variable* variable, Project* project) {
     scope->variables[scope->variableCount++] = *variable;
 }
 
-void implementScope(Scope* scope, Function* funciton, Token* startToken, Project* project) {
+void implementScope(Scope* scope, functionId funcId, Token* startToken, Project* project) {
     assert(startToken->type == tt_lbrace);
+
     startToken++;
     Token* token = startToken;
     while (true) {
@@ -70,7 +71,7 @@ void implementScope(Scope* scope, Function* funciton, Token* startToken, Project
             token++;  // Skip empty line
             continue;
         }
-        Statment statement = createStatmentFromTokens(&token, funciton, scope, project);
+        Statment statement = createStatmentFromTokens(&token, funcId, scope, project);
         if (statement.type == st_error) {
             //skip line if error
             while (token->type != tt_endl) {

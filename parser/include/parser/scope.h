@@ -3,6 +3,9 @@
 #include "nice_ints.h"
 #include "type.h"
 
+
+typedef u64 functionId;
+
 struct _Statment;
 typedef struct _Statment Statment;
 
@@ -36,4 +39,4 @@ Variable* getVariableFromScope(Scope* scope, const char* name);
 
 Variable* getVariableFromTopScope(Scope* scope, const char* name);
 
-void implementScope(Scope* scope, Function* funciton, Token* startToken, Project* project);
+void implementScope(Scope* scope, functionId funcId, Token* startToken, Project* project);

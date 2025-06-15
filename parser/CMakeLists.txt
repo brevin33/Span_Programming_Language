@@ -14,6 +14,7 @@ add_library(span_parser
 	src/scope.c
 	src/statment.c
 	src/expression.c
+	src/map.c
 )
 
 target_include_directories(span_parser

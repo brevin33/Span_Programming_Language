@@ -208,7 +208,7 @@ void logErrorToken(char* error, Project* project, Token* token, ...) {
     // Use redvPrintf to print the error message in red
     u64 numberOfTokens = 1;
     va_list args;
-    va_start(args, numberOfTokens);
+    va_start(args, token);
     char* fileName = project->souceFileNames[token->file];
     redPrintf("Error in file %s on line ", fileName);
     int lastLine = -1;

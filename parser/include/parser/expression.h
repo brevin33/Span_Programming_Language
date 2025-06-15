@@ -3,6 +3,8 @@
 #include "parser/scope.h"
 
 
+typedef u64 functionId;
+
 typedef enum _ExpresstionType : u8 {
     et_error,
     et_variable,
@@ -27,11 +29,12 @@ typedef struct _StructConstant {
 typedef struct _BiopExpresstion {
     Expresstion* left;
     Expresstion* right;
+    functionId func;  // NULL if not a function like adding two i32
     OurTokenType operator;
 } BiopExpresstion;
 
 typedef struct _FunctionExpresstion {
-    Function* func;
+    functionId func;
     Expresstion* parameters;
     u64 parameterCount;
 } FunctionExpresstion;
@@ -52,5 +55,5 @@ typedef struct _Expresstion {
 struct _Function;
 typedef struct _Function Function;
 
-Expresstion createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels, u64 delsSize, Function* function, Scope* scope, Project* project);
-Expresstion createExpresstionFromTokens(Token** tokens, OurTokenType dels, Function* function, Scope* scope, Project* project);
+Expresstion createExpresstionFromTokensDels(Token** tokens, OurTokenType* dels, u64 delsSize, functionId funcId, Scope* scope, Project* project);
+Expresstion createExpresstionFromTokens(Token** tokens, OurTokenType dels, functionId funcId, Scope* scope, Project* project);

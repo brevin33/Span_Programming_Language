@@ -16,6 +16,7 @@ int main() {
     printf("Tokens in project:\n");
     while (tokens->type != tt_eop) {
         char buffer[256];
+
         tokenToString(tokens, buffer, sizeof(buffer));
         printf("%s | ", buffer);
         if (tokens->type == tt_endl) {
