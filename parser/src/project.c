@@ -186,6 +186,9 @@ Project createProject(const char* folder) {
         functions[functionCount++] = function;
     }
 
+    project.functions = functions;
+    project.functionCount = functionCount;
+
     // Implement all functions
     for (u64 i = 0; i < functionCount; i++) {
         functionId funcId = functions[i];

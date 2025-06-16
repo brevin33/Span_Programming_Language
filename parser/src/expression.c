@@ -2,6 +2,7 @@
 #include "parser.h"
 #include "parser/tokens.h"
 #include "parser/type.h"
+#include <assert.h>
 #include <string.h>
 
 Expresstion createSingleExpresstion(Token** tokens, functionId funcId, Scope* scope, Project* project) {
@@ -107,6 +108,53 @@ Expresstion createSingleExpresstion(Token** tokens, functionId funcId, Scope* sc
             break;
         }
         case tt_string: {
+            StringExpresstion stringExpresstion = { 0 };
+            u64 stringCount = 0;
+            u64 stringCapacity = 8;
+            char** strings = arenaAlloc(project->arena, sizeof(char*) * stringCapacity);
+            u64 expresstionCount = 0;
+            u64 expresstionCapacity = 8;
+            Expresstion* expresstions = arenaAlloc(project->arena, sizeof(Expresstion) * expresstionCapacity);
+            while (true) {
+                char* string = token->str;
+                if (stringCount >= stringCapacity) {
+                    char** newStrings = arenaAlloc(project->arena, sizeof(char*) * stringCapacity * 2);
+                    memcpy(newStrings, strings, sizeof(char*) * stringCapacity);
+                    strings = newStrings;
+                    stringCapacity *= 2;
+                }
+                strings[stringCount++] = arenaAlloc(project->arena, strlen(string) + 1);
+                memcpy(strings[stringCount - 1], string, strlen(string) + 1);
+                token++;
+                if (token->type == tt_str_expr_start) {
+                    token++;
+                    Expresstion expresstion = createExpresstionFromTokens(&token, tt_str_expr_end, funcId, scope, project);
+                    if (expresstion.type == et_error) {
+                        expression.type = et_error;
+                        return expression;
+                    }
+                    if (expresstionCount >= expresstionCapacity) {
+                        Expresstion* newExpresstions = arenaAlloc(project->arena, sizeof(Expresstion) * expresstionCapacity * 2);
+                        memcpy(newExpresstions, expresstions, sizeof(Expresstion) * expresstionCapacity);
+                        expresstions = newExpresstions;
+                        expresstionCapacity *= 2;
+                    }
+                    expresstions[expresstionCount++] = expresstion;
+                    token++;
+                    assert(token->type == tt_string);
+                    continue;
+                }
+                break;
+            }
+            stringExpresstion.strings = strings;
+            stringExpresstion.stringCount = stringCount;
+            stringExpresstion.expresstions = expresstions;
+            stringExpresstion.expresstionCount = expresstionCount;
+            expression.tid = getTypeIdFromName("__const_string");
+            expression.type = et_string;
+            expression.stringExpresstion = arenaAlloc(project->arena, sizeof(StringExpresstion));
+            memcpy(expression.stringExpresstion, &stringExpresstion, sizeof(StringExpresstion));
+            break;
         }
         default: {
             logErrorToken("Invalid token for expression: %s", project, token, tokenToString(token, NULL, 0));

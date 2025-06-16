@@ -3,6 +3,7 @@
 #include "parser/arena.h"
 #include "parser/tokens.h"
 
+typedef u64 functionId;
 typedef struct _Project {
     char* directory;
     Token* tokens;
@@ -12,6 +13,8 @@ typedef struct _Project {
     Token** functionStarts;
     u64 functionStartCount;
     Arena* arena;
+    functionId* functions;
+    u64 functionCount;
 } Project;
 
 Project createProject(const char* folder);

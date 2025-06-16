@@ -5,7 +5,6 @@
 typedef enum _StatmentType : u8 {
     st_error,
     st_expression,
-    st_declaration,
     st_if,
     st_else,
     st_while,
@@ -39,16 +38,23 @@ typedef enum _opType {
 
 int opPrecedence(opType op);
 
+typedef enum _AssignmentLeftSideElementType {
+    ase_error,
+    ase_variable,
+    ase_declaration,
+} AssignmentLeftSideElementType;
+
+
+typedef struct _AssignmentLeftSideElement {
+    AssignmentLeftSideElementType type;
+    Variable variable;
+} AssignmentLeftSideElement;
 
 typedef struct _Assignment {
-    char* variableName;
+    AssignmentLeftSideElement* leftSideElements;
+    u64 numLeftSideElements;
     Expresstion* value;
 } Assignment;
-
-typedef struct _Declaration {
-    Variable variable;
-    Assignment* assignment;
-} Declaration;
 
 typedef struct _Statment {
     StatmentType type;
@@ -56,7 +62,6 @@ typedef struct _Statment {
         Scope* scope;
         Expresstion* expression;
         Assignment* assignment;
-        Declaration* declaration;
         Expresstion* returnValue;
         Expresstion* ifCondition;
         u64 breakLevel;
@@ -71,5 +76,3 @@ typedef struct _Function Function;
 Statment createStatmentFromTokens(Token** tokens, functionId function, Scope* scope, Project* project);
 
 Assignment createAssignmentFromTokens(Token** tokens, functionId function, Scope* scope, Project* project);
-
-Declaration createDeclarationFromTokens(Token** tokens, functionId function, Scope* scope, Project* project);

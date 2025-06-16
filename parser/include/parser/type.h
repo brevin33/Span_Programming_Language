@@ -2,6 +2,8 @@
 
 #include "nice_ints.h"
 #include "parser/tokens.h"
+#include "parser/map.h"
+
 
 typedef enum _TypeKind {
     tk_invalid = 0,
@@ -53,6 +55,12 @@ typedef struct _Type {
         u64 numberSize;
     };
 } Type;
+
+extern Arena* gTypesArena;
+extern u64 gTypesCount;
+extern u64 gTypesCapacity;
+extern Type* gTypes;
+extern map gTypeMap;
 
 void addBaseTypes();
 

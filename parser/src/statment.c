@@ -7,60 +7,6 @@
 #include <assert.h>
 #include <string.h>
 
-Declaration createDeclarationFromTokens(Token** tokens, functionId function, Scope* scope, Project* project) {
-    Declaration declaration = { 0 };
-    Token* token = *tokens;
-
-    typeId type = getTypeIdFromToken(&token);
-    if (type == 0) {
-        logErrorToken("Expected type for declaration", project, token);
-        return declaration;
-    }
-    declaration.variable.type = type;
-
-    if (token->type != tt_id) {
-        logErrorToken("Expected identifier for declaration", project, token);
-        return declaration;
-    }
-    char* varName = arenaAlloc(project->arena, strlen(token->str) + 1);
-    memcpy(varName, token->str, strlen(token->str) + 1);
-    token++;
-    declaration.variable.name = varName;
-
-    //add variable to scope
-    Variable* existingVar = getVariableFromTopScope(scope, varName);
-    if (existingVar != NULL) {
-        logErrorToken("Variable already declared in this scope", project, token);
-        declaration.variable.name = NULL;  // Clear variable name on error
-        declaration.variable.type = 0;  // Clear type on error
-        return declaration;
-    }
-
-    addVariableToScope(scope, &declaration.variable, project);
-
-    if (token->type != tt_assign && token->type != tt_add_assign && token->type != tt_sub_assign && token->type != tt_mul_assign && token->type != tt_div_assign && token->type != tt_mod_assign) {
-        // If no assignment operator, return declaration without assignment
-        declaration.assignment = NULL;
-        *tokens = token;
-        return declaration;
-    }
-
-    Token* assignToken = token - 1;
-    Assignment a = createAssignmentFromTokens(&assignToken, function, scope, project);
-    if (a.variableName == NULL) {
-        // If assignment failed, clear variable name and type
-        declaration.variable.name = NULL;  // Clear variable name on error
-        declaration.variable.type = 0;  // Clear type on error
-        return declaration;
-    }
-    token = assignToken;
-    declaration.assignment = arenaAlloc(project->arena, sizeof(Assignment));
-    memcpy(declaration.assignment, &a, sizeof(Assignment));
-    *tokens = token;
-    return declaration;
-}
-
-
 OurTokenType assignOpToBiop(OurTokenType assignOp) {
     switch (assignOp) {
         case tt_assign:
@@ -80,46 +26,100 @@ OurTokenType assignOpToBiop(OurTokenType assignOp) {
     }
 }
 
+AssignmentLeftSideElement createAssignmentLeftSideElementFromTokens(Token** tokens, functionId funcId, Scope* scope, Project* project) {
+    Token* token = *tokens;
+    AssignmentLeftSideElement ase = { 0 };
+    typeId type = getTypeIdFromToken(&token);
+    if (type == 0) {
+        // might be a variable
+        if (token->type != tt_id) {
+            logErrorToken("Expected identifier for assignment", project, token);
+            ase.type = ase_error;
+            return ase;
+        }
+        Variable* var = getVariableFromScope(scope, token->str);
+        if (var == NULL) {
+            logErrorToken("Variable not declared before assignment", project, token);
+            ase.type = ase_error;
+            return ase;
+        }
+        ase.type = ase_variable;
+        char* varName = arenaAlloc(project->arena, strlen(token->str) + 1);
+        memcpy(varName, token->str, strlen(token->str) + 1);
+        ase.variable.name = varName;
+        ase.variable.type = var->type;
+        token++;
+        return ase;
+    }
+    // must be a declaration
+    if (token->type != tt_id) {
+        logErrorToken("Expected name for variable declaration", project, token);
+        ase.type = ase_error;
+        return ase;
+    }
+    char* varName = arenaAlloc(project->arena, strlen(token->str) + 1);
+    memcpy(varName, token->str, strlen(token->str) + 1);
+    token++;
+    ase.type = ase_declaration;
+    ase.variable.name = varName;
+    ase.variable.type = type;
+    addVariableToScope(scope, &ase.variable, project);
+    *tokens = token;
+    return ase;
+}
+
 Assignment createAssignmentFromTokens(Token** tokens, functionId funcId, Scope* scope, Project* project) {
     Function* function = getFunctionFromId(funcId);
     Token* token = *tokens;
     Assignment assignment = { 0 };
     assert(token->type != tt_eof || token->type != tt_endl);
 
-    if (token->type != tt_id) {
-        logErrorToken("Expected identifier for assignment", project, token);
-        assignment.variableName = NULL;  // Clear variable name on error
+    u64 maxLeftSideElements = 8;
+    u64 numLeftSideElements = 0;
+    AssignmentLeftSideElement leftSideElements[maxLeftSideElements];
+
+    while (true) {
+        AssignmentLeftSideElement ase = createAssignmentLeftSideElementFromTokens(&token, funcId, scope, project);
+        if (ase.type == ase_error) {
+            assignment.leftSideElements = NULL;  // Clear variable name on error
+            return assignment;
+        }
+        if (numLeftSideElements >= maxLeftSideElements) {
+            logErrorToken("Too many variables being assigned to", project, token);
+            assignment.leftSideElements = NULL;
+            return assignment;
+        }
+        leftSideElements[numLeftSideElements] = ase;
+        numLeftSideElements++;
+        if (token->type == tt_endl) {
+            break;
+        }
+        if (token->type == tt_assign || token->type == tt_add_assign || token->type == tt_sub_assign || token->type == tt_mul_assign || token->type == tt_div_assign || token->type == tt_mod_assign) {
+            break;
+        }
+        if (token->type != tt_comma) {
+            logErrorToken("Expected comma or end of line or equal sign", project, token);
+            assignment.leftSideElements = NULL;  // Clear variable name on error
+            return assignment;
+        }
+        token++;
+    }
+    assignment.leftSideElements = arenaAlloc(project->arena, sizeof(AssignmentLeftSideElement) * numLeftSideElements);
+    memcpy(assignment.leftSideElements, leftSideElements, sizeof(AssignmentLeftSideElement) * numLeftSideElements);
+    assignment.numLeftSideElements = numLeftSideElements;
+    if (token->type == tt_endl) {
+        assignment.value = NULL;
+        *tokens = token;
         return assignment;
     }
-
-    Variable* var = getVariableFromScope(scope, token->str);
-    Expresstion varExp = { 0 };
-    varExp.type = et_variable;
-    varExp.tid = var ? var->type : 0;
-    varExp.variable = arenaAlloc(project->arena, strlen(token->str) + 1);
-    memcpy(varExp.variable, token->str, strlen(token->str) + 1);
-    if (var == NULL) {
-        logErrorToken("Variable not declared before assignment", project, token);
-        return assignment;
-    }
-
-    assignment.variableName = arenaAlloc(project->arena, strlen(token->str) + 1);
-    memcpy(assignment.variableName, token->str, strlen(token->str) + 1);
-    token++;
-
-    if (token->type != tt_assign && token->type != tt_add_assign && token->type != tt_sub_assign && token->type != tt_mul_assign && token->type != tt_div_assign && token->type != tt_mod_assign) {
-        logErrorToken("Expected assignment operator", project, token);
-        assignment.variableName = NULL;  // Clear variable name on error
-        return assignment;
-    }
-
+    Token* assignToken = token;
     OurTokenType assignOp = token->type;
     token++;
 
     Expresstion value = createExpresstionFromTokens(&token, tt_endl, funcId, scope, project);
 
     if (value.type == et_error) {
-        assignment.variableName = NULL;  // Clear variable name on error
+        assignment.leftSideElements = NULL;  // Clear variable name on error
         return assignment;
     }
 
@@ -131,15 +131,35 @@ Assignment createAssignmentFromTokens(Token** tokens, functionId funcId, Scope* 
         case tt_mod_assign:
         case tt_sub_assign:
         case tt_add_assign: {
+            if (numLeftSideElements != 1) {
+                logErrorToken("Can only use operators like += or -= on one variable", project, token);
+                assignment.leftSideElements = NULL;  // Clear variable name on error
+                return assignment;
+            }
+            if (leftSideElements[0].type != ase_variable) {
+                logErrorToken("Can only call operators like += or -= on variables and not on declarations", project, token);
+                assignment.leftSideElements = NULL;  // Clear variable name on error
+                return assignment;
+            }
             Expresstion biop;
             BiopExpresstion biopExp;
+            Expresstion left;
+            left.type = et_variable;
+            left.tid = leftSideElements[0].variable.type;
+            left.variable = arenaAlloc(project->arena, strlen(leftSideElements[0].variable.name) + 1);
+            memcpy(left.variable, leftSideElements[0].variable.name, strlen(leftSideElements[0].variable.name) + 1);
             biopExp.left = arenaAlloc(project->arena, sizeof(Expresstion));
-            memcpy(biopExp.left, &varExp, sizeof(Expresstion));
+            memcpy(biopExp.left, &left, sizeof(Expresstion));
             biopExp.operator= assignOpToBiop(assignOp);
             biopExp.right = arenaAlloc(project->arena, sizeof(Expresstion));
             memcpy(biopExp.right, &value, sizeof(Expresstion));
             biop.type = et_biop;
             biop.tid = getBiopTypeResult(&biopExp, project);
+            if (biop.tid == 0) {
+                logErrorToken("Can't use assignment operator between types", project, assignToken);
+                assignment.leftSideElements = NULL;  // Clear variable name on error
+                return assignment;
+            }
             biop.biopExpresstion = arenaAlloc(project->arena, sizeof(BiopExpresstion));
             memcpy(biop.biopExpresstion, &biopExp, sizeof(BiopExpresstion));
             value = biop;
@@ -147,20 +167,50 @@ Assignment createAssignmentFromTokens(Token** tokens, functionId funcId, Scope* 
         }
         default:
             logErrorToken("Invalid assignment operator", project, token);
-            assignment.variableName = NULL;  // Clear variable name on error
+            assignment.leftSideElements = NULL;  // Clear variable name on error
             return assignment;
     }
 
-    bool staticCast = canImplCast(value.tid, var->type, project);
-    if (!staticCast) {
-        logErrorToken("Type mismatch in assignment", project, token);
-        assignment.variableName = NULL;  // Clear variable name on error
+    Type* rightType = getTypeFromId(value.tid);
+    bool rightTypeisStruct = rightType->kind == tk_struct;
+    if (numLeftSideElements == 1) {
+        AssignmentLeftSideElement* ase = &leftSideElements[0];
+        typeId leftType = ase->variable.type;
+        bool implCast = canImplCast(value.tid, leftType, project);
+        if (!implCast) {
+            logErrorToken("Type mismatch in assignment", project, token);
+            assignment.leftSideElements = NULL;  // Clear variable name on error
+            return assignment;
+        }
+    } else if (rightTypeisStruct) {
+        u64 rightTypeStructNumFields = rightType->structVals.memberCount;
+        if (rightTypeStructNumFields != numLeftSideElements) {
+            logErrorToken("Can't assign decompose struct into variables when number of variables does not match number of fields in struct", project, token);
+            assignment.leftSideElements = NULL;  // Clear variable name on error
+            return assignment;
+        }
+        for (u64 i = 0; i < numLeftSideElements; i++) {
+            AssignmentLeftSideElement* ase = &leftSideElements[i];
+            typeId leftType = ase->variable.type;
+            bool implCast = canImplCast(value.tid, leftType, project);
+            if (!implCast) {
+                logErrorToken("Type mismatch in assignment", project, token);
+                assignment.leftSideElements = NULL;  // Clear variable name on error
+                return assignment;
+            }
+        }
+    } else {
+        logErrorToken("Can't assign decompose struct when right hand side is not a struct", project, token);
+        assignment.leftSideElements = NULL;  // Clear variable name on error
         return assignment;
+    }
+    for (u64 i = 0; i < numLeftSideElements; i++) {
+        AssignmentLeftSideElement* ase = &leftSideElements[i];
+        typeId leftType = ase->variable.type;
     }
 
     assignment.value = arenaAlloc(project->arena, sizeof(Expresstion));
     memcpy(assignment.value, &value, sizeof(Expresstion));
-
     *tokens = token;
     return assignment;
 }
@@ -193,13 +243,13 @@ Statment createStatmentFromTokens(Token** tokens, functionId funcId, Scope* scop
                 }
                 // must be a declaration
                 token = startToken;
-                Declaration declaration = createDeclarationFromTokens(&token, funcId, scope, project);
-                if (declaration.variable.name == NULL) {
+                Assignment assignment = createAssignmentFromTokens(&token, funcId, scope, project);
+                if (assignment.leftSideElements == NULL) {
                     return statement;  // Error in declaration
                 }
-                statement.type = st_declaration;
-                statement.declaration = arenaAlloc(project->arena, sizeof(Declaration));
-                memcpy(statement.declaration, &declaration, sizeof(Declaration));
+                statement.type = st_assignment;
+                statement.assignment = arenaAlloc(project->arena, sizeof(Assignment));
+                memcpy(statement.assignment, &assignment, sizeof(Assignment));
                 *tokens = token;
                 return statement;
             }
@@ -215,7 +265,7 @@ Statment createStatmentFromTokens(Token** tokens, functionId funcId, Scope* scop
             if (isAssignment) {
                 token = startToken;
                 Assignment assignment = createAssignmentFromTokens(&token, funcId, scope, project);
-                if (assignment.variableName == NULL) {
+                if (assignment.leftSideElements == NULL) {
                     return statement;
                 }
                 statement.type = st_assignment;

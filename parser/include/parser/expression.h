@@ -39,13 +39,20 @@ typedef struct _FunctionExpresstion {
     u64 parameterCount;
 } FunctionExpresstion;
 
+typedef struct _StringExpresstion {
+    char** strings;
+    u64 stringCount;
+    Expresstion* expresstions;
+    u64 expresstionCount;
+} StringExpresstion;
+
 typedef struct _Expresstion {
     ExpresstionType type;
     typeId tid;
     union {
         char* variable;
         char* number;
-        char* string;
+        StringExpresstion* stringExpresstion;
         StructConstant* structConstant;
         BiopExpresstion* biopExpresstion;
         FunctionExpresstion* functionExpresstion;
