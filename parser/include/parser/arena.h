@@ -10,10 +10,14 @@ typedef struct _Arena {
     void* current;
 } Arena;
 
+extern Arena* gArena;
+
 Arena* createArena(u64 capacity);
 
 void* arenaAlloc(Arena* arena, u64 size);
 
+void* arenaRealloc(Arena* arena, void* memory, u64 oldSize, u64 size);
+
 void arenaReset(Arena* arena);
 
-void arenaFree(Arena* arena);
+void freeArena(Arena* arena);

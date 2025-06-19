@@ -1,7 +1,9 @@
 #include "parser.h"
 #include "parser/project.h"
+#include "parser/sourceCode.h"
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 
@@ -80,184 +82,162 @@ void logError(char* error, ...) {
     va_end(args);
 }
 
-char errorUnderlineBuffer[2048];
-char* getLineFromTokensWithUnderLine(Token* tokens, u64 numberOfTokens, Project* project) {
-    while (tokens->type == tt_endl) {
-        tokens++;
-        numberOfTokens--;
-    }
-    if (numberOfTokens <= 0) {
-        return NULL;  // No tokens to process
-    }
-    char* buffer = errorUnderlineBuffer;
-    u64 bufferIndex = 0;
-    char* charStartInLine = project->sourceFiles[tokens->file] + tokens->charStart;
-    char* charEndInLine = project->sourceFiles[tokens->file] + tokens[numberOfTokens - 1].charEnd;
-    char* lineStart = charStartInLine;
-    // walk back to the start of the line
-    while (lineStart > project->sourceFiles[tokens->file] && *(lineStart - 1) != '\n') {
-        lineStart--;
-    }
-    char* lineEnd = charStartInLine;
-    // walk forward to the end of the line
-    while (*lineEnd != '\0' && *lineEnd != '\n') {
-        lineEnd++;
-    }
-    if (*lineEnd == '\n') {
-        lineEnd++;  // Move past the newline character
-    }
-    // add line to buffer
-    memcpy(buffer + bufferIndex, lineStart, lineEnd - lineStart);
-    bufferIndex += (lineEnd - lineStart);  // +1 for the newline character
-    // add underline
-    u64 lineLength = lineEnd - lineStart;
-    u64 i = 0;
-    bool inComment = false;
-    while (i < lineLength) {
-        if (inComment) {
-            if (i + 1 < lineLength && lineStart[i] == '*' && lineStart[i + 1] == '/') {
-                inComment = false;
-                i++;
-            }
-            i++;
-            continue;
-        }
-        i64 amountTillUnder = charStartInLine - lineStart - i;
-        i64 amountPastUnder = charEndInLine - lineStart - i;
-        bool underToken = amountTillUnder <= 0 && amountPastUnder >= 0;
-        // only do it if under non space characters
-        underToken = underToken && (lineStart[i] != ' ' && lineStart[i] != '\t' && lineStart[i] != '\0' && lineStart[i] != '\n' && lineStart[i] != '\r');
-        if (lineStart[i] == '/' && (i + 1 < lineLength) && lineStart[i + 1] == '/') {
-            break;
-        }
-        if (lineStart[i] == '/' && (i + 1 < lineLength) && lineStart[i + 1] == '*') {
-            inComment = true;
-            i++;
-            continue;
-        } else if (lineStart[i] == '\t') {
-            buffer[bufferIndex++] = '\t';
-        } else if (underToken) {
-            buffer[bufferIndex++] = '^';
-        } else {
-            buffer[bufferIndex++] = ' ';
-        }
-        i++;
-    }
-    buffer[bufferIndex++] = '\n';  // Add newline after the underline
-    bool isCharEndOnSameLine = (charEndInLine >= lineStart && charEndInLine <= lineEnd);
-    // add line and then underline until at charEnd
-    char* lastEndLine = lineEnd;  // Move past the newline character
-    while (!isCharEndOnSameLine) {
-        char* nextLineStart = lastEndLine;
-        char* nextLineEnd = lastEndLine;
-        // find the next newline
-        while (*nextLineEnd != '\0' && *nextLineEnd != '\n') {
-            nextLineEnd++;
-        }
-        if (*nextLineEnd == '\0') {
-            break;
-        }
-        if (*nextLineEnd == '\n') {
-            nextLineEnd++;  // Move past the newline character
-        }
-        // add the next line to the buffer
-        memcpy(buffer + bufferIndex, nextLineStart, nextLineEnd - nextLineStart);
-        bufferIndex += (nextLineEnd - nextLineStart);
-        lastEndLine = nextLineEnd;
-        lineLength = nextLineEnd - nextLineStart;
-        // add underline for the next line
-        int i = 0;
-        while (i < lineLength) {
-            if (inComment) {
-                if (i + 1 < lineLength && lineStart[i] == '*' && lineStart[i + 1] == '/') {
-                    inComment = false;
-                    i++;
-                }
-                i++;
-                continue;
-            }
-            i64 amountPastUnder = charEndInLine - nextLineStart - i;
-            bool underToken = amountPastUnder >= 0;
-            // only do it if under non space characters
-            underToken = underToken && (nextLineStart[i] != ' ' && nextLineStart[i] != '\t' && nextLineStart[i] != '\0' && nextLineStart[i] != '\n' && nextLineStart[i] != '\r');
+typedef struct __range {
+    u64 start;
+    u64 end;
+} _range;
 
-            if (nextLineStart[i] == '/' && (i + 1 < lineLength) && nextLineStart[i + 1] == '/') {
+void printLineFromSourceCode(sourceCodeId sourceCodeId, u64 lineNum) {
+    SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+    if (lineNum > sourceCode->lineCount) {
+        return;
+    }
+    char* line = sourceCode->lines[lineNum - 1];
+    u64 lineLength = sourceCode->lineLengths[lineNum - 1];
+    char buffer[2048];
+    memcpy(buffer, line, lineLength);
+    buffer[lineLength] = '\0';
+    printf("%06llu | ", lineNum);
+    printf("%s\n", buffer);
+}
+
+void underLineLineWithTokens(Token* tokens, u64 tokenCount, u64 lineNum, sourceCodeId sourceCodeId) {
+    // print padding from line printing
+    printf("%06llu | ", lineNum);
+
+    SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+    if (lineNum > sourceCode->lineCount) {
+        return;
+    }
+    char* line = sourceCode->lines[lineNum - 1];
+    u64 lineLength = sourceCode->lineLengths[lineNum - 1];
+
+    for (u64 i = 0; i < lineLength; i++) {
+        if (line[i] == '\t') {
+            printf("\t");
+        } else if (line[i] == '\r') {
+            //printf("\r");
+        } else if (line[i] == ' ') {
+            printf(" ");
+        } else {
+            bool anythingUnderChar = false;
+            for (u64 j = 0; j < tokenCount; j++) {
+                if (tokens[j].line != lineNum) {
+                    continue;
+                }
+                if (tokens[j].file != sourceCodeId) {
+                    continue;
+                }
+                if (tokens[j].charEnd < i) {
+                    continue;
+                }
+                if (tokens[j].charStart > i) {
+                    continue;
+                }
+                anythingUnderChar = true;
                 break;
             }
-            if (nextLineStart[i] == '/' && (i + 1 < lineLength) && nextLineStart[i + 1] == '*') {
-                inComment = true;
-                i++;
-                continue;
-            } else if (nextLineStart[i] == '\t') {
-                buffer[bufferIndex++] = '\t';
-            } else if (underToken) {
-                buffer[bufferIndex++] = '^';
+            if (anythingUnderChar) {
+                printf("^");
             } else {
-                buffer[bufferIndex++] = ' ';
+                printf(" ");
             }
-            i++;
         }
-        buffer[bufferIndex++] = '\n';  // Add newline after the underline
-        isCharEndOnSameLine = (charEndInLine >= nextLineStart && charEndInLine <= nextLineEnd);
     }
-    buffer[bufferIndex] = '\0';  // Null-terminate the buffer
-    return buffer;
+
+    // if we have and endl or eof on this put a ^ at the very end of the line
+    for (u64 i = 0; i < tokenCount; i++) {
+        if (tokens[i].line != lineNum) {
+            continue;
+        }
+        if (tokens[i].file != sourceCodeId) {
+            continue;
+        }
+        if (tokens[i].type == tt_endl || tokens[i].type == tt_eof) {
+            printf("^");
+            break;
+        }
+    }
+
+    printf("\n");
 }
 
-void logErrorToken(char* error, Project* project, Token* token, ...) {
-    // Use redvPrintf to print the error message in red
-    u64 numberOfTokens = 1;
-    va_list args;
-    va_start(args, token);
-    char* fileName = project->souceFileNames[token->file];
-    redPrintf("Error in file %s on line ", fileName);
-    int lastLine = -1;
-    for (u64 i = 0; i < numberOfTokens; i++) {
-        int line = token[i].line;
-        if (line != lastLine) {
-            if (lastLine != -1) {
-                redPrintf(", ");
-            }
-            redPrintf("%d", line);
-            lastLine = line;
-        }
+int compareU64(const void* a, const void* b) {
+    u64 aVal = *(const u64*)a;
+    u64 bVal = *(const u64*)b;
+    if (aVal < bVal) {
+        return -1;
+    } else if (aVal > bVal) {
+        return 1;
+    } else {
+        return 0;
     }
-    redPrintf(": ");
-    redvPrintf(error, args);
-    printf("\n");
-    char* underlineStuff = getLineFromTokensWithUnderLine(token, numberOfTokens, project);
-    if (underlineStuff != NULL) {
-        printf("%s", underlineStuff);
-    }
-    printBar();
-    va_end(args);
 }
 
 
-void logErrorTokens(char* error, Project* project, Token* tokens, u64 numberOfTokens, ...) {
-    // Use redvPrintf to print the error message in red
+void logErrorTokens(Token* token, u64 tokenCount, char* error, ...) {
     va_list args;
-    va_start(args, numberOfTokens);
-    char* fileName = project->souceFileNames[tokens->file];
-    redPrintf("Error in file %s on line ", fileName);
-    int lastLine = -1;
-    for (u64 i = 0; i < numberOfTokens; i++) {
-        int line = tokens[i].line;
-        if (line != lastLine) {
-            if (lastLine != -1) {
-                redPrintf(", ");
-            }
-            redPrintf("%d", line);
-            lastLine = line;
-        }
-    }
-    redPrintf(": ");
+    va_start(args, error);
+    redPrintf("Error: ");
     redvPrintf(error, args);
     printf("\n");
-    char* underlineStuff = getLineFromTokensWithUnderLine(tokens, numberOfTokens, project);
-    if (underlineStuff != NULL) {
-        printf("%s", underlineStuff);
+    va_end(args);
+    if (tokenCount == 0) {
+        return;
+    }
+
+    sourceCodeId fileToDo[32];
+    u64 fileToDoCount = 0;
+    for (u64 i = 0; i < tokenCount; i++) {
+        bool doneFile = false;
+        for (u64 j = 0; j < fileToDoCount; j++) {
+            if (token[i].file == fileToDo[j]) {
+                doneFile = true;
+                break;
+            }
+        }
+        if (doneFile) {
+            continue;
+        }
+        if (fileToDoCount >= 32) {
+            break;
+        }
+        fileToDo[fileToDoCount] = token[i].file;
+        fileToDoCount++;
+    }
+
+    for (u64 i = 0; i < fileToDoCount; i++) {
+        sourceCodeId currentFile = fileToDo[i];
+        u64 linesToDo[128];
+        u64 linesToDoCount = 0;
+        for (u64 j = 0; j < tokenCount; j++) {
+            bool doneLine = false;
+            u64 line = token[j].line;
+            for (u64 k = 0; k < linesToDoCount; k++) {
+                if (token[j].line == linesToDo[k]) {
+                    doneLine = true;
+                    break;
+                }
+            }
+            // if we've already done this line, skip it
+            if (doneLine) {
+                continue;
+            }
+            if (linesToDoCount >= 128) {
+                break;
+            }
+            linesToDo[linesToDoCount] = token[j].line;
+            linesToDoCount++;
+        }
+
+        // sort lines so we do them in order
+        qsort(linesToDo, linesToDoCount, sizeof(u64), compareU64);
+
+        for (u64 j = 0; j < linesToDoCount; j++) {
+            u64 line = linesToDo[j];
+            printLineFromSourceCode(currentFile, line);
+            underLineLineWithTokens(token, tokenCount, line, currentFile);
+        }
     }
     printBar();
-    va_end(args);
 }

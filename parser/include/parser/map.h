@@ -27,7 +27,7 @@ map createMapArenaCapacity(Arena* arena, u64 capacity);
 
 
 // make sure this is not called if you gave your own arena
-void mapFree(map* map);
+void freeMap(map* map);
 
 void mapSet(map* map, char* key, void* value);
 void** mapGet(map* map, const char* key);

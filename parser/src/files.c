@@ -67,11 +67,7 @@ char** listFilesInDirectory(const char* directory, u64* fileCount, Arena* arena)
     }
     for (;;) {
         if (!(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            if (!files) {
-                files = (char**)arenaAlloc(arena, sizeof(char*));
-            } else {
-                files = (char**)arenaAlloc(arena, sizeof(char*) * (*fileCount + 1));
-            }
+            files = (char**)arenaRealloc(arena, files, sizeof(char*) * (*fileCount), sizeof(char*) * (*fileCount + 1));
             size_t len = strlen(findFileData.cFileName) + 1;
             files[*fileCount] = (char*)arenaAlloc(arena, len);
             memcpy(files[*fileCount], findFileData.cFileName, len);
@@ -86,11 +82,7 @@ char** listFilesInDirectory(const char* directory, u64* fileCount, Arena* arena)
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type != DT_DIR) {
-            if (!files) {
-                files = (char**)arenaAlloc(arena, sizeof(char*));
-            } else {
-                files = (char**)arenaAlloc(arena, sizeof(char*) * (*fileCount + 1));
-            }
+            files = (char**)arenaRealloc(arena, files, sizeof(char*) * (*fileCount), sizeof(char*) * (*fileCount + 1));
             size_t len = strlen(entry->d_name) + 1;
             files[*fileCount] = (char*)arenaAlloc(arena, len);
             memcpy(files[*fileCount], entry->d_name, len);
@@ -117,11 +109,7 @@ char** listDirectoriesInDirectory(const char* directory, u64* dirCount, Arena* a
     }
     for (;;) {
         if ((findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && strcmp(findFileData.cFileName, ".") != 0 && strcmp(findFileData.cFileName, "..") != 0) {
-            if (!dirs) {
-                dirs = (char**)arenaAlloc(arena, sizeof(char*));
-            } else {
-                dirs = (char**)arenaAlloc(arena, sizeof(char*) * (*dirCount + 1));
-            }
+            dirs = (char**)arenaRealloc(arena, dirs, sizeof(char*) * (*dirCount), sizeof(char*) * (*dirCount + 1));
             size_t len = strlen(findFileData.cFileName) + 1;
             dirs[*dirCount] = (char*)arenaAlloc(arena, len);
             memcpy(dirs[*dirCount], findFileData.cFileName, len);
@@ -136,11 +124,7 @@ char** listDirectoriesInDirectory(const char* directory, u64* dirCount, Arena* a
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-            if (!dirs) {
-                dirs = (char**)arenaAlloc(arena, sizeof(char*));
-            } else {
-                dirs = (char**)arenaAlloc(arena, sizeof(char*) * (*dirCount + 1));
-            }
+            dirs = (char**)arenaRealloc(arena, dirs, sizeof(char*) * (*dirCount), sizeof(char*) * (*dirCount + 1));
             size_t len = strlen(entry->d_name) + 1;
             dirs[*dirCount] = (char*)arenaAlloc(arena, len);
             memcpy(dirs[*dirCount], entry->d_name, len);

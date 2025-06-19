@@ -14,3 +14,5 @@ typedef double f64;
 typedef u8 bool;
 #define true 1
 #define false 0
+
+#define BAD_ID UINT64_MAX

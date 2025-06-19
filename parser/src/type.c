@@ -1,418 +1,420 @@
 #include "parser/type.h"
 #include "parser.h"
-#include "parser/tokens.h"
+#include "parser/pool.h"
 #include <assert.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 
-Arena* gTypesArena;
-u64 gTypesCount = 0;
-u64 gTypesCapacity = 0;
-Type* gTypes = NULL;
-map gTypeMap;
+Pool typePool;
+map typeMap;
 
-void addBaseTypes() {
-    static bool exists = false;
-    if (exists) return;
-    exists = true;
-    Type intType = { .kind = tk_int, .name = "i8", .numberSize = 1 };
-    addType(&intType);
-    intType.name = "i16";
-    intType.numberSize = 2;
-    addType(&intType);
-    intType.name = "i32";
-    intType.numberSize = 4;
-    addType(&intType);
-    intType.name = "i64";
-    intType.numberSize = 8;
-    addType(&intType);
-
-    Type uintType = { .kind = tk_uint, .name = "u8", .numberSize = 1 };
-    addType(&uintType);
-    uintType.name = "u16";
-    uintType.numberSize = 2;
-    addType(&uintType);
-    uintType.name = "u32";
-    uintType.numberSize = 4;
-    addType(&uintType);
-    uintType.name = "u64";
-    uintType.numberSize = 8;
-    addType(&uintType);
-
-    Type floatType = { .kind = tk_float, .name = "f32", .numberSize = 4 };
-    addType(&floatType);
-    floatType.name = "f64";
-    floatType.numberSize = 8;
-    addType(&floatType);
-
-    Type voidType = { .kind = tk_void, .name = "void" };
-    addType(&voidType);
-
-    Type charType = { .kind = tk_uint, .name = "char", .numberSize = 1 };
-    addType(&charType);
-
-    Type boolType = { .kind = tk_int, .name = "bool", .numberSize = 1 };
-    addType(&boolType);
-
-    intType = (Type) { .kind = tk_int, .name = "int", .numberSize = 8 };
-    addType(&intType);
-
-    uintType = (Type) { .kind = tk_uint, .name = "uint", .numberSize = 8 };
-    addType(&uintType);
-
-    floatType = (Type) { .kind = tk_float, .name = "float", .numberSize = 8 };
-    addType(&floatType);
-    floatType.name = "double";
-    floatType.numberSize = 8;
-    addType(&floatType);
-
-    Type constInt = { .kind = tk_const_int, .name = "__const_int", .numberSize = 8 };
-    addType(&constInt);
-    Type constUint = { .kind = tk_const_uint, .name = "__const_uint", .numberSize = 8 };
-    addType(&constUint);
-    Type constFloat = { .kind = tk_const_float, .name = "__const_float", .numberSize = 8 };
-    addType(&constFloat);
-    Type constString = { .kind = tk_const_string, .name = "__const_uint" };
-    addType(&constString);
+void setupDefaultTypes() {
 }
 
-void addType(Type* type) {
-    if (gTypes == NULL) {
-        gTypesArena = createArena(1024 * 1024);
-        gTypesCapacity = 64;
-        gTypeMap = createMap();
-        gTypes = arenaAlloc(gTypesArena, sizeof(Type) * gTypesCapacity);
-        if (gTypes == NULL) {
-            fprintf(stderr, "Failed to allocate memory for types\n");
-            exit(EXIT_FAILURE);
-        }
-        gTypesCount = 0;
-        gTypes[0].kind = tk_invalid;  // Initialize the first type as invalid
-        gTypes[0].name = "__invalid";  // Initialize the first type name as NULL
-        gTypesCount++;
-    }
-    if (gTypesCount >= gTypesCapacity) {
-        gTypesCapacity *= 2;
-        Type* newTypes = arenaAlloc(gTypesArena, sizeof(Type) * gTypesCapacity);
-        if (newTypes == NULL) {
-            fprintf(stderr, "Failed to allocate memory for resized types array\n");
-            exit(EXIT_FAILURE);
-        }
-        memcpy(newTypes, gTypes, sizeof(Type) * gTypesCount);
-        gTypes = newTypes;
-    }
-    gTypes[gTypesCount] = *type;
-    u64 nameLength = strlen(type->name) + 1;
-    gTypes[gTypesCount].name = arenaAlloc(gTypesArena, nameLength);
-    memcpy(gTypes[gTypesCount].name, type->name, nameLength);
-    if (mapGet(&gTypeMap, gTypes[gTypesCount].name) != NULL) {
-        return;
-    }
-    mapSet(&gTypeMap, gTypes[gTypesCount].name, (void*)gTypesCount);
-    gTypesCount++;
+typeId createType(TypeKind kind, char* name) {
+    assert(mapGet(&typeMap, name) == NULL);
+    poolId id = poolNewItem(&typePool);
+    Type* type = poolGetItem(&typePool, id);
+    type->kind = kind;
+    type->arena = createArena(2048);
+    u64 nameSize = strlen(name) + 1;
+    type->name = arenaAlloc(type->arena, nameSize);
+    memcpy(type->name, name, nameSize);
+
+    mapSet(&typeMap, name, (void*)id);
+    return id;
 }
 
 typeId getTypeIdFromName(char* name) {
-    typeId* id = (typeId*)mapGet(&gTypeMap, name);
-    if (id == NULL) {
+    typeId* val = (typeId*)mapGet(&typeMap, name);
+    if (val != NULL) {
+        return *val;
+    }
+    return BAD_ID;
+}
+
+Type* getTypeFromId(typeId typeId) {
+    return poolGetItem(&typePool, typeId);
+}
+
+typeId getPtrType(typeId id) {
+    char typeName[1024];
+    Type* type = getTypeFromId(id);
+    u64 nameSize = strlen(type->name);
+
+    memcpy(typeName, type->name, nameSize);
+    typeName[nameSize] = '*';
+    typeName[nameSize + 1] = '\0';
+
+    typeId ptrType = getTypeIdFromName(typeName);
+    if (ptrType == BAD_ID) {
+        ptrType = createType(tk_pointer, typeName);
+        Type* ptrTypePtr = getTypeFromId(ptrType);
+        ptrTypePtr->pointedToType = id;
+        return ptrType;
+    }
+    return ptrType;
+}
+
+typeId getArrayType(typeId id, u64 size) {
+    char typeName[1024];
+    Type* type = getTypeFromId(id);
+    u64 nameSize = strlen(type->name);
+
+    memcpy(typeName, type->name, nameSize);
+    sprintf(typeName + nameSize, "[%llu]", size);
+
+    typeId arrayType = getTypeIdFromName(typeName);
+    if (arrayType == BAD_ID) {
+        arrayType = createType(tk_array, typeName);
+        Type* arrayTypePtr = getTypeFromId(arrayType);
+        ArrayData* arrayData = arenaAlloc(arrayTypePtr->arena, sizeof(ArrayData));
+        arrayData->elementType = id;
+        arrayData->size = size;
+        arrayTypePtr->arrayData = arrayData;
+        return arrayType;
+    }
+    return arrayType;
+}
+
+typeId getUnnamedStructType(typeId* id, u64 numFields) {
+    char typeName[1024];
+    sprintf(typeName, "__implStruct");
+    u64 nameSize = strlen(typeName);
+    for (u64 i = 0; i < numFields; i++) {
+        typeName[nameSize++] = '_';
+        Type* type = getTypeFromId(id[i]);
+        u64 typeNameSize = strlen(type->name);
+        memcpy(typeName + nameSize, type->name, typeNameSize);
+        nameSize += typeNameSize;
+    }
+
+    typeId structType = getTypeIdFromName(typeName);
+    if (structType == BAD_ID) {
+        structType = createType(tk_struct, typeName);
+        Type* structTypePtr = getTypeFromId(structType);
+        StructData* structData = arenaAlloc(structTypePtr->arena, sizeof(StructData));
+        structData->numFields = numFields;
+        structData->fields = arenaAlloc(structTypePtr->arena, sizeof(typeId) * numFields);
+        for (u64 i = 0; i < numFields; i++) {
+            structData->fields[i] = id[i];
+        }
+        structTypePtr->structData = structData;
+        return structType;
+    }
+    return structType;
+}
+
+typeId getUnnamedTaggedUnionType(typeId* id, u64 numFields) {
+    char typeName[1024];
+    sprintf(typeName, "__implUnion");
+    u64 nameSize = strlen(typeName);
+    for (u64 i = 0; i < numFields; i++) {
+        typeName[nameSize++] = '_';
+        Type* type = getTypeFromId(id[i]);
+        u64 typeNameSize = strlen(type->name);
+        memcpy(typeName + nameSize, type->name, typeNameSize);
+        nameSize += typeNameSize;
+    }
+
+    typeId unionType = getTypeIdFromName(typeName);
+    if (unionType == BAD_ID) {
+        unionType = createType(tk_union, typeName);
+        Type* unionTypePtr = getTypeFromId(unionType);
+        UnionData* unionData = arenaAlloc(unionTypePtr->arena, sizeof(UnionData));
+        unionData->numFields = numFields;
+        unionData->fields = arenaAlloc(unionTypePtr->arena, sizeof(typeId) * numFields);
+        for (u64 i = 0; i < numFields; i++) {
+            unionData->fields[i] = id[i];
+        }
+        unionTypePtr->unionData = unionData;
+        return unionType;
+    }
+    return unionType;
+}
+
+typeId getRefType(typeId id) {
+    char typeName[1024];
+    Type* type = getTypeFromId(id);
+    u64 nameSize = strlen(type->name);
+
+    memcpy(typeName, type->name, nameSize);
+    typeName[nameSize] = '*';
+    typeName[nameSize + 1] = '\0';
+
+    typeId refType = getTypeIdFromName(typeName);
+    if (refType == BAD_ID) {
+        refType = createType(tk_pointer, typeName);
+        Type* refTypePtr = getTypeFromId(refType);
+        refTypePtr->pointedToType = id;
+        return refType;
+    }
+    return refType;
+}
+
+typeId getListType(typeId id) {
+    char typeName[1024];
+    Type* type = getTypeFromId(id);
+    u64 nameSize = strlen(type->name);
+
+    memcpy(typeName, type->name, nameSize);
+    sprintf(typeName + nameSize, "[]");
+
+    typeId listType = getTypeIdFromName(typeName);
+    if (listType == BAD_ID) {
+        listType = createType(tk_list, typeName);
+        Type* listTypePtr = getTypeFromId(listType);
+        listTypePtr->pointedToType = id;
+        return listType;
+    }
+    return listType;
+}
+
+typeId getMapType(typeId val, typeId key) {
+    char typeName[1024];
+    Type* type = getTypeFromId(val);
+    u64 nameSize = strlen(type->name);
+
+    memcpy(typeName, type->name, nameSize);
+    sprintf(typeName + nameSize, "[%llu]", key);
+
+    typeId mapType = getTypeIdFromName(typeName);
+    if (mapType == BAD_ID) {
+        mapType = createType(tk_map, typeName);
+        Type* mapTypePtr = getTypeFromId(mapType);
+        MapData* mapData = arenaAlloc(mapTypePtr->arena, sizeof(MapData));
+        mapData->keyType = key;
+        mapData->valueType = val;
+        mapTypePtr->mapData = mapData;
+        return mapType;
+    }
+    return mapType;
+}
+
+typeId getIntType(u64 size) {
+    char typeName[1024];
+    sprintf(typeName, "i%llu", size);
+
+    typeId intType = getTypeIdFromName(typeName);
+    if (intType == BAD_ID) {
+        intType = createType(tk_int, typeName);
+        Type* intTypePtr = getTypeFromId(intType);
+        intTypePtr->numberSize = size;
+        return intType;
+    }
+    return intType;
+}
+
+typeId getFloatType(u64 size) {
+    assert(size == 64 || size == 32 || size == 16);
+    char typeName[1024];
+    sprintf(typeName, "f%llu", size);
+
+    typeId floatType = getTypeIdFromName(typeName);
+    if (floatType == BAD_ID) {
+        floatType = createType(tk_float, typeName);
+        Type* floatTypePtr = getTypeFromId(floatType);
+        floatTypePtr->numberSize = size;
+        return floatType;
+    }
+    return floatType;
+}
+
+typeId getUintType(u64 size) {
+    char typeName[1024];
+    sprintf(typeName, "u%llu", size);
+
+    typeId uintType = getTypeIdFromName(typeName);
+    if (uintType == BAD_ID) {
+        uintType = createType(tk_uint, typeName);
+        Type* uintTypePtr = getTypeFromId(uintType);
+        uintTypePtr->numberSize = size;
+        return uintType;
+    }
+    return uintType;
+}
+
+typeId getSliceType(typeId id) {
+    char typeName[1024];
+    Type* type = getTypeFromId(id);
+    u64 nameSize = strlen(type->name);
+
+    memcpy(typeName, type->name, nameSize);
+    sprintf(typeName + nameSize, "[...]");
+
+    typeId sliceType = getTypeIdFromName(typeName);
+    if (sliceType == BAD_ID) {
+        sliceType = createType(tk_slice, typeName);
+        Type* sliceTypePtr = getTypeFromId(sliceType);
+        sliceTypePtr->pointedToType = id;
+        return sliceType;
+    }
+    return sliceType;
+}
+
+// return 0 if not a number
+u64 getNumberSize(char* name) {
+    if (name[0] != 'i' && name[0] != 'u' && name[0] != 'f') {
         return 0;
     }
-    return *id;
+    name++;
+    u64 size = 0;
+    while (name[0] >= '0' && name[0] <= '9') {
+        u8 digit = name[0] - '0';
+        if (size > (UINT64_MAX - digit) / 10) {
+            return 0;  // overflow detected
+        }
+        size = size * 10 + digit;
+        name++;
+    }
+    if (name[0] != '\0') {
+        return 0;
+    }
+    return size;
 }
 
-Type* getTypeFromId(typeId id) {
-    if (id == 0) {
-        return NULL;  // Invalid ID
-    }
-    if (id >= gTypesCount) {
-        return NULL;  // Invalid ID
-    }
-    return &gTypes[id];  // Return the type with the given ID
-}
-
-typeId __getTypeIdFromToken(Token** tokens) {
+typeId _getTypeIdFromTokesn(Token** tokens, bool allowComma, bool allowOr) {
     Token* token = *tokens;
-    if (token->type != tt_id) {
-        return 0;  // Not a valid type token
+    typeId tid = BAD_ID;
+    if (token->type == tt_lparen) {
+        token++;
+        tid = getTypeIdFromTokens(&token);
+        if (token->type != tt_rparen) {
+            return BAD_ID;
+        }
+        token++;
+    } else {
+        if (token->type != tt_id) {
+            return BAD_ID;
+        }
+        char* name = token->str;
+        token++;
+        tid = getTypeIdFromName(name);
+        if (tid == BAD_ID) {
+            // fallbacks if not found
+            u64 numberSize = getNumberSize(name);
+            if (numberSize > 0) {
+                char firstChar = name[0];
+                switch (firstChar) {
+                    case 'i':
+                        tid = getIntType(numberSize);
+                        break;
+                    case 'u':
+                        tid = getUintType(numberSize);
+                        break;
+                    case 'f':
+                        if (numberSize != 32 && numberSize != 64 && numberSize != 16) {
+                            return BAD_ID;
+                        }
+                        tid = getFloatType(numberSize);
+                        break;
+                    default:
+                        return BAD_ID;
+                }
+            }
+        }
     }
-    char* typeName = token->str;
-    typeId typeId = getTypeIdFromName(typeName);
-    Type* type = getTypeFromId(typeId);
-    if (type == NULL) {
-        return 0;
-    }
-    token++;
+    assert(tid != BAD_ID);
     while (true) {
         switch (token->type) {
             case tt_mul: {
-                typeId = getTypeIdPtr(typeId);
                 token++;
-                break;
-            }
-            case tt_bit_and: {
-                typeId = getTypeIdRef(typeId);
-                token++;
-                break;
-            }
-            case tt_xor: {
-                typeId = getTypeIdUptr(typeId);
-                token++;
+                tid = getPtrType(tid);
                 break;
             }
             case tt_lbracket: {
                 token++;
                 if (token->type == tt_rbracket) {
-                    typeId = getTypeIdList(typeId);
+                    token++;
+                    tid = getListType(tid);
                     break;
                 }
-                if (token->type != tt_int || token->type != tt_id) {
-                    return 0;
-                }
-                if (token->type == tt_id) {
-                    if (strcmp(token->str, "_") == 0) {
-                        // TODO: dynmically find the size of the array
-                        assert(false && "Dynamic array size not implemented yet");
-                        return 0;
-                    } else {
-                        return 0;
+                if (token->type == tt_elips) {
+                    token++;
+                    if (token->type != tt_rbracket) {
+                        return BAD_ID;
                     }
+                    token++;
+                    tid = getSliceType(tid);
+                    break;
                 }
-                u64 size = getTokenInt(token);
-                if (size == 0) {
-                    return 0;  // Invalid size
+                if (token->type != tt_int) {
+                    return BAD_ID;
                 }
-                typeId = getTypeIdArray(typeId, size);
+                u64 num = getTokenInt(token);
                 token++;
-                if (token->type != tt_rbracket) {
-                    return 0;
+                if (token->type != tt_rbracket || num == 0) {
+                    return BAD_ID;
                 }
                 token++;
+                tid = getArrayType(tid, num);
+                break;
+            }
+            case tt_lbrace: {
+                token++;
+                typeId key = getTypeIdFromTokens(&token);
+                if (key == BAD_ID) {
+                    return BAD_ID;
+                }
+                if (token->type != tt_rbrace) {
+                    return BAD_ID;
+                }
+                tid = getMapType(tid, key);
+                break;
+            }
+            case tt_bit_and: {
+                token++;
+                tid = getRefType(tid);
+                break;
+            }
+            case tt_bit_or: {
+                if (!allowOr) {
+                    *tokens = token;
+                    return tid;
+                }
+                typeId orTypes[128];
+                u64 numOrTypes = 0;
+                orTypes[numOrTypes++] = tid;
+                while (token->type == tt_bit_or) {
+                    token++;
+                    typeId orType = _getTypeIdFromTokesn(&token, true, false);
+                    if (orType == BAD_ID) {
+                        return BAD_ID;
+                    }
+                    orTypes[numOrTypes++] = orType;
+                }
+                tid = getUnnamedTaggedUnionType(orTypes, numOrTypes);
+                break;
+            }
+            case tt_comma: {
+                if (!allowComma) {
+                    *tokens = token;
+                    return tid;
+                }
+                typeId andTypes[128];
+                u64 numAndTypes = 0;
+                andTypes[numAndTypes++] = tid;
+                while (token->type == tt_comma) {
+                    token++;
+                    typeId andType = _getTypeIdFromTokesn(&token, false, allowOr);
+                    if (andType == BAD_ID) {
+                        return BAD_ID;
+                    }
+                    andTypes[numAndTypes++] = andType;
+                }
+                tid = getUnnamedStructType(andTypes, numAndTypes);
                 break;
             }
             default: {
                 *tokens = token;
-                return getTypeIdFromName(typeName);
+                assert(tid != BAD_ID);
+                return tid;
             }
         }
     }
 }
 
-typeId _getTypeIdFromToken(Token** tokens) {
-    Token* token = *tokens;
-    typeId elementsBuffer[256];
-    u64 elementsCount = 0;
-    while (true) {
-        typeId type;
-        if (token->type == tt_lparen) {
-            type = getTypeIdFromToken(&token);
-            if (token->type != tt_rparen) {
-                return 0;  // Missing closing parenthesis
-            }
-            token++;
-        } else {
-            type = __getTypeIdFromToken(tokens);
-        }
-        if (type == 0) {
-            return 0;  // Invalid type
-        }
-        elementsBuffer[elementsCount++] = type;
-        if (token->type == tt_comma) {
-            token++;
-            continue;
-        }
-        break;
-    }
-    if (elementsCount == 1) {
-        return elementsBuffer[0];
-    }
-    return getTypeIdUnamedStruct(elementsBuffer, elementsCount);
-}
-
-typeId getTypeIdFromToken(Token** tokens) {
-    Token* token = *tokens;
-    typeId elementsBuffer[256];
-    u64 elementsCount = 0;
-    while (true) {
-        typeId type;
-        if (token->type == tt_lparen) {
-            type = getTypeIdFromToken(&token);
-            if (token->type != tt_rparen) {
-                return 0;  // Missing closing parenthesis
-            }
-            token++;
-        } else {
-            type = _getTypeIdFromToken(tokens);
-        }
-        if (type == 0) {
-            return 0;  // Invalid type
-        }
-        elementsBuffer[elementsCount++] = type;
-        if (token->type == tt_bit_or) {
-            token++;
-            continue;
-        }
-        break;
-    }
-    if (elementsCount == 1) {
-        return elementsBuffer[0];
-    }
-    return getTypeIdUnamedEnum(elementsBuffer, elementsCount);
-}
-
-typeId getTypeIdPtr(typeId id) {
-    Type* type = getTypeFromId(id);
-    if (type == NULL) {
-        return 0;
-    }
-    char newTypeName[256];
-    snprintf(newTypeName, sizeof(newTypeName), "%s*", type->name);
-    typeId existingTypeId = getTypeIdFromName(newTypeName);
-    if (existingTypeId != 0) {
-        return existingTypeId;
-    }
-    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
-    memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
-    Type newType = { 0 };
-    newType.kind = tk_ptr;
-    newType.name = nameCopy;
-    newType.pointedToType = id;
-    addType(&newType);
-    return gTypesCount - 1;
-}
-
-typeId getTypeIdArray(typeId id, u64 size) {
-    Type* type = getTypeFromId(id);
-    if (type == NULL) {
-        return 0;
-    }
-    char newTypeName[256];
-    snprintf(newTypeName, sizeof(newTypeName), "%s[%llu]", type->name, size);
-    typeId existingTypeId = getTypeIdFromName(newTypeName);
-    if (existingTypeId != 0) {
-        return existingTypeId;
-    }
-    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
-    memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
-    Type newType = { 0 };
-    newType.kind = tk_array;
-    newType.name = nameCopy;
-    newType.arrayVals.elementType = id;
-    newType.arrayVals.size = size;
-    addType(&newType);
-    return gTypesCount - 1;
-}
-
-typeId getTypeIdList(typeId id) {
-    Type* type = getTypeFromId(id);
-    if (type == NULL) {
-        return 0;
-    }
-    char newTypeName[256];
-    snprintf(newTypeName, sizeof(newTypeName), "list<%s>", type->name);
-    typeId existingTypeId = getTypeIdFromName(newTypeName);
-    if (existingTypeId != 0) {
-        return existingTypeId;
-    }
-    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
-    memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
-    Type newType = { 0 };
-    newType.kind = tk_list;
-    newType.name = nameCopy;
-    newType.listType = id;
-    addType(&newType);
-    return gTypesCount - 1;
-}
-
-typeId getTypeIdUptr(typeId id) {
-    Type* type = getTypeFromId(id);
-    if (type == NULL) {
-        return 0;
-    }
-    char newTypeName[256];
-    snprintf(newTypeName, sizeof(newTypeName), "%s^", type->name);
-    typeId existingTypeId = getTypeIdFromName(newTypeName);
-    if (existingTypeId != 0) {
-        return existingTypeId;
-    }
-    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
-    memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
-    Type newType = { 0 };
-    newType.kind = tk_uptr;
-    newType.name = nameCopy;
-    newType.pointedToType = id;
-    addType(&newType);
-    return gTypesCount - 1;
-}
-
-typeId getTypeIdRef(typeId id) {
-    Type* type = getTypeFromId(id);
-    if (type == NULL) {
-        return 0;
-    }
-    char newTypeName[256];
-    snprintf(newTypeName, sizeof(newTypeName), "%s&", type->name);
-    typeId existingTypeId = getTypeIdFromName(newTypeName);
-    if (existingTypeId != 0) {
-        return existingTypeId;
-    }
-    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
-    memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
-    Type newType = { 0 };
-    newType.kind = tk_ref;
-    newType.name = nameCopy;
-    newType.pointedToType = id;
-    addType(&newType);
-    return gTypesCount - 1;
-}
-
-typeId getTypeIdUnamedStruct(typeId* structTypes, u64 structTypesCount) {
-    if (structTypesCount == 0) {
-        return 0;  // No struct types provided
-    }
-    char newTypeName[256];
-    snprintf(newTypeName, sizeof(newTypeName), "struct<%llu>", structTypesCount);
-    typeId existingTypeId = getTypeIdFromName(newTypeName);
-    if (existingTypeId != 0) {
-        return existingTypeId;
-    }
-    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
-    memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
-    Type newType = { 0 };
-    newType.kind = tk_struct;
-    newType.name = nameCopy;
-    newType.structVals.members = arenaAlloc(gTypesArena, sizeof(typeId) * structTypesCount);
-    memcpy(newType.structVals.members, structTypes, sizeof(typeId) * structTypesCount);
-    newType.structVals.memberCount = structTypesCount;
-    addType(&newType);
-    return gTypesCount - 1;
-}
-
-typeId getTypeIdUnamedEnum(typeId* enumTypes, u64 enumTypesCount) {
-    if (enumTypesCount == 0) {
-        return 0;  // No enum types provided
-    }
-    char newTypeName[256];
-    snprintf(newTypeName, sizeof(newTypeName), "enum<%llu>", enumTypesCount);
-    typeId existingTypeId = getTypeIdFromName(newTypeName);
-    if (existingTypeId != 0) {
-        return existingTypeId;
-    }
-    char* nameCopy = arenaAlloc(gTypesArena, strlen(newTypeName) + 1);
-    memcpy(nameCopy, newTypeName, strlen(newTypeName) + 1);
-    Type newType = { 0 };
-    newType.kind = tk_enum;
-    newType.name = nameCopy;
-    newType.enumVals.enumValues = arenaAlloc(gTypesArena, sizeof(u64) * enumTypesCount);
-    newType.enumVals.enumTypes = arenaAlloc(gTypesArena, sizeof(typeId) * enumTypesCount);
-    memcpy(newType.enumVals.enumValues, enumTypes, sizeof(u64) * enumTypesCount);
-    memcpy(newType.enumVals.enumTypes, enumTypes, sizeof(typeId) * enumTypesCount);
-    newType.enumVals.enumCount = enumTypesCount;
-    addType(&newType);
-    return gTypesCount - 1;
-}
-
-void freeTypes() {
-    arenaFree(gTypesArena);
+typeId getTypeIdFromTokens(Token** tokens) {
+    return _getTypeIdFromTokesn(tokens, true, true);
 }

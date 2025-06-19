@@ -1,89 +1,100 @@
 #pragma once
 
-#include "nice_ints.h"
-#include "parser/tokens.h"
 #include "parser/map.h"
+#include "parser/nice_ints.h"
+#include "parser/arena.h"
+#include "parser/pool.h"
+#include "parser/tokens.h"
 
+typedef u64 typeId;
+typedef u64 sourceCodeId;
+typedef u64 functionId;
 
-typedef enum _TypeKind {
-    tk_invalid = 0,
+typedef enum _TypeKind : u8 {
     tk_void,
     tk_int,
     tk_uint,
     tk_float,
-    tk_struct,
-    tk_enum,
-    tk_ptr,
-    tk_ref,
+    tk_pointer,
     tk_array,
+    tk_struct,
+    tk_union,
+    tk_enum,
+    tk_func,
     tk_list,
-    tk_uptr,
-    tk_sptr,
-    tk_const_int,
-    tk_const_uint,
-    tk_const_float,
-    tk_const_string,
+    tk_map,
+    tk_slice,
 } TypeKind;
 
-typedef u64 typeId;
+typedef struct _StructData {
+    u64 numFields;
+    typeId* fields;
+} StructData;
 
-typedef struct _enumVals {
-    u64* enumValues;  // array of enum values
-    typeId* enumTypes;
-    u64 enumCount;  // number of enum values
-} EnumVals;
+typedef struct _UnionData {
+    u64 numFields;
+    typeId* fields;
+} UnionData;
 
-typedef struct _Struct {
-    typeId* members;  // array of member offsets
-    u64 memberCount;  // number of members
-} StructVals;
+typedef struct _ArrayData {
+    typeId elementType;
+    u64 size;
+} ArrayData;
 
-typedef struct _ArrayVals {
-    typeId elementType;  // type of the elements in the array
-    u64 size;  // size of the array
-} ArrayVals;
+typedef struct _MapData {
+    typeId keyType;
+    typeId valueType;
+} MapData;
 
 typedef struct _Type {
     TypeKind kind;
+    Arena* arena;
     char* name;
     union {
-        StructVals structVals;  // for struct types
-        EnumVals enumVals;  // for enum types
+        void* data;
         typeId pointedToType;
-        ArrayVals arrayVals;  // for array types
-        typeId listType;
+        StructData* structData;
+        ArrayData* arrayData;
+        UnionData* unionData;
+        MapData* mapData;
         u64 numberSize;
     };
+    functionId* methods;
 } Type;
 
-extern Arena* gTypesArena;
-extern u64 gTypesCount;
-extern u64 gTypesCapacity;
-extern Type* gTypes;
-extern map gTypeMap;
 
-void addBaseTypes();
+extern Pool typePool;
+extern map typeMap;
 
-void addType(Type* type);
+
+void setupDefaultTypes();
+
+typeId getTypeIdFromTokens(Token** tokens);
+
+typeId createType(TypeKind kind, char* name);
+
+Type* getTypeFromId(typeId typeId);
 
 typeId getTypeIdFromName(char* name);
 
-Type* getTypeFromId(typeId id);
+typeId getPtrType(typeId id);
 
-typeId getTypeIdFromToken(Token** token);
+typeId getArrayType(typeId id, u64 size);
 
-typeId getTypeIdPtr(typeId id);
+typeId getUnnamedStructType(typeId* id, u64 numFields);
 
-typeId getTypeIdArray(typeId id, u64 size);
+typeId getUnnamedTaggedUnionType(typeId* id, u64 numFields);
 
-typeId getTypeIdList(typeId id);
+typeId getRefType(typeId id);
 
-typeId getTypeIdUptr(typeId id);
+typeId getListType(typeId id);
 
-typeId getTypeIdRef(typeId id);
+typeId getMapType(typeId val, typeId key);
 
-typeId getTypeIdUnamedStruct(typeId* structTypes, u64 structTypesCount);
+typeId getIntType(u64 size);
 
-typeId getTypeIdUnamedEnum(typeId* enumTypes, u64 enumTypesCount);
+typeId getFloatType(u64 size);
 
-void freeTypes();
+typeId getUintType(u64 size);
+
+typeId getSliceType(typeId id);

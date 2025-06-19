@@ -48,8 +48,8 @@ map createMapArena(Arena* arena) {
     return createMapArenaCapacity(arena, 1024 * 512);
 }
 
-void mapFree(map* map) {
-    arenaFree(map->arena);
+void freeMap(map* map) {
+    freeArena(map->arena);
 }
 
 void mapSet(map* map, char* key, void* value) {
@@ -58,12 +58,8 @@ void mapSet(map* map, char* key, void* value) {
     hash %= map->capacity;
     keyValueList* keyValueList = &map->keyVals[hash];
     if (keyValueList->count >= keyValueList->capacity) {
+        keyValueList->keyValue = arenaRealloc(map->arena, keyValueList->keyValue, sizeof(keyValue) * keyValueList->capacity, sizeof(keyValue) * keyValueList->capacity * 2);
         keyValueList->capacity *= 2;
-        void* newMemory = arenaAlloc(map->arena, sizeof(keyValue) * keyValueList->capacity);
-        if (newMemory != NULL) {
-            memcpy(newMemory, keyValueList->keyValue, sizeof(keyValue) * keyValueList->count);
-        }
-        keyValueList->keyValue = newMemory;
     }
     keyValueList->keyValue[keyValueList->count].key = arenaAlloc(map->arena, keySize + 1);
     memcpy(keyValueList->keyValue[keyValueList->count].key, key, keySize + 1);

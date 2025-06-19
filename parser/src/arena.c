@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+Arena* gArena;
+
 Arena* createArena(u64 capacity) {
     u64 totalSize = sizeof(Arena) + capacity;
     char* mem = malloc(totalSize);
@@ -21,6 +23,15 @@ Arena* createArena(u64 capacity) {
     assert(arena->start[0] != NULL && "Failed to allocate memory for arena.");
     arena->current = arena->start[0];
     return arena;
+}
+
+void* arenaRealloc(Arena* arena, void* memory, u64 oldSize, u64 size) {
+    if (memory == NULL) {
+        return arenaAlloc(arena, size);
+    }
+    void* newMemory = arenaAlloc(arena, size);
+    memcpy(newMemory, memory, oldSize);
+    return newMemory;
 }
 
 void* arenaAlloc(Arena* arena, u64 size) {
@@ -58,7 +69,7 @@ void arenaReset(Arena* arena) {
     arena->startIndex = 0;
 }
 
-void arenaFree(Arena* arena) {
+void freeArena(Arena* arena) {
     assert(arena != NULL && "Arena pointer is NULL.");
     for (u64 i = 1; i < arena->blockCapacity; i++) {
         if (arena->start[i] != NULL) {
@@ -67,11 +78,6 @@ void arenaFree(Arena* arena) {
         }
     }
     void* mem = arena->start[0] - sizeof(Arena);
-    free(mem);
     free(arena->start);
-    arena->start = NULL;
-    arena->blockCapacity = 0;
-    arena->startIndex = 0;
-    arena->capacity = 0;
-    arena->current = NULL;
+    free(mem);
 }

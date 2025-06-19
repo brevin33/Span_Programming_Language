@@ -9,12 +9,12 @@ add_library(span_parser
 	src/arena.c
 	src/tokens.c
 	src/files.c
-	src/type.c
-	src/function.c
-	src/scope.c
-	src/statment.c
-	src/expression.c
 	src/map.c
+	src/pool.c
+	src/parser.c
+	src/sourceCode.c
+	src/project.c
+	src/type.c
 )
 
 target_include_directories(span_parser

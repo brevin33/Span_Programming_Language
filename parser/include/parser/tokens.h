@@ -73,8 +73,8 @@ typedef enum _TokenType : u8 {
 
 typedef struct _Token {
     OurTokenType type;
-    u8 file;
-    u16 line;
+    u32 file;
+    u32 line;
     u16 charStart;
     u16 charEnd;
     char* str;
@@ -82,6 +82,6 @@ typedef struct _Token {
 
 u64 getTokenInt(Token* token);
 
-Token* loadTokensFromDirectory(char** sourceFiles, u64 numberOfFiles, Arena* arena);
+Token* loadTokensFromFile(char* fileContent, Arena* arena, u64 fileNumber);
 
 char* tokenToString(Token* token, void* buffer, u64 bufferSize);
