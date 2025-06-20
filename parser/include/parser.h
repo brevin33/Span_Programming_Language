@@ -10,5 +10,11 @@
 #include "parser/sourceCode.h"
 #include "parser/logging.h"
 #include "parser/type.h"
+#include "parser/function.h"
+#include "parser/template.h"
+#include "parser/scope.h"
+#include "parser/statment.h"
+#include "parser/expression.h"
+#include "parser/utils.h"
 
 void initParser();

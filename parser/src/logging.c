@@ -7,6 +7,7 @@
 #include <string.h>
 
 
+
 void printBar() {
     printf("--------------------------------------------------\n");
 }
@@ -240,4 +241,16 @@ void logErrorTokens(Token* token, u64 tokenCount, char* error, ...) {
         }
     }
     printBar();
+}
+
+
+void assertCrash(bool condition) {
+    if (!condition) {
+        crash();
+    }
+}
+
+void crash() {
+    printBar();
+    redPrintf("go yell at this trash developer for having a bug in the program\n\n");
 }

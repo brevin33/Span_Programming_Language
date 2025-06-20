@@ -58,6 +58,12 @@ projectId createProject(const char* directory) {
         project->sourceCodeIds[project->sourceCodeCount++] = sourceCodeId;
     }
 
+    for (u64 i = 0; i < project->sourceCodeCount; i++) {
+        sourceCodeId sourceCodeId = project->sourceCodeIds[i];
+        SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+        protoTypeFunctions(sourceCodeId);
+    }
+
     freeArena(tempArena);
     return id;
 }

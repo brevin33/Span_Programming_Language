@@ -1,5 +1,4 @@
 #include "parser.h"
-#include <assert.h>
 #include <string.h>
 
 Pool createPool(u64 elementSize, Arena* arena) {
@@ -21,8 +20,8 @@ poolId getIdForPool(Pool* pool) {
     if (pool->freeListCount == 0) {
         poolId id = pool->size++;
         if (id >= pool->capacity) {
-            pool->capacity *= 2;
             pool->memory = arenaRealloc(pool->arena, pool->memory, pool->elementSize * pool->capacity, pool->elementSize * pool->capacity * 2);
+            pool->capacity *= 2;
         }
         return id;
     }
@@ -37,8 +36,8 @@ void* poolGetItem(Pool* pool, poolId poolId) {
 
 void freepoolId(Pool* pool, poolId poolId) {
     if (pool->freeListCount >= pool->freeListCapacity) {
-        pool->freeListCapacity *= 2;
         pool->freeList = arenaRealloc(pool->arena, pool->freeList, sizeof(poolId) * pool->freeListCapacity, sizeof(poolId) * pool->freeListCapacity * 2);
+        pool->freeListCapacity *= 2;
     }
     pool->freeList[pool->freeListCount++] = poolId;
 }

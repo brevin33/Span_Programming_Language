@@ -1,6 +1,5 @@
 #include "parser.h"
 #include "parser/tokens.h"
-#include <assert.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
@@ -216,14 +215,40 @@ void loadSourceCode(sourceCodeId sourceCodeId) {
 
     sourceCode->tokens = loadTokensFromFile(sourceCode->content, sourceCode->arena, 0);
 
+
+    u64 funcStartCapacity = 16;
+    sourceCode->functionStarts = arenaAlloc(sourceCode->arena, sizeof(Token*) * funcStartCapacity);
+    sourceCode->functionStartCount = 0;
+
+
     Token* token = sourceCode->tokens;
     while (token->type != tt_eof) {
+        Token* startToken = token;
         if (looksLikeFunction(&token)) {
-            sourceCode->fucntionStarts = token;
+            if (sourceCode->functionStartCount >= funcStartCapacity) {
+                sourceCode->functionStarts = arenaRealloc(sourceCode->arena, sourceCode->functionStarts, sizeof(Token*) * funcStartCapacity, sizeof(Token*) * funcStartCapacity * 2);
+                funcStartCapacity *= 2;
+            }
+            sourceCode->functionStarts[sourceCode->functionStartCount] = startToken;
+            sourceCode->functionStartCount++;
         } else if (token->type == tt_endl) {
             token++;
         } else {
             logErrorTokens(token, 1, "Unexpected token in source code");
+        }
+    }
+}
+void protoTypeFunctions(sourceCodeId sourceCodeId) {
+    SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+
+    sourceCode->functions = arenaAlloc(sourceCode->arena, sizeof(functionId) * sourceCode->functionStartCount);
+    sourceCode->functionCount = 0;
+
+    for (u64 i = 0; i < sourceCode->functionStartCount; i++) {
+        Token* token = sourceCode->functionStarts[i];
+        functionId functionId = prototypeFunction(&token);
+        if (functionId != BAD_ID) {
+            sourceCode->functions[sourceCode->functionCount++] = functionId;
         }
     }
 }

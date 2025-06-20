@@ -1,7 +1,6 @@
 #include "parser/map.h"
 #include "parser.h"
 #include "parser/arena.h"
-#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 

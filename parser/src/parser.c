@@ -6,4 +6,8 @@ void initParser() {
     sourceCodePool = createPool(sizeof(SourceCode), gArena);
     typeMap = createMapArena(gArena);
     typePool = createPool(sizeof(Type), gArena);
+    functionMap = createMapArena(gArena);
+    functionPool = createPool(sizeof(Function), gArena);
+
+    setupDefaultTypes();
 }
