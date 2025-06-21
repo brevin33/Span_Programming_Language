@@ -44,8 +44,8 @@ functionId createFunction(
     char* name, typeId returnType, typeId* paramTypes, char** paramNames, u64 numParams, bool isExtern, bool isExternC, Token* functionStart, TemplateDefinition* templateDefinition, typeId methodType, Arena* arena) {
     poolId id = poolNewItem(&functionPool);
     Function* function = poolGetItem(&functionPool, id);
-    function->arena = arena;
     memset(function, 0, sizeof(Function));
+    function->arena = arena;
 
     function->methodType = methodType;
     if (methodType != BAD_ID) {
@@ -209,7 +209,6 @@ void implementFunction(functionId functionId) {
     while (token->type != tt_lbrace) {
         token++;
     }
-    token++;
     function->scope = createScope(functionId, function->arena);
     for (u64 i = 0; i < function->numParams; i++) {
         addVariableToScope(&function->scope, function->functionStart, function->paramNames[i], function->paramTypes[i]);

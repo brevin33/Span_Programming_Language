@@ -1,5 +1,6 @@
 #pragma once
 #include <inttypes.h>
+#include <stdbool.h>
 
 typedef int8_t i8;
 typedef int16_t i16;
@@ -11,8 +12,5 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
-typedef u8 bool;
-#define true 1
-#define false 0
 
 #define BAD_ID UINT64_MAX

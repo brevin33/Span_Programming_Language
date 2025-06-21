@@ -38,3 +38,5 @@ void freeSourceCode(sourceCodeId sourceCodeId);
 void reloadSourceCode(sourceCodeId sourceCodeId);
 
 sourceCodeId createSourceCode(const char* filename);
+
+void implementSourceCodeFunctions(sourceCodeId sourceCodeId);

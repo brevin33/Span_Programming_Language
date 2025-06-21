@@ -44,7 +44,7 @@ map createMap() {
 }
 
 map createMapArena(Arena* arena) {
-    return createMapArenaCapacity(arena, 1024 * 512);
+    return createMapArenaCapacity(arena, 1024);
 }
 
 void freeMap(map* map) {

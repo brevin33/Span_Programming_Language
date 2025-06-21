@@ -1,21 +1,11 @@
 #pragma once
-
-
-#include "parser/arena.h"
 #include "parser/nice_ints.h"
+#include "parser/arena.h"
 
+bool numberFitsInInt(u64 bits, char* number);
+bool numberFitsInUInt(u64 bits, char* number);
 
+typedef u64 typeId;
+typedef struct _Expression Expression;
 
-char* addStrings(const char* a, const char* b, Arena* arena);
-
-char* subStrings(const char* a, const char* b, Arena* arena);
-
-char* mulStrings(const char* a, const char* b, Arena* arena);
-
-char* divStrings(const char* a, const char* b, Arena* arena);
-
-char* modStrings(const char* a, const char* b, Arena* arena);
-
-int compareStrings(const char* a, const char* b);
-
-char* twoToThePowerOf(u64 numBits, Arena* arena);
+bool constExpressionNumberWorksWithType(Expression* expr, typeId tid, Arena* arena);

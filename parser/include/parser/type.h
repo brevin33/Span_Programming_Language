@@ -27,6 +27,7 @@ typedef enum _TypeKind : u8 {
     tk_map,
     tk_slice,
     tk_interface,
+    tk_ref,
     tk_const_number,
 } TypeKind;
 
@@ -92,6 +93,7 @@ typedef struct _TypeList {
 extern Pool typePool;
 extern map typeMap;
 extern typeId constNumberType;
+extern typeId boolType;
 
 void setupDefaultTypes();
 

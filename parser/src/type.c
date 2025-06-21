@@ -8,6 +8,7 @@
 Pool typePool;
 map typeMap;
 typeId constNumberType;
+typeId boolType;
 
 void setupDefaultTypes() {
     typeId i32Type = createType(tk_int, "i32", 0);
@@ -38,7 +39,10 @@ void setupDefaultTypes() {
     typeId i1Type = createType(tk_int, "i1", 0);
     Type* i1TypePtr = getTypeFromId(i1Type);
     i1TypePtr->numberSize = 1;
-    aliasType(i1Type, "bool");
+
+    boolType = createType(tk_int, "i1", 0);
+    Type* boolTypePtr = getTypeFromId(boolType);
+    boolTypePtr->numberSize = 1;
 
     typeId u8Type = createType(tk_uint, "u8", 0);
     Type* u8TypePtr = getTypeFromId(u8Type);
@@ -303,7 +307,7 @@ typeId getRefType(typeId id) {
             }
         }
     }
-    typeId refType = createType(tk_pointer, typeName, 0);
+    typeId refType = createType(tk_ref, typeName, type->pid);
     Type* refTypePtr = getTypeFromId(refType);
     refTypePtr->pointedToType = id;
     return refType;

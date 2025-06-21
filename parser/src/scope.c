@@ -47,6 +47,7 @@ void addStatementToScope(Scope* scope, Statement* statement) {
 
 void addChildToScope(Scope* scope, Scope* child) {
     assert(scope->children != NULL);
+    child->parent = scope;
     if (scope->childrenCount >= scope->childrenCapacity) {
         scope->children = arenaRealloc(scope->arena, scope->children, sizeof(Scope) * scope->childrenCapacity, sizeof(Scope) * scope->childrenCapacity * 2);
         scope->childrenCapacity *= 2;
@@ -71,8 +72,43 @@ Variable* getVariableByName(Scope* scope, char* name) {
 void implementScope(Scope* scope, Token** tokens) {
     Token* token = *tokens;
     assert(token->type == tt_lbrace);
-    while (token->type != tt_rbrace) { }
-
-
+    token++;
+    while (token->type != tt_rbrace) {
+        if (token->type == tt_endl) {
+            token++;
+            continue;
+        }
+        Statement statement = createStatmentFromTokens(&token, scope->function, scope);
+        if (statement.kind == sk_invalid) {
+            int braceCount = 0;
+            while (token->type != tt_endl || braceCount != 0) {
+                if (token->type == tt_lbrace) {
+                    braceCount++;
+                }
+                if (token->type == tt_rbrace) {
+                    braceCount--;
+                }
+                assert(braceCount >= 0);
+                token++;
+            }
+            continue;
+        }
+        if (scope->statementsCount >= scope->statementsCapacity) {
+            scope->statements = arenaRealloc(scope->arena, scope->statements, sizeof(Statement) * scope->statementsCapacity, sizeof(Statement) * scope->statementsCapacity * 2);
+            scope->statementsCapacity *= 2;
+        }
+        scope->statements[scope->statementsCount] = statement;
+        scope->statementsCount++;
+        assert(token->type == tt_endl || token->type == tt_rbrace);
+    }
+    token++;
     *tokens = token;
+}
+
+bool variableExistsInScope(Scope* scope, char* name) {
+    Variable** variable = (Variable**)mapGet(&scope->nameToVariable, name);
+    if (variable == NULL) {
+        return false;
+    }
+    return true;
 }

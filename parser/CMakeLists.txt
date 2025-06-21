@@ -20,6 +20,7 @@ add_library(span_parser
 	src/scope.c
 	src/statment.c
 	src/expression.c
+	src/imath.c
 	src/utils.c
 )
 

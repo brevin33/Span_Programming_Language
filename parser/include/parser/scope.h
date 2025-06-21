@@ -30,7 +30,6 @@ typedef struct _Scope {
     u64 statementsCapacity;
 } Scope;
 
-
 Scope createScope(functionId function, Arena* arena);
 
 void addVariableToScope(Scope* scope, Token* token, char* name, typeId type);
@@ -42,3 +41,5 @@ void addChildToScope(Scope* scope, Scope* child);
 Variable* getVariableByName(Scope* scope, char* name);
 
 void implementScope(Scope* scope, Token** tokens);
+
+bool variableExistsInScope(Scope* scope, char* name);

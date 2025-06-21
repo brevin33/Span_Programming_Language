@@ -253,4 +253,5 @@ void assertCrash(bool condition) {
 void crash() {
     printBar();
     redPrintf("go yell at this trash developer for having a bug in the program\n\n");
+    abort();
 }

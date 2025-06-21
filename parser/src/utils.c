@@ -1,72 +1,301 @@
 #include "parser.h"
-#include <string.h>
+#include "parser/imath.h"
+#include "parser/type.h"
+#include <math.h>
+#include <stdlib.h>
 
-char* addStrings(const char* a, const char* b, Arena* arena) {
-    i64 lenA = strlen(a);
-    i64 lenB = strlen(b);
-    i64 lenLargest = lenA > lenB ? lenA : lenB;
-    char* res = arenaAlloc(arena, lenLargest + 2);
-    res[lenLargest + 1] = '\0';
-    i64 carry = 0;
-    for (u64 i = 0; i < lenLargest; i++) {
-        i64 iA = lenA - i - 1;
-        i64 iB = lenB - i - 1;
-        if (iA >= 0 && iB >= 0) {
-            i64 addValue = a[iA] - '0' + b[iB] - '0' + carry;
-            i64 digit = addValue % 10;
-            carry = addValue / 10;
-            res[lenLargest - i] = digit + '0';
-        } else if (iA >= 0) {
-            i64 digit = a[iA] - '0' + carry;
-            carry = 0;
-            res[lenLargest - i] = digit + '0';
-        } else if (iB >= 0) {
-            i64 digit = b[iB] - '0' + carry;
-            carry = 0;
-            res[lenLargest - i] = digit + '0';
+
+bool numberFitsInIntIMath(u64 bits, mpz_t a, bool isNeg) {
+    mpz_t s;
+    mp_int_set_value(&s, 1);
+    while (bits > 2) {
+        mp_int_mul_pow2(&s, 2, &s);
+        bits--;
+    }
+    if (isNeg) {
+        int cmp = mp_int_compare(&a, &s);
+        mp_int_free(&s);
+        if (cmp < 0) {
+            return false;
+        }
+        return true;
+    } else {
+        int cmp = mp_int_compare(&a, &s);
+        mp_int_free(&s);
+        if (cmp >= 0) {
+            return false;
+        }
+        return true;
+    }
+}
+
+bool numberFitsInInt(u64 bits, char* number) {
+    mpz_t a;
+    bool isNeg = number[0] == '-';
+    mp_int_read_string(&a, 10, number);
+    bool result = numberFitsInIntIMath(bits, a, isNeg);
+    mp_int_free(&a);
+    return result;
+}
+
+
+bool numberFitsInUIntIMath(u64 bits, mpz_t a) {
+    mpz_t s;
+    mp_int_set_value(&s, 1);
+    while (bits > 1) {
+        mp_int_mul_pow2(&s, 2, &s);
+        bits--;
+    }
+
+    int cmp = mp_int_compare(&a, &s);
+    mp_int_free(&s);
+    if (cmp > 0) {
+        return false;
+    }
+    return true;
+}
+
+bool numberFitsInUInt(u64 bits, char* number) {
+    bool isNeg = number[0] == '-';
+    if (isNeg) {
+        return false;
+    }
+    mpz_t a;
+    mp_int_read_string(&a, 10, number);
+    bool result = numberFitsInUIntIMath(bits, a);
+    mp_int_free(&a);
+    return result;
+}
+
+bool numberIsCompatalbeWithInt(char* number) {
+    char* c = number;
+    bool isFloat = true;
+    while (*c != '\0') {
+        if (*c == '.') {
+            isFloat = true;
+            break;
+        }
+        c++;
+    }
+    if (isFloat) {
+        while (*c != '\0') {
+            if (*c != '0') {
+                return false;
+            }
+            c++;
         }
     }
-    if (carry == 1) {
-        res[0] = '1';
-        return res;
+    return true;
+}
+
+mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
+    *err = false;
+    assert(getTypeFromId(expr->tid)->kind == tk_const_number);
+    if (expr->type == ek_number) {
+        mpz_t a;
+        if (numberIsCompatalbeWithInt(expr->number)) {
+            mp_int_read_string(&a, 10, expr->number);
+            return a;
+        } else {
+            mp_int_set_value(&a, 0);
+            *err = true;
+            return a;
+        }
+    } else if (expr->type == ek_biop) {
+        mpz_t left = getBigIntForConstNumber(expr->biopData->left, arena, err);
+        if (*err) {
+            return left;
+        }
+        mpz_t right = getBigIntForConstNumber(expr->biopData->right, arena, err);
+        if (*err) {
+            mp_int_free(&right);
+            return left;
+        }
+        switch (expr->biopData->operator) {
+            case tt_add:
+                mp_int_add(&left, &right, &left);
+                mp_int_free(&right);
+                return left;
+            case tt_sub:
+                mp_int_sub(&left, &right, &left);
+                mp_int_free(&right);
+                return left;
+            case tt_mul:
+                mp_int_mul(&left, &right, &left);
+                mp_int_free(&right);
+                return left;
+            case tt_div:
+                mp_int_div(&left, &right, &left, &right);
+                mp_int_free(&right);
+                return left;
+            case tt_mod:
+                mp_int_mod(&left, &right, &left);
+                mp_int_free(&right);
+                return left;
+            case tt_leq: {
+                int cmp = mp_int_compare(&left, &right);
+                if (cmp <= 0) {
+                    mp_int_set_value(&left, 1);
+                } else {
+                    mp_int_set_value(&left, 0);
+                }
+                mp_int_free(&right);
+                return left;
+            }
+            case tt_geq: {
+                int cmp = mp_int_compare(&left, &right);
+                if (cmp >= 0) {
+                    mp_int_set_value(&left, 1);
+                } else {
+                    mp_int_set_value(&left, 0);
+                }
+                mp_int_free(&right);
+                return left;
+            }
+            case tt_lt: {
+                int cmp = mp_int_compare(&left, &right);
+                if (cmp < 0) {
+                    mp_int_set_value(&left, 1);
+                } else {
+                    mp_int_set_value(&left, 0);
+                }
+                mp_int_free(&right);
+                return left;
+            }
+            case tt_gt: {
+                int cmp = mp_int_compare(&left, &right);
+                if (cmp > 0) {
+                    mp_int_set_value(&left, 1);
+                } else {
+                    mp_int_set_value(&left, 0);
+                }
+                mp_int_free(&right);
+                return left;
+            }
+            case tt_eq: {
+                int cmp = mp_int_compare(&left, &right);
+                if (cmp == 0) {
+                    mp_int_set_value(&left, 1);
+                } else {
+                    mp_int_set_value(&left, 0);
+                }
+                mp_int_free(&right);
+                return left;
+            }
+            case tt_neq: {
+                int cmp = mp_int_compare(&left, &right);
+                if (cmp != 0) {
+                    mp_int_set_value(&left, 1);
+                } else {
+                    mp_int_set_value(&left, 0);
+                }
+                mp_int_free(&right);
+                return left;
+            }
+            default: {
+                *err = true;
+                return left;
+            }
+        }
     } else {
-        return res + 1;
+        *err = true;
+        mpz_t a;
+        mp_int_set_value(&a, 0);
+        return a;
     }
 }
 
-char* subStrings(const char* a, const char* b, Arena* arena) {
-    assert(false && "Not implemented");
-    return NULL;
-}
+double getFloatForConstNumber(Expression* expr, Arena* arena, bool* err) {
+    *err = false;
+    assert(getTypeFromId(expr->tid)->kind == tk_const_number);
 
-char* mulStrings(const char* a, const char* b, Arena* arena) {
-    assert(false && "Not implemented");
-    return NULL;
-}
-
-
-char* divStrings(const char* a, const char* b, Arena* arena) {
-    assert(false && "Not implemented");
-    return NULL;
-}
-
-char* modStrings(const char* a, const char* b, Arena* arena) {
-    assert(false && "Not implemented");
-    return NULL;
-}
-
-int compareStrings(const char* a, const char* b) {
-    u64 lenA = strlen(a);
-    u64 lenB = strlen(b);
-    if (lenA == lenB) {
-        return strcmp(a, b);
+    if (expr->type == ek_number) {
+        double value = strtod(expr->number, NULL);
+        return value;
+    } else if (expr->type == ek_biop) {
+        double left = getFloatForConstNumber(expr->biopData->left, arena, err);
+        if (*err) {
+            return 0;
+        }
+        double right = getFloatForConstNumber(expr->biopData->right, arena, err);
+        if (*err) {
+            return 0;
+        }
+        switch (expr->biopData->operator) {
+            case tt_add:
+                return left + right;
+            case tt_sub:
+                return left - right;
+            case tt_mul:
+                return left * right;
+            case tt_div:
+                return left / right;
+            case tt_mod:
+                return fmod(left, right);
+            case tt_leq:
+                return left <= right;
+            case tt_geq:
+                return left >= right;
+            case tt_lt:
+                return left < right;
+            case tt_gt:
+                return left > right;
+            case tt_eq:
+                return left == right;
+            case tt_neq:
+                return left != right;
+            default:
+                *err = true;
+                return 0;
+        }
+    } else {
+        *err = true;
+        return 0;
     }
-    if (lenA > lenB) {
-        return 1;
-    }
-    return -1;
 }
 
-char* twoToThePowerOf(u64 numBits, Arena* arena) {
-    char* res = arenaAlloc(arena, numBits + 2);  // Enough for binary string + '\0'
+bool constExpressionNumberWorksWithType(Expression* expr, typeId tid, Arena* arena) {
+    Type* type = getTypeFromId(tid);
+    assert(getTypeFromId(expr->tid)->kind == tk_const_number);
+    assert(type->kind == tk_int || type->kind == tk_uint || type->kind == tk_float);
+    u64 bits = type->numberSize;
+    if (type->kind == tk_float) {
+        bool err;
+        double value = getFloatForConstNumber(expr, arena, &err);
+        if (err) {
+            return false;
+        }
+        return true;
+    }
+    if (type->kind == tk_int) {
+        bool err;
+        mpz_t a = getBigIntForConstNumber(expr, arena, &err);
+        int cmp = mp_int_compare_value(&a, 0);
+        if (err) {
+            mp_int_free(&a);
+            return false;
+        }
+        bool isNeg = cmp < 0;
+        bool result = numberFitsInIntIMath(bits, a, isNeg);
+        mp_int_free(&a);
+        return result;
+    }
+    if (type->kind == tk_uint) {
+        bool err;
+        mpz_t a = getBigIntForConstNumber(expr, arena, &err);
+        if (err) {
+            mp_int_free(&a);
+            return false;
+        }
+        int cmp = mp_int_compare_value(&a, 0);
+        if (cmp < 0) {
+            mp_int_free(&a);
+            return false;
+        }
+        bool result = numberFitsInUIntIMath(bits, a);
+        mp_int_free(&a);
+        return result;
+    }
+    assert(false);
+    return false;
 }

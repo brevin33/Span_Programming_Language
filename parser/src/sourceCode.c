@@ -282,3 +282,9 @@ sourceCodeId createSourceCode(const char* filename) {
 
     return sourceCodeId;
 }
+void implementSourceCodeFunctions(sourceCodeId sourceCodeId) {
+    SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+    for (u64 i = 0; i < sourceCode->functionCount; i++) {
+        implementFunction(sourceCode->functions[i]);
+    }
+}
