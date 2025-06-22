@@ -28,6 +28,7 @@ typedef struct _Scope {
     Statement* statements;
     u64 statementsCount;
     u64 statementsCapacity;
+    bool isLoop;
 } Scope;
 
 Scope createScope(functionId function, Arena* arena);

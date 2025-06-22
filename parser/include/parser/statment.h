@@ -17,6 +17,7 @@ typedef enum _StatementKind {
     sk_return,
     sk_if,
     sk_while,
+    sk_break,
 } StatementKind;
 
 typedef struct _AssignmentStatementData {
@@ -32,6 +33,12 @@ typedef struct _IfStatementData {
     Scope* elseBody;
 } IfStatementData;
 
+typedef struct _WhileStatementData {
+    Expression* condition;
+    Scope* body;
+} WhileStatementData;
+
+
 typedef struct _Statement {
     StatementKind kind;
     Token* tokens;
@@ -41,6 +48,8 @@ typedef struct _Statement {
         Expression* expressionData;
         AssignmentStatementData* assignmentData;
         IfStatementData* ifData;
+        WhileStatementData* whileData;
+        u64 breakAmount;
     };
 } Statement;
 
@@ -49,6 +58,10 @@ Statement createStatmentFromTokens(Token** tokens, functionId functionId, Scope*
 Statement createExpressionStatement(Token** tokens, functionId functionId, Scope* scope);
 
 Statement createIfStatement(Token** tokens, functionId functionId, Scope* scope);
+
+Statement createBreakStatement(Token** tokens, functionId functionId, Scope* scope);
+
+Statement createWhileStatement(Token** tokens, functionId functionId, Scope* scope);
 
 Statement createReturnStatement(Token** tokens, functionId functionId, Scope* scope);
 

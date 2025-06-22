@@ -70,6 +70,19 @@
     case '8':                                                                                                                                                                                                                        \
     case '9'
 
+bool assignLikeToken(OurTokenType type) {
+    switch (type) {
+        case tt_assign:
+        case tt_add_assign:
+        case tt_sub_assign:
+        case tt_mul_assign:
+        case tt_div_assign:
+        case tt_mod_assign:
+            return true;
+        default:
+            return false;
+    }
+}
 
 char* tokenToString(Token* token, void* buffer, u64 bufferSize) {
     if (token->type == tt_id || token->type == tt_int || token->type == tt_float || token->type == tt_bool) {
@@ -174,9 +187,6 @@ char* tokenToString(Token* token, void* buffer, u64 bufferSize) {
             return buffer;
         case tt_comma:
             sprintf_s((char*)buffer, bufferSize, "comma");
-            return buffer;
-        case tt_semi:
-            sprintf_s((char*)buffer, bufferSize, "semi");
             return buffer;
         case tt_colon:
             sprintf_s((char*)buffer, bufferSize, "colon");
@@ -832,7 +842,7 @@ void addToken(char* fileContent, u64 fileNumber, u64* iRef, Token* tokens, u64* 
                 break;
             }
             case ';': {
-                tokens[tokenCount].type = tt_semi;
+                tokens[tokenCount].type = tt_endl;
                 tokens[tokenCount].str = ";";
                 i++;
                 break;

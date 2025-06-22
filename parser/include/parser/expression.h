@@ -12,6 +12,7 @@ typedef enum _ExpressionKind {
     ek_number,
     ek_grouped_data,
     ek_variable,
+    ek_function_call,
     ek_type,
     ek_biop,
     ek_deref,
@@ -38,6 +39,12 @@ typedef struct _StructValueData {
     Expression* expression;
 } StructValueData;
 
+typedef struct _FunctionCallData {
+    Expression* parameters;
+    u64 numParameters;
+    functionId functionId;
+} FunctionCallData;
+
 typedef struct _Expression {
     Token* token;
     u64 tokenCount;
@@ -55,6 +62,7 @@ typedef struct _Expression {
         Expression* makeStructExpressions;
         typeId typeType;
         Expression* expressionOfPtr;
+        FunctionCallData* functionCallData;
     };
 } Expression;
 
@@ -62,10 +70,12 @@ Expression createExpressionFromTokens(Token** tokens, OurTokenType* delimiters, 
 
 void expressionAcutalType(Expression* expression, Scope* scope);
 
-Expression boolCast(Expression* expression, Scope* scope, functionId functionId);
-
 Expression makeStruct(Expression* expressions, u64 numExpressions, typeId type, Scope* scope, Token* token, u64 tokenCount);
+
+Expression createFunctionCall(Token** tokens, functionId functionId, Scope* scope);
 
 Expression getStructValue(Expression* expression, u64 field, Scope* scope, Token* token, u64 tokenCount);
 
 Expression implicitCast(Expression* expression, typeId type, Scope* scope, functionId functionId);
+
+Expression implicitCastNoError(Expression* expression, typeId type, Scope* scope, functionId functionId);

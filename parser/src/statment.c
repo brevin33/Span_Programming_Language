@@ -11,7 +11,7 @@ Statement createStatmentFromTokens(Token** tokens, functionId functionId, Scope*
         case tt_id: {
             bool hasAssignment = false;
             while (token->type != tt_endl) {
-                if (token->type == tt_assign) {
+                if (assignLikeToken(token->type)) {
                     hasAssignment = true;
                     break;
                 }
@@ -38,8 +38,22 @@ Statement createStatmentFromTokens(Token** tokens, functionId functionId, Scope*
             }
             break;
         }
+        case tt_break: {
+            statement = createBreakStatement(&token, functionId, scope);
+            if (statement.kind == sk_invalid) {
+                return statement;
+            }
+            break;
+        }
         case tt_if: {
             statement = createIfStatement(&token, functionId, scope);
+            if (statement.kind == sk_invalid) {
+                return statement;
+            }
+            break;
+        }
+        case tt_while: {
+            statement = createWhileStatement(&token, functionId, scope);
             if (statement.kind == sk_invalid) {
                 return statement;
             }
@@ -54,6 +68,65 @@ Statement createStatmentFromTokens(Token** tokens, functionId functionId, Scope*
     *tokens = token;
     return statement;
 }
+
+
+Statement createBreakStatement(Token** tokens, functionId functionId, Scope* scope) {
+    Token* token = *tokens;
+    Token* start = token;
+    assert(token->type == tt_break && "Not a break statement");
+    token++;
+    u64 breakAmount = 1;
+    if (token->type == tt_int) {
+        breakAmount = getTokenInt(token);
+        token++;
+    }
+    if (token->type != tt_endl) {
+        logErrorTokens(token, 1, "Expected end line after break");
+        Statement statement = { 0 };
+        statement.kind = sk_invalid;
+        return statement;
+    }
+    Statement statement = { 0 };
+    statement.kind = sk_break;
+    Token* end = token;
+    statement.tokens = start;
+    statement.tokenCount = end - start;
+    statement.breakAmount = breakAmount;
+    *tokens = token;
+    return statement;
+}
+
+Statement createWhileStatement(Token** tokens, functionId functionId, Scope* scope) {
+    Token* token = *tokens;
+    assert(token->type == tt_while && "Not a while statement");
+    token++;
+    OurTokenType delimiters[] = { tt_lbrace };
+    Statement statement = { 0 };
+    WhileStatementData* data = arenaAlloc(scope->arena, sizeof(WhileStatementData));
+    data->condition = arenaAlloc(scope->arena, sizeof(Expression));
+    *data->condition = createExpressionFromTokens(&token, delimiters, 1, functionId, scope);
+    if (data->condition->type == ek_invalid) {
+        return statement;
+    }
+    *data->condition = implicitCast(data->condition, boolType, scope, functionId);
+    if (data->condition->type == ek_invalid) {
+        return statement;
+    }
+    Scope* s = arenaAlloc(scope->arena, sizeof(Scope));
+    *s = createScope(scope->function, scope->arena);
+    s->isLoop = true;
+    addChildToScope(scope, s);
+    implementScope(s, &token);
+    data->body = s;
+
+    statement.kind = sk_while;
+    statement.tokens = data->condition->token - 1;
+    statement.tokenCount = data->condition->tokenCount + 1;
+    statement.whileData = data;
+    *tokens = token;
+    return statement;
+}
+
 Statement createIfStatement(Token** tokens, functionId functionId, Scope* scope) {
     Token* token = *tokens;
     assert(token->type == tt_if && "Not an if statement");
@@ -66,7 +139,7 @@ Statement createIfStatement(Token** tokens, functionId functionId, Scope* scope)
     if (data->condition->type == ek_invalid) {
         return statement;
     }
-    *data->condition = boolCast(data->condition, scope, functionId);
+    *data->condition = implicitCast(data->condition, boolType, scope, functionId);
     if (data->condition->type == ek_invalid) {
         return statement;
     }
@@ -205,6 +278,9 @@ Statement createAssignmentStatement(Token** tokens, functionId functionId, Scope
 
     OurTokenType delimiters2[] = { tt_endl, tt_rbrace };
     Expression value = createExpressionFromTokens(&token, delimiters2, 2, functionId, scope);
+    if (value.type == ek_invalid) {
+        return statement;
+    }
     if (data->numAssignee == 1) {
         value = implicitCast(&value, data->assignee[0].tid, scope, functionId);
         if (value.type == ek_invalid) {

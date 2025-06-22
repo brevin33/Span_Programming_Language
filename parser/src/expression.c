@@ -3,6 +3,185 @@
 #include <stdlib.h>
 #include <string.h>
 
+
+Expression createFunctionCall(Token** tokens, functionId fid, Scope* scope) {
+    Token* token = *tokens;
+    Token* start = token;
+    Expression expression = { 0 };
+
+    if (token->type != tt_id) {
+        logErrorTokens(token, 1, "Expected function name");
+        return expression;
+    }
+    char* name = token->str;
+    token++;
+
+    // template definition
+    TemplateDefinition templateDefinition = getTemplateDefinitionFromTokens(&token, scope->arena, false);
+
+    if (token->type != tt_lparen) {
+        logErrorTokens(token, 1, "Expected parameter list");
+        return expression;
+    }
+    token++;
+
+    // parameter list
+    Expression* parameters = arenaAlloc(scope->arena, sizeof(Expression) * 4);
+    u64 numParameters = 0;
+    u64 paramCapacity = 4;
+    OurTokenType delimiters[] = { tt_rparen, tt_comma };
+    if (token->type != tt_rparen) {
+        while (true) {
+            parameters[numParameters] = createExpressionFromTokens(&token, delimiters, 2, fid, scope);
+            if (parameters[numParameters].type == ek_invalid) {
+                return expression;
+            }
+            numParameters++;
+            if (token->type == tt_rparen) {
+                break;
+            } else if (token->type == tt_comma) {
+                token++;
+            }
+        }
+    }
+    assert(token->type == tt_rparen);
+    token++;
+
+
+    // find the function we are calling
+    FunctionList* list = getFunctionsByName(name);
+    if (list == NULL) {
+        logErrorTokens(token, 1, "No function with name %s", name);
+        return expression;
+    }
+
+    functionId callId = BAD_ID;
+
+    if (templateDefinition.numTypes > 0) {
+        assert(false && "Not implemented");
+    }
+
+    // first check if we directly type match any existing functions
+    for (u64 i = 0; i < list->count; i++) {
+        Function* function = getFunctionFromId(list->functions[i]);
+        if (function->numParams != numParameters) {
+            continue;
+        }
+        if (function->templateDefinition != NULL) {
+            continue;
+        }
+        bool fullMatch = true;
+        for (u64 j = 0; j < function->numParams; j++) {
+            typeId paramType = parameters[i].tid;
+            typeId actualType = getActualTypeId(paramType);
+            typeId functionParamType = function->paramTypes[i];
+            bool match = functionParamType == paramType || functionParamType == actualType;
+            if (!match) {
+                fullMatch = false;
+                break;
+            }
+        }
+        if (fullMatch) {
+            if (callId != BAD_ID) {
+                // getting the tokens for both function for error logging
+                Function* func1 = getFunctionFromId(callId);
+                Function* func2 = getFunctionFromId(list->functions[i]);
+                Token buf[1024];
+                Token* t = func1->functionStart;
+                u64 bufIndex = 0;
+                while (t->type != tt_endl || t->type != tt_lbrace) {
+                    t++;
+                    if (bufIndex >= 1024) {
+                        break;
+                    }
+                    buf[bufIndex++] = *t;
+                }
+                t = func2->functionStart;
+                while (t->type != tt_endl || t->type != tt_lbrace) {
+                    t++;
+                    if (bufIndex >= 1024) {
+                        break;
+                    }
+                    buf[bufIndex++] = *t;
+                }
+                logErrorTokens(buf, bufIndex, "Function call could mean multiple functions");
+                return expression;
+            }
+            callId = list->functions[i];
+        }
+    }
+    if (callId == BAD_ID) {
+        // check if we can implicitly cast the parameters
+        // or if we can template the function
+        for (u64 i = 0; i < list->count; i++) {
+            Function* function = getFunctionFromId(list->functions[i]);
+            if (function->numParams != numParameters) {
+                continue;
+            }
+            bool goodMatch = true;
+            if (function->templateDefinition != NULL) {
+                assert(false && "Not implemented");
+            } else {
+                for (u64 j = 0; j < function->numParams; j++) {
+                    typeId functionParamType = function->paramTypes[i];
+                    Expression implCast = implicitCastNoError(&parameters[j], functionParamType, scope, fid);
+                    if (implCast.type == ek_invalid) {
+                        goodMatch = false;
+                        break;
+                    }
+                }
+            }
+            if (goodMatch) {
+                if (callId != BAD_ID) {
+                    // getting the tokens for both function for error logging
+                    Function* func1 = getFunctionFromId(callId);
+                    Function* func2 = getFunctionFromId(list->functions[i]);
+                    Token buf[1024];
+                    Token* t = func1->functionStart;
+                    u64 bufIndex = 0;
+                    while (t->type != tt_endl || t->type != tt_lbrace) {
+                        t++;
+                        if (bufIndex >= 1024) {
+                            break;
+                        }
+                        buf[bufIndex++] = *t;
+                    }
+                    t = func2->functionStart;
+                    while (t->type != tt_endl || t->type != tt_lbrace) {
+                        t++;
+                        if (bufIndex >= 1024) {
+                            break;
+                        }
+                        buf[bufIndex++] = *t;
+                    }
+                    logErrorTokens(buf, bufIndex, "Function call could mean multiple functions");
+                    return expression;
+                }
+                callId = list->functions[i];
+            }
+        }
+    }
+    if (callId == BAD_ID) {
+        Token* end = token;
+        logErrorTokens(start, end - start, "No function with name %s and these parameter types", name);
+        return expression;
+    }
+    Function* function = getFunctionFromId(callId);
+
+    FunctionCallData* data = arenaAlloc(scope->arena, sizeof(FunctionCallData));
+    data->parameters = parameters;
+    data->numParameters = numParameters;
+    data->functionId = callId;
+    expression.functionCallData = data;
+    expression.type = ek_function_call;
+    expression.token = start;
+    Token* end = token;
+    expression.tokenCount = end - start;
+    expression.tid = function->returnType;
+    *tokens = token;
+    return expression;
+}
+
 Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, Scope* scope) {
     Token* token = *tokens;
     Expression expression = { 0 };
@@ -22,6 +201,7 @@ Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, 
         case tt_id: {
             char* str = token->str;
             typeId type = getTypeIdFromTokens(&token);
+            Token* start = token;
             if (type != BAD_ID) {
                 expression.type = ek_type;
                 expression.tid = typeType;
@@ -33,8 +213,12 @@ Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, 
             token++;
             TemplateInstance templateInstance = getTemplateInstanceFromTokens(&token, scope->arena, false);
             if (templateInstance.numTypes != 0 || token->type == tt_lparen) {
-                // TODO: function call
-                assert(false && "Not implemented function call");
+                token = start;
+                expression = createFunctionCall(&token, functionId, scope);
+                if (expression.type == ek_invalid) {
+                    return expression;
+                }
+                break;
             }
             // variable
             expression.type = ek_variable;
@@ -181,7 +365,7 @@ char* opToString(OurTokenType operator) {
         case tt_dot:
             return ".";
         default:
-            return "lazy dev forgot to add a string for this operator";
+            return "(lazy dev forgot to add a string for this operator)";
     }
 }
 
@@ -234,6 +418,7 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
                 expression.biopData->right = newRight;
                 expression.tid = left->tid;
             }
+            return expression;
         }
         if (leftKind == tk_float && rightKind == tk_int || leftKind == tk_float && rightKind == tk_uint) {
             Expression* newRight = arenaAlloc(scope->arena, sizeof(Expression));
@@ -244,6 +429,7 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
             newRight->implicitCast = right;
             expression.biopData->right = newRight;
             expression.tid = left->tid;
+            return expression;
         }
         if (leftKind == tk_int && rightKind == tk_float || leftKind == tk_uint && rightKind == tk_float) {
             Expression* newLeft = arenaAlloc(scope->arena, sizeof(Expression));
@@ -254,8 +440,8 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
             newLeft->implicitCast = left;
             expression.biopData->left = newLeft;
             expression.tid = right->tid;
+            return expression;
         }
-        return expression;
     }
     if (leftKind == tk_const_number && rightKind == tk_const_number) {
         expression.tid = constNumberType;
@@ -477,7 +663,7 @@ Expression _createExpressionFromTokens(Token** tokens, OurTokenType* delimiters,
         *r = right;
         Expression* l = arenaAlloc(scope->arena, sizeof(Expression));
         *l = left;
-        left = createBiopExpression(l, r, token->type, scope);
+        left = createBiopExpression(l, r, op, scope);
         if (left.type == ek_invalid) {
             return left;
         }
@@ -533,43 +719,22 @@ Expression makeStruct(Expression* expressions, u64 numExpressions, typeId tid, S
     return newExpression;
 }
 
-Expression boolCast(Expression* expression, Scope* scope, functionId functionId) {
-    Expression newExpression = { 0 };
-    if (expression->type == ek_grouped_data) {
-        logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly grouped data to bool");
-        return newExpression;
-    }
-    expressionAcutalType(expression, scope);
-    bool isNumber = isNumberType(expression->tid);
-    bool isPtr = getTypeFromId(expression->tid)->kind == tk_pointer;
-    bool isConstNumber = getTypeFromId(expression->tid)->kind == tk_const_number;
-    if (isNumber || isPtr || isConstNumber) {
-        newExpression.type = ek_implicit_cast;
-        newExpression.tid = boolType;
-        newExpression.token = expression->token;
-        newExpression.tokenCount = expression->tokenCount;
-        Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-        *e = *expression;
-        newExpression.implicitCast = e;
-        return newExpression;
-    }
-    logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast to bool");
-    return newExpression;
-}
-
-Expression implicitCast(Expression* expression, typeId type, Scope* scope, functionId functionId) {
+Expression _implicitCast(Expression* expression, typeId type, Scope* scope, functionId functionId, bool logError) {
     if (expression->tid == type) {
         return *expression;
     }
+    Type* ett = getTypeFromId(expression->type);
+    char* etypename = getTypeFromId(expression->type)->name;
+    char* ttypename = getTypeFromId(type)->name;
     Expression newExpression = { 0 };
     if (expression->type == ek_grouped_data) {
         type = getActualTypeId(type);
         Type* t = getTypeFromId(type);
         if (t->kind != tk_struct) {
-            logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast grouped data to non struct");
+            if (logError) logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from grouped data to non struct");
         }
         if (t->structData->numFields != expression->groupedData->numFields) {
-            logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast grouped data to struct with different number of fields");
+            if (logError) logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from grouped data to struct with different number of fields");
             return newExpression;
         }
         Expression* exprs = expression->groupedData->expressions;
@@ -622,7 +787,19 @@ Expression implicitCast(Expression* expression, typeId type, Scope* scope, funct
         }
     }
     if (type == boolType) {
-        return boolCast(expression, scope, functionId);
+        bool isNumber = isNumberType(expression->tid);
+        bool isPtr = getTypeFromId(expression->tid)->kind == tk_pointer;
+        bool isConstNumber = getTypeFromId(expression->tid)->kind == tk_const_number;
+        if (isNumber || isPtr || isConstNumber) {
+            newExpression.type = ek_implicit_cast;
+            newExpression.tid = boolType;
+            newExpression.token = expression->token;
+            newExpression.tokenCount = expression->tokenCount;
+            Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+            *e = *expression;
+            newExpression.implicitCast = e;
+            return newExpression;
+        }
     }
     if (ekind == tk_const_number && tisNumber) {
         bool valid = constExpressionNumberWorksWithType(expression, type, scope->arena);
@@ -636,10 +813,18 @@ Expression implicitCast(Expression* expression, typeId type, Scope* scope, funct
             newExpression.implicitCast = e;
             return newExpression;
         }
-        logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast to %s", getTypeFromId(type)->name);
+        if (logError) logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from %s to %s", getTypeFromId(expression->tid)->name, getTypeFromId(type)->name);
         return newExpression;
     }
 
-    logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast to %s", getTypeFromId(type)->name);
+    if (logError) logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from %s to %s", getTypeFromId(expression->tid)->name, getTypeFromId(type)->name);
     return newExpression;
+}
+
+Expression implicitCast(Expression* expression, typeId type, Scope* scope, functionId functionId) {
+    return _implicitCast(expression, type, scope, functionId, true);
+}
+
+Expression implicitCastNoError(Expression* expression, typeId type, Scope* scope, functionId functionId) {
+    return _implicitCast(expression, type, scope, functionId, false);
 }

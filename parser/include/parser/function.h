@@ -50,4 +50,6 @@ functionId createFunction(
 
 functionId prototypeFunction(Token** tokens);
 
+
+
 void implementFunction(functionId functionId);

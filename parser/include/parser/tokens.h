@@ -43,7 +43,6 @@ typedef enum _TokenType : u8 {
     tt_lbrace,
     tt_rbrace,
     tt_comma,
-    tt_semi,
     tt_colon,
     tt_if,
     tt_else,
@@ -79,6 +78,8 @@ typedef struct _Token {
     u16 charEnd;
     char* str;
 } Token;
+
+bool assignLikeToken(OurTokenType type);
 
 u64 getTokenInt(Token* token);
 

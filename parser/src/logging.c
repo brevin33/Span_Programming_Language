@@ -98,13 +98,13 @@ void printLineFromSourceCode(sourceCodeId sourceCodeId, u64 lineNum) {
     char buffer[2048];
     memcpy(buffer, line, lineLength);
     buffer[lineLength] = '\0';
-    printf("%06llu | ", lineNum);
+    printf("%6llu | ", lineNum);
     printf("%s\n", buffer);
 }
 
 void underLineLineWithTokens(Token* tokens, u64 tokenCount, u64 lineNum, sourceCodeId sourceCodeId) {
     // print padding from line printing
-    printf("%06llu | ", lineNum);
+    printf("%6llu | ", lineNum);
 
     SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
     if (lineNum > sourceCode->lineCount) {

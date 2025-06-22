@@ -96,7 +96,7 @@ functionId createFunction(
     FunctionList** val = (FunctionList**)mapGet(&functionMap, name);
     if (val == NULL) {
         FunctionList* list = arenaAlloc(arena, sizeof(FunctionList));
-        list->count = 0;
+        list->count = 1;
         list->capacity = 1;
         list->functions = arenaAlloc(arena, sizeof(functionId) * list->capacity);
         list->functions[0] = id;
@@ -180,6 +180,9 @@ functionId prototypeFunction(Token** tokens) {
             }
             char* paramName = token->str;
             token++;
+            paramNames[numParams] = paramName;
+            paramTypes[numParams] = paramType;
+            numParams++;
             if (token->type == tt_comma) {
                 token++;
                 continue;
