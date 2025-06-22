@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "parser/type.h"
 #include <stdlib.h>
+#include <string.h>
 
 Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, Scope* scope) {
     Token* token = *tokens;
@@ -10,9 +11,11 @@ Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, 
     switch (token->type) {
         case tt_float:
         case tt_int: {
-            expression.type = tk_int;
+            expression.type = ek_number;
             expression.number = token->str;
             expression.tid = constNumberType;
+            expression.tokenCount = 1;
+            expression.token = start;
             token++;
             break;
         }
@@ -21,7 +24,10 @@ Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, 
             typeId type = getTypeIdFromTokens(&token);
             if (type != BAD_ID) {
                 expression.type = ek_type;
-                expression.tid = type;
+                expression.tid = typeType;
+                expression.typeType = type;
+                expression.tokenCount = 1;
+                expression.token = start;
                 break;
             }
             token++;
@@ -38,14 +44,28 @@ Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, 
                 expression.type = ek_invalid;
                 return expression;
             }
+            char* typeName = getTypeFromId(variable->type)->name;
             expression.variable = str;
             expression.tid = getRefType(variable->type);
+            expression.tokenCount = 1;
+            expression.token = start;
+            break;
+        }
+        case tt_lbrace: {
+            OurTokenType delimiters[] = { tt_rbrace };
+            token++;
+            expression = createExpressionFromTokens(&token, delimiters, 1, functionId, scope);
+            if (expression.type == ek_invalid) {
+                return expression;
+            }
+            expression.tokenCount = expression.tokenCount + 1;
+            expression.token = start;
             break;
         }
         case tt_lparen: {
             token++;
             OurTokenType delimiters[] = { tt_rparen, tt_endl };
-            u64 numDelimiters = 1;
+            u64 numDelimiters = 2;
             expression = createExpressionFromTokens(&token, delimiters, numDelimiters, functionId, scope);
             if (expression.type == ek_invalid) {
                 return expression;
@@ -53,10 +73,13 @@ Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, 
             if (token->type == tt_endl) {
                 logErrorTokens(start, 1, "Unterminated parenthesis");
             }
+            expression.tokenCount = expression.tokenCount + 1;
+            expression.token = start;
             token++;
             break;
         }
         default: {
+            logErrorTokens(token, 1, "Can't parse this as a value");
             return expression;
         }
     }
@@ -104,13 +127,14 @@ i64 getPrecedence(Token* token) {
 }
 
 
-
 void expressionAcutalType(Expression* expression, Scope* scope) {
     while (getTypeFromId(expression->tid)->kind == tk_ref) {
         Expression deref = { 0 };
         deref.type = ek_deref;
         deref.token = expression->token;
         deref.tokenCount = expression->tokenCount;
+        Type* type = getTypeFromId(expression->tid);
+        deref.tid = type->pointedToType;
         Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
         *e = *expression;
         deref.deref = e;
@@ -164,6 +188,14 @@ char* opToString(OurTokenType operator) {
 
 Expression createBiopExpression(Expression* left, Expression* right, OurTokenType operator, Scope * scope) {
     Expression expression = { 0 };
+    if (left->type == ek_grouped_data) {
+        logErrorTokens(left->token, left->tokenCount, "Can't use grouped data with this biops");
+        return expression;
+    }
+    if (right->type == ek_grouped_data) {
+        logErrorTokens(right->token, right->tokenCount, "Can't use grouped data with this biops");
+        return expression;
+    }
     expressionAcutalType(left, scope);
     expressionAcutalType(right, scope);
     expression.type = ek_biop;
@@ -330,14 +362,106 @@ Expression _createExpressionFromTokens(Token** tokens, OurTokenType* delimiters,
             return left;
         }
         OurTokenType op = token->type;
+        token++;
 
         // special handeling for these operators
         switch (op) {
             case tt_comma: {
-                assert(false && "Not implemented comma operator yet");
+                token++;
+                u64 exprsCount = 1;
+                u64 exprsCapacity = 3;
+                Expression* exprs = arenaAlloc(scope->arena, sizeof(Expression) * exprsCapacity);
+                exprs[0] = left;
+                OurTokenType* delimiters = arenaAlloc(scope->arena, sizeof(OurTokenType) * numDelimiters + 1);
+                memcpy(delimiters, delimiters, sizeof(OurTokenType) * numDelimiters);
+                delimiters[numDelimiters] = tt_comma;
+                while (true) {
+                    Expression expr = createExpressionFromTokens(&token, delimiters, numDelimiters, functionId, scope);
+                    if (expr.type == ek_invalid) {
+                        return expr;
+                    }
+                    if (exprsCount == exprsCapacity) {
+                        exprs = arenaRealloc(scope->arena, exprs, sizeof(Expression) * exprsCapacity, sizeof(Expression) * exprsCapacity * 2);
+                        exprsCapacity *= 2;
+                    }
+                    exprs[exprsCount] = expr;
+                    exprsCount++;
+                    if (token->type == tt_comma) {
+                        continue;
+                    }
+                    break;
+                }
+                GroupedData* groupedData = arenaAlloc(scope->arena, sizeof(GroupedData));
+                groupedData->expressions = exprs;
+                groupedData->numFields = exprsCount;
+                left.type = ek_grouped_data;
+                left.groupedData = groupedData;
+                left.token = left.token;
+                Token* start = left.token;
+                Token* end = exprs[exprsCount - 1].token + exprs[exprsCount - 1].tokenCount;
+                left.tokenCount = end - start;
+                left.tid = BAD_ID;  // bad because this should always be parsed out to somthing else
+                *tokens = token;
+                return left;
             }
             case tt_dot: {
-                assert(false && "Not implemented dot operator yet");
+                switch (token->type) {
+                    case tt_int:
+                    case tt_id: {
+                        char* name = token->str;
+                        token++;
+                        if (left.tid == typeType) {
+                            assert(false && "Not implemented");
+                        }
+                        typeId leftType = getTypeFromId(left.tid)->pointedToType;
+                        char* leftTypeName = getTypeFromId(leftType)->name;
+                        bool isRef = getTypeFromId(left.tid)->kind == tk_ref;
+                        if (isRef) {
+                            if (strcmp(name, "ptr") == 0) {
+                                Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+                                memcpy(e, &left, sizeof(Expression));
+                                Expression new;
+                                new.type = ek_ptr;
+                                new.token = left.token;
+                                Token* start = left.token;
+                                Token* end = token;
+                                new.tokenCount = end - start;
+                                typeId actualType = getActualTypeId(left.tid);
+                                new.tid = getPtrType(actualType);
+                                char* newTypeName = getTypeFromId(new.tid)->name;
+                                new.expressionOfPtr = e;
+                                left = new;
+                                continue;
+                            }
+                        }
+                        expressionAcutalType(&left, scope);
+                        bool isPtr = getTypeFromId(left.tid)->kind == tk_pointer;
+                        char* typeName = getTypeFromId(left.tid)->name;
+                        if (isPtr && strcmp(name, "val") == 0) {
+                            Expression deref = { 0 };
+                            deref.type = ek_deref;
+                            deref.token = left.token;
+                            Token* start = left.token;
+                            Token* end = token;
+                            deref.tokenCount = end - start;
+                            Type* type = getTypeFromId(left.tid);
+                            deref.tid = type->pointedToType;
+                            Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+                            *e = left;
+                            deref.deref = e;
+                            left = deref;
+                            continue;
+                        }
+                        logErrorTokens(token, 1, "Can't use dot operator with this name: %s", name);
+                        left.type = ek_invalid;
+                        return left;
+                    }
+                    default: {
+                        logErrorTokens(token, 1, "Can't use dot operator with this token");
+                        left.type = ek_invalid;
+                        return left;
+                    }
+                }
             }
             default: {
                 break;
@@ -364,8 +488,57 @@ Expression createExpressionFromTokens(Token** tokens, OurTokenType* delimiters, 
     return _createExpressionFromTokens(tokens, delimiters, numDelimiters, functionId, scope, INT64_MAX);
 }
 
+Expression getStructValue(Expression* expression, u64 field, Scope* scope, Token* token, u64 tokenCount) {
+    Expression newExpression = { 0 };
+    typeId tid = expression->tid;
+    bool isRef = getTypeFromId(tid)->kind == tk_ref;
+    tid = getActualTypeId(tid);
+    Type* type = getTypeFromId(tid);
+    assert(type->kind == tk_struct && "Not a struct");
+    StructData* structData = type->structData;
+    StructValueData* structValueData = arenaAlloc(scope->arena, sizeof(StructValueData));
+    structValueData->field = field;
+    structValueData->expression = expression;
+    newExpression.type = ek_struct_value;
+    newExpression.structValueData = structValueData;
+    newExpression.token = token;
+    newExpression.tokenCount = tokenCount;
+    if (isRef) {
+        newExpression.tid = getRefType(structData->fields[field]);
+    } else {
+        newExpression.tid = structData->fields[field];
+    }
+    return newExpression;
+}
+
+Expression makeStruct(Expression* expressions, u64 numExpressions, typeId tid, Scope* scope, Token* token, u64 tokenCount) {
+    Expression newExpression = { 0 };
+    Type* type = getTypeFromId(tid);
+    assert(type->kind == tk_struct && "Not a struct");
+    StructData* structData = type->structData;
+    u64 numFields = structData->numFields;
+    assert(numFields == numExpressions && "Number of fields in struct doesn't match number of expressions");
+    Expression* expressionForStruct = arenaAlloc(scope->arena, sizeof(Expression) * numFields);
+    for (u64 i = 0; i < numFields; i++) {
+        expressionForStruct[i] = implicitCast(&expressions[i], structData->fields[i], scope, BAD_ID);
+        if (expressionForStruct[i].type == ek_invalid) {
+            return newExpression;
+        }
+    }
+    newExpression.type = ek_make_struct;
+    newExpression.token = token;
+    newExpression.tokenCount = tokenCount;
+    newExpression.tid = tid;
+    newExpression.makeStructExpressions = expressionForStruct;
+    return newExpression;
+}
+
 Expression boolCast(Expression* expression, Scope* scope, functionId functionId) {
     Expression newExpression = { 0 };
+    if (expression->type == ek_grouped_data) {
+        logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly grouped data to bool");
+        return newExpression;
+    }
     expressionAcutalType(expression, scope);
     bool isNumber = isNumberType(expression->tid);
     bool isPtr = getTypeFromId(expression->tid)->kind == tk_pointer;
@@ -385,8 +558,33 @@ Expression boolCast(Expression* expression, Scope* scope, functionId functionId)
 }
 
 Expression implicitCast(Expression* expression, typeId type, Scope* scope, functionId functionId) {
+    if (expression->tid == type) {
+        return *expression;
+    }
     Expression newExpression = { 0 };
+    if (expression->type == ek_grouped_data) {
+        type = getActualTypeId(type);
+        Type* t = getTypeFromId(type);
+        if (t->kind != tk_struct) {
+            logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast grouped data to non struct");
+        }
+        if (t->structData->numFields != expression->groupedData->numFields) {
+            logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast grouped data to struct with different number of fields");
+            return newExpression;
+        }
+        Expression* exprs = expression->groupedData->expressions;
+        Expression mStruct = makeStruct(exprs, expression->groupedData->numFields, type, scope, expression->token, expression->tokenCount);
+        if (mStruct.type == ek_invalid) {
+            return newExpression;
+        }
+        return mStruct;
+    }
     expressionAcutalType(expression, scope);
+    type = getActualTypeId(type);
+    // need to check this after getting the acutal type as well
+    if (expression->tid == type) {
+        return *expression;
+    }
     bool eisNumber = isNumberType(expression->tid);
     bool tisNumber = isNumberType(type);
     TypeKind ekind = getTypeFromId(expression->tid)->kind;
@@ -394,11 +592,14 @@ Expression implicitCast(Expression* expression, typeId type, Scope* scope, funct
     if (eisNumber && tisNumber) {
         u64 esize = getTypeFromId(expression->tid)->numberSize;
         u64 tsize = getTypeFromId(type)->numberSize;
+        // print out type names
+        char* eTypeName = getTypeFromId(expression->tid)->name;
+        char* tTypeName = getTypeFromId(type)->name;
         if (ekind == tkind) {
             if (esize == tsize) {
                 return *expression;
             }
-            if (esize > tsize) {
+            if (esize < tsize) {
                 newExpression.type = ek_implicit_cast;
                 newExpression.tid = type;
                 newExpression.token = expression->token;

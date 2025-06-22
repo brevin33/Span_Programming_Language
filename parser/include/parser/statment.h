@@ -22,7 +22,8 @@ typedef enum _StatementKind {
 typedef struct _AssignmentStatementData {
     Expression* assignee;
     u64 numAssignee;
-    Expression* value;
+    Expression* values;
+    u64 numValues;
 } AssignmentStatementData;
 
 typedef struct _IfStatementData {

@@ -13,6 +13,7 @@ typedef u64 functionId;
 typedef u64 projectId;
 
 typedef enum _TypeKind : u8 {
+    tk_invalid = 0,
     tk_void,
     tk_int,
     tk_uint,
@@ -29,6 +30,7 @@ typedef enum _TypeKind : u8 {
     tk_interface,
     tk_ref,
     tk_const_number,
+    tk_type,
 } TypeKind;
 
 typedef struct _StructData {
@@ -94,10 +96,13 @@ extern Pool typePool;
 extern map typeMap;
 extern typeId constNumberType;
 extern typeId boolType;
+extern typeId typeType;
 
 void setupDefaultTypes();
 
 typeId getTypeIdFromTokens(Token** tokens);
+
+typeId getActualTypeId(typeId typeId);
 
 typeId createType(TypeKind kind, char* name, projectId pid);
 

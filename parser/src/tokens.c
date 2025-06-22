@@ -354,6 +354,7 @@ void addToken(char* fileContent, u64 fileNumber, u64* iRef, Token* tokens, u64* 
     u64 tokenCount = *tokenCountRef;
     u64 tokenCapacity = *tokenCapacityRef;
     u64 iOfLastNewLine = *charPosRef;
+    u64 iOfLastOveride = UINT64_MAX;
 
     while (true) {
         if (fileContent[i] == '\r' || fileContent[i] == ' ' || fileContent[i] == '\t') {
@@ -799,12 +800,20 @@ void addToken(char* fileContent, u64 fileNumber, u64* iRef, Token* tokens, u64* 
                 break;
             }
             case '{': {
+                // remove the last token if it is a newline
+                if (tokens[tokenCount - 1].type == tt_endl) {
+                    tokenCount--;
+                }
                 tokens[tokenCount].type = tt_lbrace;
                 tokens[tokenCount].str = "{";
                 i++;
                 break;
             }
             case '}': {
+                // remove the last token if it is a newline
+                if (tokens[tokenCount - 1].type == tt_endl) {
+                    tokenCount--;
+                }
                 tokens[tokenCount].type = tt_rbrace;
                 tokens[tokenCount].str = "}";
                 i++;
@@ -814,6 +823,12 @@ void addToken(char* fileContent, u64 fileNumber, u64* iRef, Token* tokens, u64* 
                 tokens[tokenCount].type = tt_comma;
                 tokens[tokenCount].str = ",";
                 i++;
+                if (fileContent[i] == '\n') {
+                    iOfLastOveride = iOfLastNewLine;
+                    iOfLastNewLine = i;
+                    lineNumber++;
+                    i++;
+                }
                 break;
             }
             case ';': {
@@ -858,6 +873,9 @@ void addToken(char* fileContent, u64 fileNumber, u64* iRef, Token* tokens, u64* 
         }
         tokens[tokenCount].charStart = charStart;
         tokens[tokenCount].charEnd = i - iOfLastNewLine - 2;
+        if (iOfLastOveride != UINT64_MAX) {
+            tokens[tokenCount].charEnd = i - iOfLastOveride - 2;
+        }
         tokens[tokenCount].file = fileNumber;
         tokens[tokenCount].line = lineNumber;
         tokenCount++;

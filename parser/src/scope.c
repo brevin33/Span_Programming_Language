@@ -30,8 +30,8 @@ void addVariableToScope(Scope* scope, Token* token, char* name, typeId type) {
     variable->name = arenaAlloc(scope->arena, nameSize);
     memcpy(variable->name, name, nameSize);
     variable->type = type;
-
     mapSet(&scope->nameToVariable, variable->name, variable);
+    scope->varilablesCount++;
 }
 
 void addStatementToScope(Scope* scope, Statement* statement) {
@@ -87,8 +87,10 @@ void implementScope(Scope* scope, Token** tokens) {
                 }
                 if (token->type == tt_rbrace) {
                     braceCount--;
+                    if (braceCount < 0) {
+                        break;
+                    }
                 }
-                assert(braceCount >= 0);
                 token++;
             }
             continue;

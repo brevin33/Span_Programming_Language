@@ -7,6 +7,7 @@
 
 bool numberFitsInIntIMath(u64 bits, mpz_t a, bool isNeg) {
     mpz_t s;
+    mp_int_init(&s);
     mp_int_set_value(&s, 1);
     while (bits > 2) {
         mp_int_mul_pow2(&s, 2, &s);
@@ -14,14 +15,14 @@ bool numberFitsInIntIMath(u64 bits, mpz_t a, bool isNeg) {
     }
     if (isNeg) {
         int cmp = mp_int_compare(&a, &s);
-        mp_int_free(&s);
+        mp_int_clear(&s);
         if (cmp < 0) {
             return false;
         }
         return true;
     } else {
         int cmp = mp_int_compare(&a, &s);
-        mp_int_free(&s);
+        mp_int_clear(&s);
         if (cmp >= 0) {
             return false;
         }
@@ -31,16 +32,18 @@ bool numberFitsInIntIMath(u64 bits, mpz_t a, bool isNeg) {
 
 bool numberFitsInInt(u64 bits, char* number) {
     mpz_t a;
+    mp_int_init(&a);
     bool isNeg = number[0] == '-';
     mp_int_read_string(&a, 10, number);
     bool result = numberFitsInIntIMath(bits, a, isNeg);
-    mp_int_free(&a);
+    mp_int_clear(&a);
     return result;
 }
 
 
 bool numberFitsInUIntIMath(u64 bits, mpz_t a) {
     mpz_t s;
+    mp_int_init(&s);
     mp_int_set_value(&s, 1);
     while (bits > 1) {
         mp_int_mul_pow2(&s, 2, &s);
@@ -48,7 +51,7 @@ bool numberFitsInUIntIMath(u64 bits, mpz_t a) {
     }
 
     int cmp = mp_int_compare(&a, &s);
-    mp_int_free(&s);
+    mp_int_clear(&s);
     if (cmp > 0) {
         return false;
     }
@@ -61,9 +64,10 @@ bool numberFitsInUInt(u64 bits, char* number) {
         return false;
     }
     mpz_t a;
+    mp_int_init(&a);
     mp_int_read_string(&a, 10, number);
     bool result = numberFitsInUIntIMath(bits, a);
-    mp_int_free(&a);
+    mp_int_clear(&a);
     return result;
 }
 
@@ -93,6 +97,7 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
     assert(getTypeFromId(expr->tid)->kind == tk_const_number);
     if (expr->type == ek_number) {
         mpz_t a;
+        mp_int_init(&a);
         if (numberIsCompatalbeWithInt(expr->number)) {
             mp_int_read_string(&a, 10, expr->number);
             return a;
@@ -108,29 +113,29 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
         }
         mpz_t right = getBigIntForConstNumber(expr->biopData->right, arena, err);
         if (*err) {
-            mp_int_free(&right);
+            mp_int_clear(&right);
             return left;
         }
         switch (expr->biopData->operator) {
             case tt_add:
                 mp_int_add(&left, &right, &left);
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             case tt_sub:
                 mp_int_sub(&left, &right, &left);
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             case tt_mul:
                 mp_int_mul(&left, &right, &left);
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             case tt_div:
                 mp_int_div(&left, &right, &left, &right);
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             case tt_mod:
                 mp_int_mod(&left, &right, &left);
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             case tt_leq: {
                 int cmp = mp_int_compare(&left, &right);
@@ -139,7 +144,7 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
                 } else {
                     mp_int_set_value(&left, 0);
                 }
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             }
             case tt_geq: {
@@ -149,7 +154,7 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
                 } else {
                     mp_int_set_value(&left, 0);
                 }
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             }
             case tt_lt: {
@@ -159,7 +164,7 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
                 } else {
                     mp_int_set_value(&left, 0);
                 }
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             }
             case tt_gt: {
@@ -169,7 +174,7 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
                 } else {
                     mp_int_set_value(&left, 0);
                 }
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             }
             case tt_eq: {
@@ -179,7 +184,7 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
                 } else {
                     mp_int_set_value(&left, 0);
                 }
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             }
             case tt_neq: {
@@ -189,7 +194,7 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
                 } else {
                     mp_int_set_value(&left, 0);
                 }
-                mp_int_free(&right);
+                mp_int_clear(&right);
                 return left;
             }
             default: {
@@ -200,6 +205,7 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
     } else {
         *err = true;
         mpz_t a;
+        mp_int_init(&a);
         mp_int_set_value(&a, 0);
         return a;
     }
@@ -272,28 +278,28 @@ bool constExpressionNumberWorksWithType(Expression* expr, typeId tid, Arena* are
         mpz_t a = getBigIntForConstNumber(expr, arena, &err);
         int cmp = mp_int_compare_value(&a, 0);
         if (err) {
-            mp_int_free(&a);
+            mp_int_clear(&a);
             return false;
         }
         bool isNeg = cmp < 0;
         bool result = numberFitsInIntIMath(bits, a, isNeg);
-        mp_int_free(&a);
+        mp_int_clear(&a);
         return result;
     }
     if (type->kind == tk_uint) {
         bool err;
         mpz_t a = getBigIntForConstNumber(expr, arena, &err);
         if (err) {
-            mp_int_free(&a);
+            mp_int_clear(&a);
             return false;
         }
         int cmp = mp_int_compare_value(&a, 0);
         if (cmp < 0) {
-            mp_int_free(&a);
+            mp_int_clear(&a);
             return false;
         }
         bool result = numberFitsInUIntIMath(bits, a);
-        mp_int_free(&a);
+        mp_int_clear(&a);
         return result;
     }
     assert(false);

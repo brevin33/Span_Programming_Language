@@ -9,8 +9,17 @@ Pool typePool;
 map typeMap;
 typeId constNumberType;
 typeId boolType;
+typeId typeType;
 
 void setupDefaultTypes() {
+    typeId invalidType = createType(tk_invalid, "invalid", 0);
+    Type* invalidTypePtr = getTypeFromId(invalidType);
+    invalidTypePtr->numberSize = 0;
+
+    typeId typeType = createType(tk_type, "type", 0);
+    Type* typeTypePtr = getTypeFromId(typeType);
+    typeTypePtr->numberSize = 0;
+
     typeId i32Type = createType(tk_int, "i32", 0);
     Type* i32TypePtr = getTypeFromId(i32Type);
     i32TypePtr->numberSize = 32;
@@ -66,7 +75,7 @@ typeId createType(TypeKind kind, char* name, projectId pid) {
     TypeList** val = (TypeList**)mapGet(&typeMap, name);
     if (val == NULL) {
         TypeList* list = arenaAlloc(gArena, sizeof(TypeList));
-        list->count = 0;
+        list->count = 1;
         list->capacity = 1;
         list->types = arenaAlloc(gArena, sizeof(typeId) * list->capacity);
         list->types[0] = id;
@@ -84,10 +93,11 @@ typeId createType(TypeKind kind, char* name, projectId pid) {
 }
 
 void aliasType(typeId id, char* name) {
+    assert(id != 0);
     TypeList** val = (TypeList**)mapGet(&typeMap, name);
     if (val == NULL) {
         TypeList* list = arenaAlloc(gArena, sizeof(TypeList));
-        list->count = 0;
+        list->count = 1;
         list->capacity = 1;
         list->types = arenaAlloc(gArena, sizeof(typeId) * list->capacity);
         list->types[0] = id;
@@ -132,6 +142,7 @@ Type* getTypeFromId(typeId typeId) {
 }
 
 typeId getPtrType(typeId id) {
+    assert(id != 0);
     char typeName[1024];
     Type* type = getTypeFromId(id);
     u64 nameSize = strlen(type->name);
@@ -157,6 +168,7 @@ typeId getPtrType(typeId id) {
 }
 
 typeId getArrayType(typeId id, u64 size) {
+    assert(id != 0);
     char typeName[1024];
     Type* type = getTypeFromId(id);
     u64 nameSize = strlen(type->name);
@@ -199,6 +211,7 @@ char* getNumberAsString(u64 num, Arena* arena) {
 }
 
 typeId getUnnamedStructType(typeId* id, u64 numFields) {
+    assert(id != 0);
     char typeName[1024];
     sprintf(typeName, "__implStruct");
     u64 nameSize = strlen(typeName);
@@ -244,6 +257,7 @@ typeId getUnnamedStructType(typeId* id, u64 numFields) {
 }
 
 typeId getUnnamedEnumType(typeId* id, u64 numFields) {
+    assert(id != 0);
     char typeName[1024];
     sprintf(typeName, "__implUnion");
     u64 nameSize = strlen(typeName);
@@ -289,12 +303,13 @@ typeId getUnnamedEnumType(typeId* id, u64 numFields) {
 }
 
 typeId getRefType(typeId id) {
+    assert(id != 0);
     char typeName[1024];
     Type* type = getTypeFromId(id);
     u64 nameSize = strlen(type->name);
 
     memcpy(typeName, type->name, nameSize);
-    typeName[nameSize] = '*';
+    typeName[nameSize] = '&';
     typeName[nameSize + 1] = '\0';
 
     TypeList* list = getTypeListFromName(typeName);
@@ -314,6 +329,7 @@ typeId getRefType(typeId id) {
 }
 
 typeId getListType(typeId id) {
+    assert(id != 0);
     char typeName[1024];
     Type* type = getTypeFromId(id);
     u64 nameSize = strlen(type->name);
@@ -338,6 +354,7 @@ typeId getListType(typeId id) {
 }
 
 typeId getMapType(typeId val, typeId key) {
+    assert(val != 0 && key != 0);
     char typeName[1024];
     Type* type = getTypeFromId(val);
     u64 nameSize = strlen(type->name);
@@ -411,6 +428,7 @@ typeId getUintType(u64 size) {
 }
 
 typeId getSliceType(typeId id) {
+    assert(id != 0);
     char typeName[1024];
     Type* type = getTypeFromId(id);
     u64 nameSize = strlen(type->name);
@@ -596,6 +614,16 @@ typeId _getTypeIdFromTokesn(Token** tokens, bool allowComma, bool allowOr) {
             }
         }
     }
+}
+
+typeId getActualTypeId(typeId typeId) {
+    assert(typeId != 0);
+    Type* type = getTypeFromId(typeId);
+    while (type->kind == tk_ref) {
+        typeId = type->pointedToType;
+        type = getTypeFromId(typeId);
+    }
+    return typeId;
 }
 
 typeId getTypeIdFromTokens(Token** tokens) {

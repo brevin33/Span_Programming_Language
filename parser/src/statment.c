@@ -58,23 +58,16 @@ Statement createIfStatement(Token** tokens, functionId functionId, Scope* scope)
     Token* token = *tokens;
     assert(token->type == tt_if && "Not an if statement");
     token++;
-    OurTokenType delimiters[] = { tt_lbrace, tt_endl };
+    OurTokenType delimiters[] = { tt_lbrace };
     Statement statement = { 0 };
     IfStatementData* data = arenaAlloc(scope->arena, sizeof(IfStatementData));
     data->condition = arenaAlloc(scope->arena, sizeof(Expression));
-    *data->condition = createExpressionFromTokens(&token, delimiters, 2, functionId, scope);
+    *data->condition = createExpressionFromTokens(&token, delimiters, 1, functionId, scope);
     if (data->condition->type == ek_invalid) {
         return statement;
     }
     *data->condition = boolCast(data->condition, scope, functionId);
     if (data->condition->type == ek_invalid) {
-        return statement;
-    }
-    while (token->type == tt_endl) {
-        token++;
-    }
-    if (token->type != tt_lbrace) {
-        logErrorTokens(token, 1, "Expected '{' after if");
         return statement;
     }
     Scope* s = arenaAlloc(scope->arena, sizeof(Scope));
@@ -116,8 +109,8 @@ Statement createIfStatement(Token** tokens, functionId functionId, Scope* scope)
 Statement createExpressionStatement(Token** tokens, functionId functionId, Scope* scope) {
     Statement statement = { 0 };
     Token* token = *tokens;
-    OurTokenType delimiters[] = { tt_endl };
-    Expression expression = createExpressionFromTokens(&token, delimiters, 1, functionId, scope);
+    OurTokenType delimiters[] = { tt_endl, tt_rbrace };
+    Expression expression = createExpressionFromTokens(&token, delimiters, 2, functionId, scope);
     if (expression.type == ek_invalid) {
         return statement;
     }
@@ -137,8 +130,8 @@ Statement createReturnStatement(Token** tokens, functionId functionId, Scope* sc
     Token* token = *tokens;
     assert(token->type == tt_return && "Not a return statement");
     token++;
-    OurTokenType delimiters[] = { tt_endl };
-    Expression expression = createExpressionFromTokens(&token, delimiters, 1, functionId, scope);
+    OurTokenType delimiters[] = { tt_endl, tt_rbrace };
+    Expression expression = createExpressionFromTokens(&token, delimiters, 2, functionId, scope);
     if (expression.type == ek_invalid) {
         return statement;
     }
@@ -187,9 +180,9 @@ Statement createAssignmentStatement(Token** tokens, functionId functionId, Scope
             token++;
         } else if (type != BAD_ID) {
             token = start;
-            expression = createExpressionFromTokens(&token, delimiters, 3, functionId, scope);
+            expression = createExpressionFromTokens(&token, delimiters, 2, functionId, scope);
         } else {
-            expression = createExpressionFromTokens(&token, delimiters, 3, functionId, scope);
+            expression = createExpressionFromTokens(&token, delimiters, 2, functionId, scope);
         }
         if (expression.type == ek_invalid) {
             return statement;
@@ -210,23 +203,89 @@ Statement createAssignmentStatement(Token** tokens, functionId functionId, Scope
         }
     }
 
-    OurTokenType delimiters2[] = { tt_endl };
-    Expression value = createExpressionFromTokens(&token, delimiters2, 1, functionId, scope);
-
-    //TODO: check if we can assign with the value type
-
-
-    data->value = arenaAlloc(scope->arena, sizeof(Expression));
-    *data->value = value;
-    if (value.type == ek_invalid) {
+    OurTokenType delimiters2[] = { tt_endl, tt_rbrace };
+    Expression value = createExpressionFromTokens(&token, delimiters2, 2, functionId, scope);
+    if (data->numAssignee == 1) {
+        value = implicitCast(&value, data->assignee[0].tid, scope, functionId);
+        if (value.type == ek_invalid) {
+            return statement;
+        }
+        data->values = arenaAlloc(scope->arena, sizeof(Expression));
+        *data->values = value;
+        data->numValues = 1;
+        if (value.type == ek_invalid) {
+            return statement;
+        }
+        *tokens = token;
+        statement.kind = sk_assignment;
+        statement.assignmentData = data;
+        statement.tokens = data->assignee[0].token;
+        Token* s = data->assignee[0].token;
+        Token* e = data->values->token + data->values->tokenCount;
+        statement.tokenCount = e - s;
         return statement;
+    } else {
+        if (value.type == ek_grouped_data) {
+            GroupedData* groupedData = value.groupedData;
+            if (data->numAssignee != groupedData->numFields) {
+                Token* s = data->assignee[0].token;
+                Token* e = value.token + value.tokenCount;
+                u64 tokenCount = e - s;
+                logErrorTokens(s, tokenCount, "number of values being doesn't match number of fields in struct");
+            }
+            data->values = arenaAlloc(scope->arena, sizeof(Expression) * data->numAssignee);
+            data->numValues = data->numAssignee;
+            for (u64 i = 0; i < data->numAssignee; i++) {
+                Expression e = implicitCast(&groupedData->expressions[i], data->assignee[i].tid, scope, functionId);
+                if (e.type == ek_invalid) {
+                    return statement;
+                }
+                data->values[i] = e;
+            }
+            *tokens = token;
+            statement.kind = sk_assignment;
+            statement.assignmentData = data;
+            statement.tokens = data->assignee[0].token;
+            Token* s = data->assignee[0].token;
+            Token* e = data->values[data->numValues - 1].token + data->values[data->numValues - 1].tokenCount;
+            statement.tokenCount = e - s;
+            return statement;
+        } else if (getTypeFromId(value.tid)->kind == tk_struct) {
+            Type* type = getTypeFromId(value.tid);
+            u64 numFields = type->structData->numFields;
+            if (data->numAssignee != numFields) {
+                Token* s = data->assignee[0].token;
+                Token* e = value.token + value.tokenCount;
+                u64 tokenCount = e - s;
+                logErrorTokens(s, tokenCount, "number of values being doesn't match number of fields in struct");
+            }
+            assert(false && "Not implemented");
+            data->values = arenaAlloc(scope->arena, sizeof(Expression) * data->numAssignee);
+            data->numValues = data->numAssignee;
+            for (u64 i = 0; i < data->numAssignee; i++) {
+                Expression getStructVal = getStructValue(&value, i, scope, data->assignee[i].token, data->assignee[i].tokenCount);
+                Expression e = implicitCast(&getStructVal, data->assignee[i].tid, scope, functionId);
+                if (e.type == ek_invalid) {
+                    return statement;
+                }
+                data->values[i] = e;
+            }
+            *tokens = token;
+            statement.kind = sk_assignment;
+            statement.assignmentData = data;
+            statement.tokens = data->assignee[0].token;
+            Token* s = data->assignee[0].token;
+            Token* e = data->values[data->numValues - 1].token + data->values[data->numValues - 1].tokenCount;
+            statement.tokenCount = e - s;
+            return statement;
+        } else {
+            Token* s = data->assignee[0].token;
+            Token* e = value.token + value.tokenCount;
+            u64 tokenCount = e - s;
+            logErrorTokens(s, tokenCount, "number of values being doesn't match number of values on right hand side");
+        }
     }
-    *tokens = token;
-    statement.kind = sk_assignment;
-    statement.assignmentData = data;
-    statement.tokens = data->assignee[0].token;
-    Token* s = data->assignee[0].token;
-    Token* e = data->value->token + data->value->tokenCount;
-    statement.tokenCount = e - s;
+
+    statement.kind = sk_invalid;
     return statement;
 }

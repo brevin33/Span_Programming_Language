@@ -16,17 +16,19 @@ int main() {
 
     for (u64 i = 0; i < project->sourceCodeCount; i++) {
         sourceCodeId sourceCodeId = project->sourceCodeIds[i];
+
         SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
         Token* tokens = sourceCode->tokens;
         printf("Tokens in project:\n");
+        u64 line = tokens->line;
         while (tokens->type != tt_eof) {
-            char buffer[256];
-
+            char buffer[1024];
             tokenToString(tokens, buffer, sizeof(buffer));
-            printf("%s | ", buffer);
-            if (tokens->type == tt_endl) {
+            if (tokens->line != line) {
                 printf("\n");
             }
+            printf("%s | ", buffer);
+            line = tokens->line;
             tokens++;
         }
     }

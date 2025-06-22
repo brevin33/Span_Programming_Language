@@ -1,9 +1,11 @@
 
-int main(){
+i64 main(){
 	i64 a = 4
 	i64 b = a + 3
 	if b {
 		i64 c = b + 1
 	}
+	i64* d = a.ptr
+	i64 e = d.val
 	return a
 }
