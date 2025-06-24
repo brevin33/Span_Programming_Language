@@ -246,6 +246,69 @@ Expression getSingleExpressionFromTokens(Token** tokens, functionId functionId, 
             expression.token = start;
             break;
         }
+        case tt_string: {
+            Token* start = token;
+            u64 numStrings = 1;
+            token++;
+            while (token->type == tt_str_expr_start) {
+                token++;
+                u64 exprsStart = 1;
+                while (true) {
+                    if (token->type == tt_str_expr_end) {
+                        exprsStart--;
+                    }
+                    if (token->type == tt_str_expr_start) {
+                        exprsStart++;
+                    }
+                    if (exprsStart == 0) {
+                        break;
+                    }
+                }
+                token++;
+                assert(token->type == tt_string);
+                numStrings++;
+                token++;
+            }
+            token = start;
+            char** strings = arenaAlloc(scope->arena, sizeof(char*) * numStrings);
+            Expression* expressions = NULL;
+            if (numStrings > 1) {
+                expressions = arenaAlloc(scope->arena, sizeof(Expression) * (numStrings - 1));
+            }
+            int i = 0;
+            while (true) {
+                char* str = token->str;
+                strings[i] = str;
+                token++;
+                if (token->type != tt_str_expr_start) {
+                    break;
+                }
+                token++;
+                OurTokenType delimiters[] = { tt_str_expr_end };
+                Expression expr = createExpressionFromTokens(&token, delimiters, 1, functionId, scope);
+                if (expr.type == ek_invalid) {
+                    return expr;
+                }
+
+                // TODO: cast to string
+                assert(false && "Not implemented");
+
+                expressions[i] = expr;
+                i++;
+                token++;
+            }
+            assert(i == numStrings - 1);
+            StringData* stringData = arenaAlloc(scope->arena, sizeof(StringData));
+            stringData->strings = strings;
+            stringData->expressions = expressions;
+            stringData->numStrings = numStrings;
+            expression.type = ek_string;
+            expression.token = start;
+            expression.tokenCount = token - start;
+            expression.stringData = stringData;
+            expression.tid = invalidType;
+            break;
+        }
         case tt_lparen: {
             token++;
             OurTokenType delimiters[] = { tt_rparen, tt_endl };
@@ -378,6 +441,10 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
     }
     if (right->type == ek_grouped_data) {
         logErrorTokens(right->token, right->tokenCount, "Can't use grouped data with this biops");
+        return expression;
+    }
+    if (left->type == ek_string || right->type == ek_string) {
+        logErrorTokens(left->token, left->tokenCount, "Can't use string with this biops");
         return expression;
     }
     expressionAcutalType(left, scope);
@@ -723,9 +790,6 @@ Expression _implicitCast(Expression* expression, typeId type, Scope* scope, func
     if (expression->tid == type) {
         return *expression;
     }
-    Type* ett = getTypeFromId(expression->type);
-    char* etypename = getTypeFromId(expression->type)->name;
-    char* ttypename = getTypeFromId(type)->name;
     Expression newExpression = { 0 };
     if (expression->type == ek_grouped_data) {
         type = getActualTypeId(type);
@@ -743,6 +807,26 @@ Expression _implicitCast(Expression* expression, typeId type, Scope* scope, func
             return newExpression;
         }
         return mStruct;
+    } else if (expression->type == ek_string) {
+        Type* ttype = getTypeFromId(type);
+        bool isCharPtr = ttype->kind == tk_pointer;
+        if (isCharPtr) {
+            Type* underlyingType = getTypeFromId(ttype->pointedToType);
+            u64 intSize = underlyingType->numberSize;
+            isCharPtr = intSize == 8 && underlyingType->kind == tk_uint;
+        }
+        if (isCharPtr) {
+            newExpression.type = ek_implicit_cast;
+            newExpression.tid = type;
+            newExpression.token = expression->token;
+            newExpression.tokenCount = expression->tokenCount;
+            Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+            *e = *expression;
+            newExpression.implicitCast = e;
+            return newExpression;
+        }
+        logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from compiler string to %s", getTypeFromId(type)->name);
+        return newExpression;
     }
     expressionAcutalType(expression, scope);
     type = getActualTypeId(type);

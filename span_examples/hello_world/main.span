@@ -1,5 +1,5 @@
-extern_c int printf(char* txt, ...)
+extern_c int puts(char* txt)
 
 int main(){
-	printf("hello world")
+	puts("hello world")
 }

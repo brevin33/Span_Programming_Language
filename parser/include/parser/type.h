@@ -31,6 +31,7 @@ typedef enum _TypeKind : u8 {
     tk_ref,
     tk_const_number,
     tk_type,
+    tk_const_string,
 } TypeKind;
 
 typedef struct _StructData {
@@ -97,6 +98,8 @@ extern map typeMap;
 extern typeId constNumberType;
 extern typeId boolType;
 extern typeId typeType;
+extern typeId constStringType;
+extern typeId invalidType;
 
 void setupDefaultTypes();
 

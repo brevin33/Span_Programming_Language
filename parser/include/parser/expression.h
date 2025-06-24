@@ -20,6 +20,7 @@ typedef enum _ExpressionKind {
     ek_struct_value,
     ek_make_struct,
     ek_ptr,
+    ek_string,
 } ExpressionKind;
 
 typedef struct _BiopData {
@@ -45,6 +46,12 @@ typedef struct _FunctionCallData {
     functionId functionId;
 } FunctionCallData;
 
+typedef struct _StringData {
+    char** strings;
+    Expression* expressions;  // num expressions == num strings - 1
+    u64 numStrings;
+} StringData;
+
 typedef struct _Expression {
     Token* token;
     u64 tokenCount;
@@ -63,6 +70,7 @@ typedef struct _Expression {
         typeId typeType;
         Expression* expressionOfPtr;
         FunctionCallData* functionCallData;
+        StringData* stringData;
     };
 } Expression;
 

@@ -10,9 +10,11 @@ map typeMap;
 typeId constNumberType;
 typeId boolType;
 typeId typeType;
+typeId constStringType;
+typeId invalidType;
 
 void setupDefaultTypes() {
-    typeId invalidType = createType(tk_invalid, "invalid", 0);
+    invalidType = createType(tk_invalid, "invalid", 0);
     Type* invalidTypePtr = getTypeFromId(invalidType);
     invalidTypePtr->numberSize = 0;
 
@@ -40,6 +42,8 @@ void setupDefaultTypes() {
     f64TypePtr->numberSize = 64;
     aliasType(f64Type, "double");
 
+    constStringType = createType(tk_const_string, "constString", 0);
+
     typeId f16Type = createType(tk_float, "f16", 0);
     Type* f16TypePtr = getTypeFromId(f16Type);
     f16TypePtr->numberSize = 16;
@@ -52,6 +56,8 @@ void setupDefaultTypes() {
     boolType = createType(tk_int, "i1", 0);
     Type* boolTypePtr = getTypeFromId(boolType);
     boolTypePtr->numberSize = 1;
+
+
 
     typeId u8Type = createType(tk_uint, "u8", 0);
     Type* u8TypePtr = getTypeFromId(u8Type);
@@ -617,7 +623,6 @@ typeId _getTypeIdFromTokesn(Token** tokens, bool allowComma, bool allowOr) {
 }
 
 typeId getActualTypeId(typeId typeId) {
-    assert(typeId != 0);
     Type* type = getTypeFromId(typeId);
     while (type->kind == tk_ref) {
         typeId = type->pointedToType;

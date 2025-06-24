@@ -3,6 +3,7 @@ project(Span_Compiler)
 
 add_executable(span_compiler
 	src/main.c
+	src/compiler.c
 )
 
 

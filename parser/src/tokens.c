@@ -299,7 +299,9 @@ char* handelStringEscapes(char* str) {
     if (escapeStringBuffer == NULL) {
         escapeStringBuffer = malloc(escapeStringBufferSize);
     }
+    char* s = str;
     char* buffer = escapeStringBuffer;
+    char* bufferS = buffer;
     u64 size = 0;
     for (char c = *str; c != '\0'; c = *(++str)) {
         size++;
@@ -350,11 +352,13 @@ char* handelStringEscapes(char* str) {
                     *buffer++ = *str;
                     break;
             }
+        } else {
+            *buffer++ = *str;
         }
     }
-    memcpy(str, buffer, size);
-    str[size] = '\0';
-    return str;
+    memcpy(s, bufferS, size);
+    s[size] = '\0';
+    return s;
 }
 
 // this function is a bit of a mess, but it works

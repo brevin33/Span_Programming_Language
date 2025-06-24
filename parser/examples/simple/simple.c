@@ -9,7 +9,7 @@ int main() {
     const char* variableValue = getenv("Span_Language_Dir");
     assert(variableValue != NULL && "Environment variable 'Span_Language_Dir' is not set");
     char projectDir[512];
-    sprintf(projectDir, "%s/span_examples/basic", variableValue);
+    sprintf(projectDir, "%s/span_examples/hello_world", variableValue);
     projectId projectId = createProject(projectDir);
     Project* project = getProjectFromId(projectId);
     printf("Project created with directory: %s\n", project->directory);

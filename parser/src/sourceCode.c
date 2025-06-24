@@ -285,6 +285,10 @@ sourceCodeId createSourceCode(const char* filename) {
 void implementSourceCodeFunctions(sourceCodeId sourceCodeId) {
     SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
     for (u64 i = 0; i < sourceCode->functionCount; i++) {
+        Function* function = getFunctionFromId(sourceCode->functions[i]);
+        if (function->isExtern || function->isExternC) {
+            continue;
+        }
         implementFunction(sourceCode->functions[i]);
     }
 }
