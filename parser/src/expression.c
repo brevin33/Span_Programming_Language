@@ -550,8 +550,8 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
     }
 
     if (leftKind == tk_pointer && rightKind == tk_pointer) {
-        if (left->tid == right->tid) {
-            expression.tid = left->tid;
+        if (left->tid == right->tid && operator== tt_sub) {
+            expression.tid = getUintType(64);
             return expression;
         }
     }
@@ -575,7 +575,44 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
             valid = constExpressionNumberWorksWithType(left, uintType, scope->arena);
         }
         if (valid) {
+            Expression* newRight = arenaAlloc(scope->arena, sizeof(Expression));
+            newRight->type = ek_implicit_cast;
+            if (isNeg) {
+                newRight->tid = getIntType(64);
+            } else {
+                newRight->tid = getUintType(64);
+            }
+            newRight->token = right->token;
+            newRight->tokenCount = right->tokenCount;
+            newRight->implicitCast = right;
+            expression.biopData->right = newRight;
             expression.tid = right->tid;
+            return expression;
+        }
+    }
+    if (rightKind == tk_pointer && leftKind == tk_const_number) {
+        bool isNeg = right->number[0] == '-';
+        bool valid;
+        if (isNeg) {
+            typeId intType = getIntType(64);
+            valid = constExpressionNumberWorksWithType(left, intType, scope->arena);
+        } else {
+            typeId uintType = getUintType(64);
+            valid = constExpressionNumberWorksWithType(left, uintType, scope->arena);
+        }
+        if (valid) {
+            Expression* newLeft = arenaAlloc(scope->arena, sizeof(Expression));
+            newLeft->type = ek_implicit_cast;
+            if (isNeg) {
+                newLeft->tid = getIntType(64);
+            } else {
+                newLeft->tid = getUintType(64);
+            }
+            newLeft->token = left->token;
+            newLeft->tokenCount = left->tokenCount;
+            newLeft->implicitCast = left;
+            expression.biopData->left = newLeft;
+            expression.tid = left->tid;
             return expression;
         }
     }

@@ -269,6 +269,12 @@ char* tokenToString(Token* token, void* buffer, u64 bufferSize) {
         case tt_str_expr_end:
             sprintf_s((char*)buffer, bufferSize, "str_expr_end");
             return buffer;
+        case tt_extern_c:
+            sprintf_s((char*)buffer, bufferSize, "extern_c");
+            return buffer;
+        case tt_extern:
+            sprintf_s((char*)buffer, bufferSize, "extern");
+            return buffer;
         default:
             sprintf_s((char*)buffer, bufferSize, "unknown_token");
             return buffer;

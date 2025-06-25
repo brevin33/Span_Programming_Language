@@ -31,6 +31,8 @@ typedef struct _Scope {
     bool isLoop;
 } Scope;
 
+extern Scope globalScope;
+
 Scope createScope(functionId function, Arena* arena);
 
 void addVariableToScope(Scope* scope, Token* token, char* name, typeId type);

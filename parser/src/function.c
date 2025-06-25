@@ -213,6 +213,7 @@ void implementFunction(functionId functionId) {
         token++;
     }
     function->scope = createScope(functionId, function->arena);
+    function->scope.parent = &globalScope;
     for (u64 i = 0; i < function->numParams; i++) {
         addVariableToScope(&function->scope, function->functionStart, function->paramNames[i], function->paramTypes[i]);
     }
