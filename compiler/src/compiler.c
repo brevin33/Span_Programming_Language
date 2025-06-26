@@ -5,15 +5,23 @@
 #include "llvm-c/TargetMachine.h"
 #include "llvm-c/Types.h"
 #include <stdio.h>
+#include <string.h>
 
 LLVMTypeRef* typeIdToLLVM;
 LLVMValueRef* functionIdtoLLVMFunction;
+LLVMTypeRef* fuctionIdToLLVMType;
 LLVMModuleRef* projectIdToLLVMModule;
 LLVMTargetDataRef dataLayout;
 LLVMBuilderRef builder;
 
+// we can override the value of variable
+typedef struct _VariableOverride {
+    LLVMValueRef value;
+    void* misc;
+    typeId type;
+} VariableOverride;
 
-LLVMValueRef compileExpression(Scope* scope, Expression* expression);
+LLVMValueRef compileExpression(Scope* scope, Expression* expression, projectId projectId);
 
 LLVMTypeRef getLLVMType(typeId typeId) {
     Type* type = getTypeFromId(typeId);
@@ -58,7 +66,7 @@ LLVMTypeRef getLLVMType(typeId typeId) {
     }
 }
 
-LLVMValueRef protoTypeFunctionLLVM(functionId fid, LLVMModuleRef module) {
+void protoTypeFunctionLLVM(functionId fid, LLVMModuleRef module) {
     Function* function = getFunctionFromId(fid);
 
     LLVMTypeRef returnType = typeIdToLLVM[function->returnType];
@@ -70,39 +78,15 @@ LLVMValueRef protoTypeFunctionLLVM(functionId fid, LLVMModuleRef module) {
     }
     LLVMTypeRef functionType = LLVMFunctionType(returnType, paramTypes, paramCount, 0);
     LLVMValueRef functionValue = LLVMAddFunction(module, function->name, functionType);
-    return functionValue;
+    fuctionIdToLLVMType[fid] = functionType;
+    functionIdtoLLVMFunction[fid] = functionValue;
 }
 
-void initCompiler() {
 
-    LLVMInitializeNativeTarget();
-    LLVMInitializeNativeAsmPrinter();
-    LLVMInitializeNativeAsmParser();
-
-    char* triple = LLVMGetDefaultTargetTriple();
-    LLVMTargetRef target;
-    char* error = NULL;
-    if (LLVMGetTargetFromTriple(triple, &target, &error) != 0) {
-        fprintf(stderr, "Failed to get target: %s\n", error);
-        LLVMDisposeMessage(error);
-        exit(1);
-    }
-
-    LLVMTargetMachineRef targetMachine = LLVMCreateTargetMachine(target, triple, "", "", LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
-    dataLayout = LLVMCreateTargetDataLayout(targetMachine);
-    typeIdToLLVM = arenaAlloc(gArena, sizeof(LLVMTypeRef) * typePool.size);
-    for (u64 i = 0; i < typePool.size; i++) {
-        typeIdToLLVM[i] = getLLVMType(i);
-    }
-    functionIdtoLLVMFunction = arenaAlloc(gArena, sizeof(LLVMValueRef) * functionPool.size);
-    projectIdToLLVMModule = arenaAlloc(gArena, sizeof(LLVMModuleRef) * projectPool.size);
-    builder = LLVMCreateBuilder();
-}
-
-LLVMValueRef compileBinaryOp(Scope* scope, Expression* expression) {
-    LLVMValueRef left = compileExpression(scope, expression->biopData->left);
+LLVMValueRef compileBinaryOp(Scope* scope, Expression* expression, projectId projectId) {
+    LLVMValueRef left = compileExpression(scope, expression->biopData->left, projectId);
     LLVMTypeRef llvmLeftType = typeIdToLLVM[expression->biopData->left->tid];
-    LLVMValueRef right = compileExpression(scope, expression->biopData->right);
+    LLVMValueRef right = compileExpression(scope, expression->biopData->right, projectId);
     LLVMTypeRef llvmRightType = typeIdToLLVM[expression->biopData->right->tid];
     Type* leftType = getTypeFromId(expression->biopData->left->tid);
     Type* rightType = getTypeFromId(expression->biopData->right->tid);
@@ -318,13 +302,57 @@ LLVMValueRef compileBinaryOp(Scope* scope, Expression* expression) {
     }
 }
 
-LLVMValueRef compileImplicitCast(Scope* scope, Expression* expression) {
+LLVMValueRef getConstantStringPtr(char* str, projectId projectId) {
+    u64 len = strlen(str);
+    LLVMModuleRef module = projectIdToLLVMModule[projectId];
+    LLVMTypeRef strType = LLVMArrayType(LLVMInt8Type(), len + 1);
+    char name[1024];
+    static u64 i = 0;
+    sprintf(name, "str%llu", i++);
+    LLVMValueRef strConst = LLVMAddGlobal(module, strType, name);
+    LLVMSetInitializer(strConst, LLVMConstString(str, len, /*DontNullTerminate=*/0));
+    LLVMSetGlobalConstant(strConst, 1);
+    LLVMSetLinkage(strConst, LLVMPrivateLinkage);
+    LLVMValueRef zero = LLVMConstInt(LLVMInt32Type(), 0, 0);
+    LLVMValueRef indices[] = { zero, zero };
+    return LLVMBuildGEP2(builder, strType, strConst, indices, 2, "strptr");
+}
+
+LLVMValueRef getConstantNumberValue(Expression* expr, typeId tid, Scope* scope, projectId projectId) {
+    if (expr->type == ek_number) {
+        return LLVMConstIntOfString(typeIdToLLVM[tid], expr->number, 10);
+    }
+    assert(false);
+    return NULL;
+}
+
+LLVMValueRef compileImplicitCast(Scope* scope, Expression* expression, projectId projectId) {
     assert(expression->type == ek_implicit_cast);
     Type* castType = getTypeFromId(expression->tid);
     Type* castFromType = getTypeFromId(expression->implicitCast->tid);
     LLVMTypeRef llvmCastType = typeIdToLLVM[expression->tid];
     LLVMTypeRef llvmCastFromType = typeIdToLLVM[expression->implicitCast->tid];
-    LLVMValueRef value = compileExpression(scope, expression->implicitCast);
+
+    if (expression->implicitCast->type == ek_string) {
+        bool isCharPtr = castType->kind == tk_pointer;
+        bool formatString = expression->implicitCast->stringData->numStrings != 1;
+        if (isCharPtr) {
+            Type* underlyingType = getTypeFromId(castType->pointedToType);
+            u64 intSize = underlyingType->numberSize;
+            isCharPtr = intSize == 8 && underlyingType->kind == tk_uint;
+        }
+        if (isCharPtr) {
+            if (formatString) {
+                assert(false && "Not implemented");
+            } else {
+                return getConstantStringPtr(expression->implicitCast->stringData->strings[0], projectId);
+            }
+        }
+        assert(false);
+        return NULL;
+    }
+
+    LLVMValueRef value = compileExpression(scope, expression->implicitCast, projectId);
 
     if (castType->kind == tk_int && castFromType->kind == tk_int) {
         u64 castSize = castType->numberSize;
@@ -407,13 +435,13 @@ LLVMValueRef compileImplicitCast(Scope* scope, Expression* expression) {
     }
 
     if (castType->kind == tk_int && castFromType->kind == tk_const_number) {
-        assert(false && "Not implemented");
+        return getConstantNumberValue(expression->implicitCast, expression->tid, scope, projectId);
     }
     if (castType->kind == tk_uint && castFromType->kind == tk_const_number) {
-        assert(false && "Not implemented");
+        return getConstantNumberValue(expression->implicitCast, expression->tid, scope, projectId);
     }
     if (castType->kind == tk_float && castFromType->kind == tk_const_number) {
-        assert(false && "Not implemented");
+        return getConstantNumberValue(expression->implicitCast, expression->tid, scope, projectId);
     }
 
     if (castType->kind == tk_pointer && castFromType->kind == tk_pointer) {
@@ -444,17 +472,65 @@ LLVMValueRef compileImplicitCast(Scope* scope, Expression* expression) {
     return NULL;
 }
 
-LLVMValueRef compileExpression(Scope* scope, Expression* expression) {
+LLVMValueRef compileFunctionCall(Scope* scope, Expression* expression, projectId projectId) {
+    functionId fid = expression->functionCallData->functionId;
+    Function* function = getFunctionFromId(fid);
+    FunctionCallData* functionCallData = expression->functionCallData;
+
+    LLVMValueRef* paramValues = arenaAlloc(gArena, sizeof(LLVMValueRef) * functionCallData->numParameters);
+    for (u64 i = 0; i < functionCallData->numParameters; i++) {
+        Expression* parameter = &functionCallData->parameters[i];
+        LLVMValueRef paramValue = compileExpression(scope, parameter, projectId);
+        paramValues[i] = paramValue;
+    }
+
+    LLVMValueRef functionValue = functionIdtoLLVMFunction[fid];
+    LLVMTypeRef functionType = fuctionIdToLLVMType[fid];
+    return LLVMBuildCall2(builder, functionType, functionValue, paramValues, functionCallData->numParameters, "calltmp");
+}
+
+LLVMValueRef compileDeref(Scope* scope, Expression* expression, projectId projectId) {
+    assert(expression->type == ek_deref);
+
+    LLVMValueRef value = compileExpression(scope, expression->deref, projectId);
+    LLVMTypeRef underlyingType = typeIdToLLVM[expression->deref->tid];
+    Type* type = getTypeFromId(expression->deref->tid);
+    if (type->kind == tk_ref) {
+        return LLVMBuildLoad2(builder, underlyingType, value, "deref");
+    } else if (type->kind == tk_pointer) {
+        return value;
+    }
+    assert(false);
+    return NULL;
+}
+
+LLVMValueRef compileVariable(Scope* scope, Expression* expression, projectId projectId) {
+    assert(expression->type == ek_variable);
+    VariableOverride* variable = (VariableOverride*)getVariableByName(scope, expression->variable);
+    assert(variable != NULL);
+    return variable->value;
+}
+
+LLVMValueRef compileExpression(Scope* scope, Expression* expression, projectId projectId) {
     LLVMTypeRef llvmType = typeIdToLLVM[expression->tid];
     switch (expression->type) {
         case ek_number: {
-            return LLVMConstIntOfString(llvmType, expression->number, 10);
+            return NULL;
         }
         case ek_biop: {
-            return compileBinaryOp(scope, expression);
+            return compileBinaryOp(scope, expression, projectId);
         }
         case ek_implicit_cast: {
-            return compileImplicitCast(scope, expression);
+            return compileImplicitCast(scope, expression, projectId);
+        }
+        case ek_function_call: {
+            return compileFunctionCall(scope, expression, projectId);
+        }
+        case ek_deref: {
+            return compileDeref(scope, expression, projectId);
+        }
+        case ek_variable: {
+            return compileVariable(scope, expression, projectId);
         }
         default: {
             assert(false);
@@ -463,17 +539,30 @@ LLVMValueRef compileExpression(Scope* scope, Expression* expression) {
     }
 }
 
-void compileExpressionStatement(Scope* scope, Statement* statement, u64* childIndex) {
+void compileExpressionStatement(Scope* scope, Statement* statement, u64* childIndex, projectId projectId) {
     assert(statement->kind == sk_expression);
+    LLVMValueRef value = compileExpression(scope, statement->expressionData, projectId);
 }
 
-void compileScope(Scope* scope) {
+void compileReturnStatement(Scope* scope, Statement* statement, u64* childIndex, projectId projectId) {
+    assert(statement->kind == sk_return);
+    LLVMValueRef value = compileExpression(scope, statement->expressionData, projectId);
+    LLVMBuildRet(builder, value);
+}
+
+void compileScope(Scope* scope, projectId projectId) {
     u64 childIndex = 0;
+    bool stopBuildingScope = false;
     for (u64 i = 0; i < scope->statementsCount; i++) {
         Statement* statement = &scope->statements[i];
         switch (statement->kind) {
             case sk_expression: {
-                compileExpressionStatement(scope, statement, &childIndex);
+                compileExpressionStatement(scope, statement, &childIndex, projectId);
+                break;
+            }
+            case sk_return: {
+                stopBuildingScope = true;
+                compileReturnStatement(scope, statement, &childIndex, projectId);
                 break;
             }
             default: {
@@ -484,7 +573,7 @@ void compileScope(Scope* scope) {
 }
 
 
-void compileFunction(functionId fid) {
+void compileFunction(functionId fid, projectId projectId) {
     Function* function = getFunctionFromId(fid);
     if (function->isExtern || function->isExternC > 0) {
         return;
@@ -494,7 +583,25 @@ void compileFunction(functionId fid) {
 
     LLVMBasicBlockRef entry = LLVMAppendBasicBlock(functionValue, "entry");
     LLVMPositionBuilderAtEnd(builder, entry);
-    compileScope(&function->scope);
+
+    // allocate variables onto the stack
+    Scope* s = &function->scope;
+    while (s != NULL) {
+        for (u64 i = 0; i < s->varilablesCount; i++) {
+            // we can override the value of variable
+            VariableOverride* variable = (VariableOverride*)&s->variables[i];
+            LLVMTypeRef llvmType = typeIdToLLVM[variable->type];
+            static u64 i = 0;
+            char name[1024];
+            sprintf(name, "var%llu", i++);
+            LLVMValueRef allocaInst = LLVMBuildAlloca(builder, llvmType, name);
+            LLVMBuildStore(builder, LLVMConstNull(llvmType), allocaInst);
+            variable->value = allocaInst;
+        }
+        s = s->parent;
+    }
+
+    compileScope(&function->scope, projectId);
 }
 
 
@@ -508,17 +615,73 @@ void compileProject(projectId projectId) {
         SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
         for (u64 j = 0; j < sourceCode->functionCount; j++) {
             functionId fid = sourceCode->functions[j];
-            functionIdtoLLVMFunction[fid] = protoTypeFunctionLLVM(fid, mod);
+            protoTypeFunctionLLVM(fid, mod);
         }
         for (u64 j = 0; j < sourceCode->functionCount; j++) {
             functionId fid = sourceCode->functions[j];
-            compileFunction(fid);
+            compileFunction(fid, projectId);
         }
     }
 }
 
+void outputObjectFiles(projectId projectId) {
+}
 
 void compile(projectId projectId) {
-    initCompiler();
+    // Init
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
+
+    char* triple = LLVMGetDefaultTargetTriple();
+    printf("triple: %s\n", triple);
+    LLVMTargetRef target;
+    char* error = NULL;
+    if (LLVMGetTargetFromTriple(triple, &target, &error) != 0) {
+        fprintf(stderr, "Failed to get target: %s\n", error);
+        LLVMDisposeMessage(error);
+        exit(1);
+    }
+
+    LLVMTargetMachineRef targetMachine = LLVMCreateTargetMachine(target, triple, "", "", LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+    dataLayout = LLVMCreateTargetDataLayout(targetMachine);
+    typeIdToLLVM = arenaAlloc(gArena, sizeof(LLVMTypeRef) * typePool.size);
+    for (u64 i = 0; i < typePool.size; i++) {
+        typeIdToLLVM[i] = getLLVMType(i);
+    }
+    functionIdtoLLVMFunction = arenaAlloc(gArena, sizeof(LLVMValueRef) * functionPool.size);
+    fuctionIdToLLVMType = arenaAlloc(gArena, sizeof(LLVMTypeRef) * functionPool.size);
+    projectIdToLLVMModule = arenaAlloc(gArena, sizeof(LLVMModuleRef) * projectPool.size);
+    builder = LLVMCreateBuilder();
+
+    // ------------------------------------------------------------------------------------------------
+    // compile the project
     compileProject(projectId);
+    // ------------------------------------------------------------------------------------------------
+    // output
+    LLVMModuleRef llvmModule = projectIdToLLVMModule[projectId];
+
+    if (LLVMVerifyModule(llvmModule, LLVMPrintMessageAction, &error) != 0) {
+        fprintf(stderr, "LLVMVerifyModule failed: %s\n", error);
+        LLVMDisposeMessage(error);
+        assert(false);
+    }
+
+    char* outputFileName = "output.obj";
+    if (LLVMTargetMachineEmitToFile(targetMachine, llvmModule, outputFileName, LLVMObjectFile, &error) != 0) {
+        fprintf(stderr, "Failed to emit object file: %s\n", error);
+        LLVMDisposeMessage(error);
+        assert(false);
+    }
+
+    char objFileName[1024];
+    sprintf(objFileName, "output_%llu.obj", (u64)projectId);
+    if (LLVMTargetMachineEmitToFile(targetMachine, llvmModule, objFileName, LLVMObjectFile, &error) != 0) {
+        fprintf(stderr, "Failed to emit object file: %s\n", error);
+        LLVMDisposeMessage(error);
+    }
+
+
+    LLVMDisposeTargetMachine(targetMachine);
+    LLVMDisposeMessage(triple);
 }

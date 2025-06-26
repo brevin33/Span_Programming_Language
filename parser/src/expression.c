@@ -168,6 +168,11 @@ Expression createFunctionCall(Token** tokens, functionId fid, Scope* scope) {
     }
     Function* function = getFunctionFromId(callId);
 
+    for (u64 i = 0; i < function->numParams; i++) {
+        parameters[i] = implicitCast(&parameters[i], function->paramTypes[i], scope, BAD_ID);
+        assert(parameters[i].type != ek_invalid && "Invalid parameter");
+    }
+
     FunctionCallData* data = arenaAlloc(scope->arena, sizeof(FunctionCallData));
     data->parameters = parameters;
     data->numParameters = numParameters;
@@ -433,6 +438,24 @@ char* opToString(OurTokenType operator) {
 }
 
 
+void applyCastsForConstNumber(Expression* expr, typeId type, Scope* scope) {
+    assert(getTypeFromId(expr->tid)->kind == tk_const_number);
+    if (expr->type == ek_biop) {
+        Expression* left = expr->biopData->left;
+        Expression* right = expr->biopData->right;
+        expr->tid = type;
+        applyCastsForConstNumber(left, type, scope);
+        applyCastsForConstNumber(right, type, scope);
+    } else {
+        Expression* newExpr = arenaAlloc(scope->arena, sizeof(Expression));
+        *newExpr = *expr;
+        expr->type = ek_implicit_cast;
+        expr->tid = type;
+        expr->implicitCast = newExpr;
+    }
+}
+
+
 Expression createBiopExpression(Expression* left, Expression* right, OurTokenType operator, Scope * scope) {
     Expression expression = { 0 };
     if (left->type == ek_grouped_data) {
@@ -522,12 +545,7 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
             expression.type = ek_invalid;
             return expression;
         }
-        Expression* newLeft = arenaAlloc(scope->arena, sizeof(Expression));
-        newLeft->type = ek_implicit_cast;
-        newLeft->tid = right->tid;
-        newLeft->token = left->token;
-        newLeft->implicitCast = left;
-        expression.biopData->left = newLeft;
+        applyCastsForConstNumber(left, right->tid, scope);
         expression.tid = right->tid;
         return expression;
     }
@@ -539,12 +557,7 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
             expression.type = ek_invalid;
             return expression;
         }
-        Expression* newRight = arenaAlloc(scope->arena, sizeof(Expression));
-        newRight->type = ek_implicit_cast;
-        newRight->tid = left->tid;
-        newRight->token = right->token;
-        newRight->implicitCast = right;
-        expression.biopData->right = newRight;
+        applyCastsForConstNumber(right, left->tid, scope);
         expression.tid = left->tid;
         return expression;
     }
@@ -557,63 +570,69 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
     }
 
     if (leftKind == tk_pointer && (rightKind == tk_int || rightKind == tk_uint)) {
-        expression.tid = left->tid;
-        return expression;
+        if (operator== tt_add || operator== tt_sub) {
+            if (operator== tt_add) {
+                expression.tid = left->tid;
+            } else {
+                expression.tid = getIntType(64);
+            }
+            return expression;
+        }
     }
     if ((leftKind == tk_int || leftKind == tk_uint) && rightKind == tk_pointer) {
-        expression.tid = right->tid;
-        return expression;
+        if (operator== tt_add || operator== tt_sub) {
+            if (operator== tt_add) {
+                expression.tid = right->tid;
+            } else {
+                expression.tid = getIntType(64);
+            }
+            return expression;
+        }
     }
     if (leftKind == tk_pointer && rightKind == tk_const_number) {
-        bool isNeg = right->number[0] == '-';
-        bool valid;
-        if (isNeg) {
-            typeId intType = getIntType(64);
-            valid = constExpressionNumberWorksWithType(left, intType, scope->arena);
-        } else {
-            typeId uintType = getUintType(64);
-            valid = constExpressionNumberWorksWithType(left, uintType, scope->arena);
-        }
-        if (valid) {
-            Expression* newRight = arenaAlloc(scope->arena, sizeof(Expression));
-            newRight->type = ek_implicit_cast;
+        if (operator== tt_add || operator== tt_sub) {
+            bool isNeg = right->number[0] == '-';
+            bool valid;
             if (isNeg) {
-                newRight->tid = getIntType(64);
+                typeId intType = getIntType(64);
+                valid = constExpressionNumberWorksWithType(left, intType, scope->arena);
             } else {
-                newRight->tid = getUintType(64);
+                typeId uintType = getUintType(64);
+                valid = constExpressionNumberWorksWithType(left, uintType, scope->arena);
             }
-            newRight->token = right->token;
-            newRight->tokenCount = right->tokenCount;
-            newRight->implicitCast = right;
-            expression.biopData->right = newRight;
-            expression.tid = right->tid;
-            return expression;
+            if (valid) {
+                typeId type = isNeg ? getIntType(64) : getUintType(64);
+                applyCastsForConstNumber(right, type, scope);
+                if (operator== tt_add) {
+                    expression.tid = left->tid;
+                } else if (operator== tt_sub) {
+                    expression.tid = getIntType(64);
+                }
+                return expression;
+            }
         }
     }
     if (rightKind == tk_pointer && leftKind == tk_const_number) {
-        bool isNeg = right->number[0] == '-';
-        bool valid;
-        if (isNeg) {
-            typeId intType = getIntType(64);
-            valid = constExpressionNumberWorksWithType(left, intType, scope->arena);
-        } else {
-            typeId uintType = getUintType(64);
-            valid = constExpressionNumberWorksWithType(left, uintType, scope->arena);
-        }
-        if (valid) {
-            Expression* newLeft = arenaAlloc(scope->arena, sizeof(Expression));
-            newLeft->type = ek_implicit_cast;
+        if (operator== tt_add || operator== tt_sub) {
+            bool isNeg = right->number[0] == '-';
+            bool valid;
             if (isNeg) {
-                newLeft->tid = getIntType(64);
+                typeId intType = getIntType(64);
+                valid = constExpressionNumberWorksWithType(left, intType, scope->arena);
             } else {
-                newLeft->tid = getUintType(64);
+                typeId uintType = getUintType(64);
+                valid = constExpressionNumberWorksWithType(left, uintType, scope->arena);
             }
-            newLeft->token = left->token;
-            newLeft->tokenCount = left->tokenCount;
-            newLeft->implicitCast = left;
-            expression.biopData->left = newLeft;
-            expression.tid = left->tid;
-            return expression;
+            if (valid) {
+                typeId type = isNeg ? getIntType(64) : getUintType(64);
+                applyCastsForConstNumber(left, type, scope);
+                if (operator== tt_add) {
+                    expression.tid = right->tid;
+                } else if (operator== tt_sub) {
+                    expression.tid = getIntType(64);
+                }
+                return expression;
+            }
         }
     }
 

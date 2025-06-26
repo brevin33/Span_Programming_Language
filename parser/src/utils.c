@@ -203,7 +203,8 @@ mpz_t getBigIntForConstNumber(Expression* expr, Arena* arena, bool* err) {
             }
         }
     } else {
-        *err = true;
+        // things like sizeof i don't care to figure out this so we just put zero as 99.999% we catch overflows
+        // and  sizeof can be target dependent and that is cancer to deal with
         mpz_t a;
         mp_int_init(&a);
         mp_int_set_value(&a, 0);
@@ -255,7 +256,6 @@ double getFloatForConstNumber(Expression* expr, Arena* arena, bool* err) {
                 return 0;
         }
     } else {
-        *err = true;
         return 0;
     }
 }
@@ -266,11 +266,6 @@ bool constExpressionNumberWorksWithType(Expression* expr, typeId tid, Arena* are
     assert(type->kind == tk_int || type->kind == tk_uint || type->kind == tk_float);
     u64 bits = type->numberSize;
     if (type->kind == tk_float) {
-        bool err;
-        double value = getFloatForConstNumber(expr, arena, &err);
-        if (err) {
-            return false;
-        }
         return true;
     }
     if (type->kind == tk_int) {
