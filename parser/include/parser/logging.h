@@ -10,4 +10,6 @@ void logErrorTokens(Token* token, u64 tokenCount, char* error, ...);
 
 void assertCrash(bool condition);
 
+void printBar();
+
 void crash();

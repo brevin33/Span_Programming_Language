@@ -22,6 +22,19 @@ projectId createProject(const char* directory) {
     project->directory = arenaAlloc(project->arena, directoryLength + 1);
     memcpy(project->directory, directory, directoryLength + 1);
 
+    // get the name of the project
+    const char* dirBack = directory + directoryLength - 1;
+    if (dirBack[0] == '\\' || dirBack[0] == '/') {
+        dirBack--;
+    }
+    while (dirBack[0] != '\\' && dirBack[0] != '/') {
+        dirBack--;
+    }
+    const char* name = dirBack + 1;
+    u64 nameLength = strlen(name);
+    project->name = arenaAlloc(project->arena, nameLength + 1);
+    memcpy(project->name, name, nameLength + 1);
+
     project->sourceCodeIds = arenaAlloc(project->arena, sizeof(sourceCodeId) * 1024);
     project->sourceCodeCount = 0;
     project->sourceCodeCapacity = 1024;

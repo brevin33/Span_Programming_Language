@@ -8,9 +8,16 @@ typedef u64 typeId;
 typedef u64 functionId;
 
 typedef struct _Variable {
-    Token* token;
-    char* name;
+    union {
+        Token* token;
+        void* overrideable;
+    };
+    union {
+        char* name;
+        void* overrideable2;
+    };
     typeId type;
+    bool initializedToZero;
 } Variable;
 
 typedef struct _Scope Scope;
@@ -19,7 +26,10 @@ typedef struct _Scope {
     Arena* arena;
     Variable* variables;
     u64 varilablesCount;
-    u64 varilablesCapacity;
+    union {
+        u64 varilablesCapacity;
+        void* overrideable;
+    };
     map nameToVariable;
     Scope* parent;
     Scope* children;
@@ -27,7 +37,10 @@ typedef struct _Scope {
     u64 childrenCapacity;
     Statement* statements;
     u64 statementsCount;
-    u64 statementsCapacity;
+    union {
+        u64 statementsCapacity;
+        void* overrideable2;
+    };
     bool isLoop;
 } Scope;
 

@@ -25,6 +25,7 @@ void addVariableToScope(Scope* scope, Token* token, char* name, typeId type) {
         scope->varilablesCapacity *= 2;
     }
     Variable* variable = &scope->variables[scope->varilablesCount];
+    variable->initializedToZero = true;  // default to true
     variable->token = token;
     u64 nameSize = strlen(name) + 1;
     variable->name = arenaAlloc(scope->arena, nameSize);

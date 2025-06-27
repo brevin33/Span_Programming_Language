@@ -10,9 +10,8 @@ extern Pool projectPool;
 
 typedef struct _Project {
     char* directory;
-
+    char* name;
     Arena* arena;
-
     sourceCodeId* sourceCodeIds;
     u64 sourceCodeCount;
     u64 sourceCodeCapacity;

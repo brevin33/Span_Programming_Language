@@ -387,6 +387,8 @@ void expressionAcutalType(Expression* expression, Scope* scope) {
         deref.tokenCount = expression->tokenCount;
         Type* type = getTypeFromId(expression->tid);
         deref.tid = type->pointedToType;
+        Type* derefType = getTypeFromId(deref.tid);
+
         Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
         *e = *expression;
         deref.deref = e;
@@ -930,7 +932,7 @@ Expression _implicitCast(Expression* expression, typeId type, Scope* scope, func
         bool isNumber = isNumberType(expression->tid);
         bool isPtr = getTypeFromId(expression->tid)->kind == tk_pointer;
         bool isConstNumber = getTypeFromId(expression->tid)->kind == tk_const_number;
-        if (isNumber || isPtr || isConstNumber) {
+        if (isNumber || isPtr) {
             newExpression.type = ek_implicit_cast;
             newExpression.tid = boolType;
             newExpression.token = expression->token;
@@ -938,6 +940,32 @@ Expression _implicitCast(Expression* expression, typeId type, Scope* scope, func
             Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
             *e = *expression;
             newExpression.implicitCast = e;
+            return newExpression;
+        } else if (isConstNumber) {
+            newExpression.type = ek_implicit_cast;
+            newExpression.tid = boolType;
+            newExpression.token = expression->token;
+            newExpression.tokenCount = expression->tokenCount;
+
+            // not the best to cast here like this but don't want to deal with case as it is never used by anyone
+            // and it is optimized out anyway
+            u64 numberSize = 256;
+            bool valid = constExpressionNumberWorksWithType(expression, getIntType(numberSize), scope->arena);
+            if (valid) {
+                Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+                *e = *expression;
+
+                Expression* toNumber = arenaAlloc(scope->arena, sizeof(Expression));
+                toNumber->type = ek_implicit_cast;
+                toNumber->tid = getIntType(numberSize);
+                toNumber->token = expression->token;
+                toNumber->tokenCount = expression->tokenCount;
+                toNumber->implicitCast = e;
+
+                newExpression.implicitCast = toNumber;
+                return newExpression;
+            }
+            if (logError) logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from %s to %s", getTypeFromId(expression->tid)->name, getTypeFromId(getIntType(numberSize))->name);
             return newExpression;
         }
     }

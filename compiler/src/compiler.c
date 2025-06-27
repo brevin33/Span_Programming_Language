@@ -1,5 +1,6 @@
 #include "compiler.h"
 #include "parser/arena.h"
+#include "parser/statment.h"
 #include "parser/type.h"
 #include "llvm-c/Core.h"
 #include "llvm-c/TargetMachine.h"
@@ -19,9 +20,36 @@ typedef struct _VariableOverride {
     LLVMValueRef value;
     void* misc;
     typeId type;
+    bool initializedToZero;
 } VariableOverride;
 
+
+typedef struct _ScopeOverride ScopeOverride;
+typedef struct _ScopeOverride {
+    functionId function;
+    Arena* arena;
+    Variable* variables;
+    u64 varilablesCount;
+    union {
+        u64 varilablesCapacity;
+        LLVMBasicBlockRef jumpToBlock;
+    };
+    map nameToVariable;
+    Scope* parent;
+    Scope* children;
+    u64 childrenCount;
+    u64 childrenCapacity;
+    Statement* statements;
+    u64 statementsCount;
+    union {
+        u64 statementsCapacity;
+        void* overrideable2;
+    };
+    bool isLoop;
+} ScopeOverride;
+
 LLVMValueRef compileExpression(Scope* scope, Expression* expression, projectId projectId);
+bool compileScope(Scope* scope, projectId projectId);
 
 LLVMTypeRef getLLVMType(typeId typeId) {
     Type* type = getTypeFromId(typeId);
@@ -354,6 +382,23 @@ LLVMValueRef compileImplicitCast(Scope* scope, Expression* expression, projectId
 
     LLVMValueRef value = compileExpression(scope, expression->implicitCast, projectId);
 
+    if (expression->tid == boolType) {
+        if (castFromType->kind == tk_int) {
+            LLVMValueRef zero = LLVMConstInt(typeIdToLLVM[expression->implicitCast->tid], 0, 0);
+            return LLVMBuildICmp(builder, LLVMIntNE, value, zero, "inttobool");
+        } else if (castFromType->kind == tk_uint) {
+            LLVMValueRef zero = LLVMConstInt(typeIdToLLVM[expression->implicitCast->tid], 0, 0);
+            return LLVMBuildICmp(builder, LLVMIntNE, value, zero, "uinttobool");
+        } else if (castFromType->kind == tk_float) {
+            LLVMValueRef zero = LLVMConstReal(typeIdToLLVM[expression->implicitCast->tid], 0.0);
+            return LLVMBuildFCmp(builder, LLVMRealONE, value, zero, "floattobool");
+        } else if (castFromType->kind == tk_pointer) {
+            LLVMValueRef zero = LLVMConstNull(typeIdToLLVM[expression->implicitCast->tid]);
+            return LLVMBuildICmp(builder, LLVMIntNE, value, zero, "ptrtobool");
+        }
+        assert(false);
+    }
+
     if (castType->kind == tk_int && castFromType->kind == tk_int) {
         u64 castSize = castType->numberSize;
         u64 fromSize = castFromType->numberSize;
@@ -493,8 +538,9 @@ LLVMValueRef compileDeref(Scope* scope, Expression* expression, projectId projec
     assert(expression->type == ek_deref);
 
     LLVMValueRef value = compileExpression(scope, expression->deref, projectId);
-    LLVMTypeRef underlyingType = typeIdToLLVM[expression->deref->tid];
+    LLVMTypeRef underlyingType = typeIdToLLVM[expression->tid];
     Type* type = getTypeFromId(expression->deref->tid);
+
     if (type->kind == tk_ref) {
         return LLVMBuildLoad2(builder, underlyingType, value, "deref");
     } else if (type->kind == tk_pointer) {
@@ -546,13 +592,76 @@ void compileExpressionStatement(Scope* scope, Statement* statement, u64* childIn
 
 void compileReturnStatement(Scope* scope, Statement* statement, u64* childIndex, projectId projectId) {
     assert(statement->kind == sk_return);
+    if (statement->expressionData == NULL) {
+        LLVMBuildRetVoid(builder);
+        return;
+    }
     LLVMValueRef value = compileExpression(scope, statement->expressionData, projectId);
     LLVMBuildRet(builder, value);
 }
 
-void compileScope(Scope* scope, projectId projectId) {
+void compileAssignmentStatement(Scope* scope, Statement* statement, u64* childIndex, projectId projectId) {
+    assert(statement->kind == sk_assignment);
+    AssignmentStatementData* aData = statement->assignmentData;
+    for (u64 i = 0; i < aData->numAssignee; i++) {
+        Expression* a = &aData->assignee[i];
+        Expression* v = &aData->values[i];
+        LLVMValueRef aValue = compileExpression(scope, a, projectId);
+        LLVMValueRef vValue = compileExpression(scope, v, projectId);
+        LLVMBuildStore(builder, vValue, aValue);
+    }
+}
+
+void compileIfStatement(Scope* scope, Statement* statement, u64* childIndex, projectId projectId) {
+    assert(statement->kind == sk_if);
+    IfStatementData* data = statement->ifData;
+    LLVMValueRef condition = compileExpression(scope, data->condition, projectId);
+
+    functionId fid = scope->function;
+
+    LLVMValueRef functionValue = functionIdtoLLVMFunction[fid];
+
+
+    LLVMBasicBlockRef thenBB = LLVMAppendBasicBlock(functionValue, "then");
+    LLVMBasicBlockRef elseBB;
+    if (data->elseBody != NULL) {
+        elseBB = LLVMAppendBasicBlock(functionValue, "then");
+    }
+    LLVMBasicBlockRef mergeBB = LLVMAppendBasicBlock(functionValue, "then");
+    ScopeOverride* scopeOverride = (ScopeOverride*)scope;
+    scopeOverride->jumpToBlock = mergeBB;
+
+    LLVMBuildCondBr(builder, condition, thenBB, elseBB);
+
+    LLVMPositionBuilderAtEnd(builder, thenBB);
+    bool exitedAlready = compileScope(data->body, projectId);
+    if (!exitedAlready) {
+        LLVMBuildBr(builder, mergeBB);
+    }
+
+    if (data->elseBody != NULL) {
+        LLVMPositionBuilderAtEnd(builder, elseBB);
+        exitedAlready = compileScope(data->elseBody, projectId);
+        if (!exitedAlready) {
+            LLVMBuildBr(builder, mergeBB);
+        }
+    }
+
+    LLVMPositionBuilderAtEnd(builder, mergeBB);
+}
+
+// return is if already exited scope
+bool compileScope(Scope* scope, projectId projectId) {
+    // set scope variables to zero
+    for (u64 i = 0; i < scope->varilablesCount; i++) {
+        VariableOverride* variable = (VariableOverride*)&scope->variables[i];
+        if (variable->initializedToZero) {
+            LLVMValueRef zero = LLVMConstNull(typeIdToLLVM[variable->type]);
+            LLVMBuildStore(builder, zero, variable->value);
+        }
+    }
+
     u64 childIndex = 0;
-    bool stopBuildingScope = false;
     for (u64 i = 0; i < scope->statementsCount; i++) {
         Statement* statement = &scope->statements[i];
         switch (statement->kind) {
@@ -561,8 +670,15 @@ void compileScope(Scope* scope, projectId projectId) {
                 break;
             }
             case sk_return: {
-                stopBuildingScope = true;
                 compileReturnStatement(scope, statement, &childIndex, projectId);
+                return true;
+            }
+            case sk_assignment: {
+                compileAssignmentStatement(scope, statement, &childIndex, projectId);
+                break;
+            }
+            case sk_if: {
+                compileIfStatement(scope, statement, &childIndex, projectId);
                 break;
             }
             default: {
@@ -570,6 +686,7 @@ void compileScope(Scope* scope, projectId projectId) {
             }
         }
     }
+    return false;
 }
 
 
@@ -595,13 +712,29 @@ void compileFunction(functionId fid, projectId projectId) {
             char name[1024];
             sprintf(name, "var%llu", i++);
             LLVMValueRef allocaInst = LLVMBuildAlloca(builder, llvmType, name);
-            LLVMBuildStore(builder, LLVMConstNull(llvmType), allocaInst);
             variable->value = allocaInst;
         }
         s = s->parent;
     }
 
-    compileScope(&function->scope, projectId);
+    // set function parameters
+    for (u64 i = 0; i < function->numParams; i++) {
+        VariableOverride* variable = (VariableOverride*)&function->scope.variables[i];
+        variable->initializedToZero = false;
+        LLVMValueRef paramValue = LLVMGetParam(functionValue, i);
+        LLVMBuildStore(builder, paramValue, variable->value);
+    }
+
+    bool exitedAlready = compileScope(&function->scope, projectId);
+    if (!exitedAlready) {
+        // retrun from void function
+        // or if main some special handling
+        if (strcmp(function->name, "main") == 0) {
+            LLVMBuildRet(builder, LLVMConstInt(LLVMInt32Type(), 0, 0));
+        } else {
+            LLVMBuildRetVoid(builder);
+        }
+    }
 }
 
 
@@ -624,7 +757,62 @@ void compileProject(projectId projectId) {
     }
 }
 
-void outputObjectFiles(projectId projectId) {
+void outputObjectFiles(char* buildDir, projectId projectId, LLVMTargetMachineRef targetMachine) {
+    LLVMModuleRef llvmModule = projectIdToLLVMModule[projectId];
+    Project* project = getProjectFromId(projectId);
+    char* projectName = project->name;
+    char objFileName[1024];
+    char* error = NULL;
+    sprintf(objFileName, "%s/%s.obj", (char*)buildDir, projectName);
+    if (LLVMTargetMachineEmitToFile(targetMachine, llvmModule, objFileName, LLVMObjectFile, &error) != 0) {
+        fprintf(stderr, "Failed to emit object file: %s\n", error);
+        LLVMDisposeMessage(error);
+    }
+    printf("compiled project to object file: %s\n", objFileName);
+}
+
+void linkExecutable(char* buildDir, char* exe, projectId projectId) {
+    char checkLldLinkExistsCommand[1024];
+    printf("\nlinking with: ");
+    sprintf(checkLldLinkExistsCommand, "lld-link --version");
+    int result = system(checkLldLinkExistsCommand);
+    if (result != 0) {
+        fprintf(stderr, "lld-link not found\n");
+        assert(false);
+    }
+    u64 objFileCount = 0;
+    u64 objFileCapacity = 4;
+    char** objFiles = arenaAlloc(gArena, sizeof(char*) * objFileCapacity);
+    u64 numFiles;
+    char** dirFiles = listFilesInDirectory(buildDir, &numFiles, gArena);
+    for (u64 i = 0; i < numFiles; i++) {
+        char* file = dirFiles[i];
+        // is an object file
+        if (strstr(file, ".obj") != NULL) {
+            if (objFileCount >= objFileCapacity) {
+                objFiles = arenaRealloc(gArena, objFiles, sizeof(char*) * objFileCapacity, sizeof(char*) * (objFileCapacity + 1));
+                objFileCapacity += 1;
+            }
+            objFiles[objFileCount] = file;
+            objFileCount++;
+        }
+    }
+
+    char spacedObjFiles[16384];
+    memset(spacedObjFiles, 0, sizeof(spacedObjFiles));
+    for (u64 i = 0; i < objFileCount; i++) {
+        sprintf(spacedObjFiles, "%s %s/%s", spacedObjFiles, buildDir, objFiles[i]);
+    }
+
+    char linkCommand[16384];
+    sprintf(linkCommand, "lld-link %s /out:%s /subsystem:console /defaultlib:libcmt", spacedObjFiles, exe);
+    result = system(linkCommand);
+
+    if (result != 0) {
+        fprintf(stderr, "Failed to link object files\n");
+        assert(false);
+    }
+    printf("linking succeeded\n");
 }
 
 void compile(projectId projectId) {
@@ -674,12 +862,36 @@ void compile(projectId projectId) {
         assert(false);
     }
 
-    char objFileName[1024];
-    sprintf(objFileName, "output_%llu.obj", (u64)projectId);
-    if (LLVMTargetMachineEmitToFile(targetMachine, llvmModule, objFileName, LLVMObjectFile, &error) != 0) {
-        fprintf(stderr, "Failed to emit object file: %s\n", error);
-        LLVMDisposeMessage(error);
+    Project* project = getProjectFromId(projectId);
+
+    char* dir = project->directory;
+
+    char buildDir[1024];
+    sprintf(buildDir, "%s/build", (char*)dir);
+    deleteDirectory(buildDir);
+    bool success = createDirectory(buildDir);
+    if (!success) {
+        fprintf(stderr, "Failed to create build directory\n");
+        assert(false);
     }
+
+    printf("\n");
+    outputObjectFiles(buildDir, projectId, targetMachine);
+
+
+    char exeFileName[1024];
+    char* projectName = project->name;
+    sprintf(exeFileName, "%s/%s.exe", (char*)buildDir, projectName);
+
+    linkExecutable(buildDir, exeFileName, projectId);
+
+
+    // run
+    printf("\nrunning executable: %s\n", exeFileName);
+    printBar();
+    int result = runExecutable(exeFileName);
+    printf("program exited with code: %d\n", result);
+
 
 
     LLVMDisposeTargetMachine(targetMachine);

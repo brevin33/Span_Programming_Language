@@ -1,8 +1,9 @@
 
-i32 foo(i32 a){
-	return a
-}
-
 i32 main(){
-	return foo(3)
+	if(2){
+		return 55;
+	}
+	else{
+		return 99;
+	}
 }
