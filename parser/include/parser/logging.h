@@ -4,6 +4,8 @@
 
 #define assert(condition) assertCrash(condition)
 
+extern bool hadError;
+
 void logError(char* error, ...);
 
 void logErrorTokens(Token* token, u64 tokenCount, char* error, ...);

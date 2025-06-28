@@ -74,6 +74,18 @@ projectId createProject(const char* directory) {
     for (u64 i = 0; i < project->sourceCodeCount; i++) {
         sourceCodeId sourceCodeId = project->sourceCodeIds[i];
         SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+        protoTypeTypes(sourceCodeId, id);
+    }
+
+    for (u64 i = 0; i < project->sourceCodeCount; i++) {
+        sourceCodeId sourceCodeId = project->sourceCodeIds[i];
+        SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+        implementTypes(sourceCodeId, id);
+    }
+
+    for (u64 i = 0; i < project->sourceCodeCount; i++) {
+        sourceCodeId sourceCodeId = project->sourceCodeIds[i];
+        SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
         protoTypeFunctions(sourceCodeId);
     }
 

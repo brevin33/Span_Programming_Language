@@ -1,5 +1,6 @@
 #include "compiler.h"
 #include "parser/arena.h"
+#include "parser/expression.h"
 #include "parser/statment.h"
 #include "parser/type.h"
 #include "llvm-c/Core.h"
@@ -32,7 +33,7 @@ typedef struct _ScopeOverride {
     u64 varilablesCount;
     union {
         u64 varilablesCapacity;
-        LLVMBasicBlockRef jumpToBlock;
+        LLVMBasicBlockRef breakToBlock;
     };
     map nameToVariable;
     Scope* parent;
@@ -43,7 +44,7 @@ typedef struct _ScopeOverride {
     u64 statementsCount;
     union {
         u64 statementsCapacity;
-        void* overrideable2;
+        void* continueToBlock;
     };
     bool isLoop;
 } ScopeOverride;
@@ -80,6 +81,14 @@ LLVMTypeRef getLLVMType(typeId typeId) {
             }
             case tk_type: {
                 return LLVMInt32Type();
+            }
+            case tk_struct: {
+                LLVMTypeRef fieldTypes[1024];
+                u64 numFields = type->structData->numFields;
+                for (u64 i = 0; i < numFields; i++) {
+                    fieldTypes[i] = getLLVMType(type->structData->fields[i]);
+                }
+                return LLVMStructType(fieldTypes, numFields, false);
             }
             case tk_invalid:
             case tk_const_string:
@@ -521,12 +530,14 @@ LLVMValueRef compileFunctionCall(Scope* scope, Expression* expression, projectId
     functionId fid = expression->functionCallData->functionId;
     Function* function = getFunctionFromId(fid);
     FunctionCallData* functionCallData = expression->functionCallData;
-
-    LLVMValueRef* paramValues = arenaAlloc(gArena, sizeof(LLVMValueRef) * functionCallData->numParameters);
-    for (u64 i = 0; i < functionCallData->numParameters; i++) {
-        Expression* parameter = &functionCallData->parameters[i];
-        LLVMValueRef paramValue = compileExpression(scope, parameter, projectId);
-        paramValues[i] = paramValue;
+    LLVMValueRef* paramValues = NULL;
+    if (functionCallData->numParameters > 0) {
+        paramValues = arenaAlloc(gArena, sizeof(LLVMValueRef) * functionCallData->numParameters);
+        for (u64 i = 0; i < functionCallData->numParameters; i++) {
+            Expression* parameter = &functionCallData->parameters[i];
+            LLVMValueRef paramValue = compileExpression(scope, parameter, projectId);
+            paramValues[i] = paramValue;
+        }
     }
 
     LLVMValueRef functionValue = functionIdtoLLVMFunction[fid];
@@ -557,6 +568,34 @@ LLVMValueRef compileVariable(Scope* scope, Expression* expression, projectId pro
     return variable->value;
 }
 
+LLVMValueRef compileStructValue(Scope* scope, Expression* expression, projectId projectId) {
+    assert(expression->type == ek_struct_value);
+    StructValueData* structValueData = expression->structValueData;
+    u64 fieldIndex = structValueData->field;
+    typeId underlyingTid = getActualTypeId(structValueData->expression->tid);
+    bool isRef = getTypeFromId(structValueData->expression->tid)->kind == tk_ref;
+
+    typeId fieldType = expression->tid;
+    LLVMTypeRef llvmFieldType = typeIdToLLVM[fieldType];
+
+    LLVMValueRef structValue = compileExpression(scope, structValueData->expression, projectId);
+
+    if (isRef) {
+        LLVMTypeRef structT = typeIdToLLVM[underlyingTid];
+        LLVMValueRef fieldPtr = LLVMBuildStructGEP2(builder, structT, structValue, fieldIndex, "fieldptr");
+        return fieldPtr;
+    } else {
+        LLVMValueRef field = LLVMBuildExtractValue(builder, structValue, fieldIndex, "fieldname");
+        return field;
+    }
+}
+
+LLVMValueRef compilePtr(Scope* scope, Expression* expression, projectId projectId) {
+    assert(expression->type == ek_ptr);
+    LLVMValueRef value = compileExpression(scope, expression->expressionOfPtr, projectId);
+    return value;
+}
+
 LLVMValueRef compileExpression(Scope* scope, Expression* expression, projectId projectId) {
     LLVMTypeRef llvmType = typeIdToLLVM[expression->tid];
     switch (expression->type) {
@@ -577,6 +616,12 @@ LLVMValueRef compileExpression(Scope* scope, Expression* expression, projectId p
         }
         case ek_variable: {
             return compileVariable(scope, expression, projectId);
+        }
+        case ek_struct_value: {
+            return compileStructValue(scope, expression, projectId);
+        }
+        case ek_ptr: {
+            return compilePtr(scope, expression, projectId);
         }
         default: {
             assert(false);
@@ -603,6 +648,9 @@ void compileReturnStatement(Scope* scope, Statement* statement, u64* childIndex,
 void compileAssignmentStatement(Scope* scope, Statement* statement, u64* childIndex, projectId projectId) {
     assert(statement->kind == sk_assignment);
     AssignmentStatementData* aData = statement->assignmentData;
+    if (aData->numValues == 0) {
+        return;
+    }
     for (u64 i = 0; i < aData->numAssignee; i++) {
         Expression* a = &aData->assignee[i];
         Expression* v = &aData->values[i];
@@ -629,9 +677,13 @@ void compileIfStatement(Scope* scope, Statement* statement, u64* childIndex, pro
     }
     LLVMBasicBlockRef mergeBB = LLVMAppendBasicBlock(functionValue, "then");
     ScopeOverride* scopeOverride = (ScopeOverride*)scope;
-    scopeOverride->jumpToBlock = mergeBB;
+    scopeOverride->breakToBlock = mergeBB;
 
-    LLVMBuildCondBr(builder, condition, thenBB, elseBB);
+    if (data->elseBody == NULL) {
+        LLVMBuildCondBr(builder, condition, thenBB, mergeBB);
+    } else {
+        LLVMBuildCondBr(builder, condition, thenBB, elseBB);
+    }
 
     LLVMPositionBuilderAtEnd(builder, thenBB);
     bool exitedAlready = compileScope(data->body, projectId);
@@ -645,6 +697,34 @@ void compileIfStatement(Scope* scope, Statement* statement, u64* childIndex, pro
         if (!exitedAlready) {
             LLVMBuildBr(builder, mergeBB);
         }
+    }
+
+    LLVMPositionBuilderAtEnd(builder, mergeBB);
+}
+
+void compileWhileStatement(Scope* scope, Statement* statement, u64* childIndex, projectId projectId) {
+    assert(statement->kind == sk_while);
+    WhileStatementData* data = statement->whileData;
+    functionId fid = scope->function;
+    LLVMValueRef functionValue = functionIdtoLLVMFunction[fid];
+    ScopeOverride* scopeOverride = (ScopeOverride*)scope;
+
+    LLVMBasicBlockRef loopBB = LLVMAppendBasicBlock(functionValue, "loop");
+    LLVMBasicBlockRef mergeBB = LLVMAppendBasicBlock(functionValue, "merge");
+    LLVMBasicBlockRef conditionBB = LLVMAppendBasicBlock(functionValue, "condition");
+    scopeOverride->continueToBlock = loopBB;
+    scopeOverride->breakToBlock = mergeBB;
+
+    LLVMBuildBr(builder, conditionBB);
+
+    LLVMPositionBuilderAtEnd(builder, conditionBB);
+    LLVMValueRef condition = compileExpression(scope, data->condition, projectId);
+    LLVMBuildCondBr(builder, condition, loopBB, mergeBB);
+
+    LLVMPositionBuilderAtEnd(builder, loopBB);
+    bool exitedAlready = compileScope(data->body, projectId);
+    if (!exitedAlready) {
+        LLVMBuildBr(builder, conditionBB);
     }
 
     LLVMPositionBuilderAtEnd(builder, mergeBB);
@@ -679,6 +759,10 @@ bool compileScope(Scope* scope, projectId projectId) {
             }
             case sk_if: {
                 compileIfStatement(scope, statement, &childIndex, projectId);
+                break;
+            }
+            case sk_while: {
+                compileWhileStatement(scope, statement, &childIndex, projectId);
                 break;
             }
             default: {

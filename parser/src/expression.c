@@ -1,8 +1,39 @@
 #include "parser.h"
 #include "parser/type.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+
+Expression derefExpression(Expression* expression, Scope* scope) {
+    Expression deref = { 0 };
+    deref.type = ek_deref;
+    deref.token = expression->token;
+    deref.tokenCount = expression->tokenCount;
+    Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+    *e = *expression;
+    deref.deref = e;
+    Type* type = getTypeFromId(expression->tid);
+    assert(type->kind == tk_ref || type->kind == tk_pointer);
+    if (type->kind == tk_ref) {
+        deref.tid = type->pointedToType;
+    } else {
+        deref.tid = getRefType(type->pointedToType);
+    }
+    return deref;
+}
+
+Expression implicitCastExpressionHelper(Expression* expression, Scope* scope, typeId type) {
+    Expression implicitCast;
+    implicitCast.type = ek_implicit_cast;
+    implicitCast.token = expression->token;
+    implicitCast.tokenCount = expression->tokenCount;
+    implicitCast.tid = type;
+    Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+    *e = *expression;
+    implicitCast.implicitCast = e;
+    return implicitCast;
+}
 
 Expression createFunctionCall(Token** tokens, functionId fid, Scope* scope) {
     Token* token = *tokens;
@@ -381,17 +412,7 @@ i64 getPrecedence(Token* token) {
 
 void expressionAcutalType(Expression* expression, Scope* scope) {
     while (getTypeFromId(expression->tid)->kind == tk_ref) {
-        Expression deref = { 0 };
-        deref.type = ek_deref;
-        deref.token = expression->token;
-        deref.tokenCount = expression->tokenCount;
-        Type* type = getTypeFromId(expression->tid);
-        deref.tid = type->pointedToType;
-        Type* derefType = getTypeFromId(deref.tid);
-
-        Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-        *e = *expression;
-        deref.deref = e;
+        Expression deref = derefExpression(expression, scope);
         *expression = deref;
     }
 }
@@ -458,7 +479,7 @@ void applyCastsForConstNumber(Expression* expr, typeId type, Scope* scope) {
 }
 
 
-Expression createBiopExpression(Expression* left, Expression* right, OurTokenType operator, Scope * scope) {
+Expression _createBiopExpression(Expression* left, Expression* right, OurTokenType operator, Scope * scope) {
     Expression expression = { 0 };
     if (left->type == ek_grouped_data) {
         logErrorTokens(left->token, left->tokenCount, "Can't use grouped data with this biops");
@@ -493,20 +514,12 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
                 expression.tid = left->tid;
             } else if (leftSize < rightSize) {
                 Expression* newLeft = arenaAlloc(scope->arena, sizeof(Expression));
-                newLeft->type = ek_implicit_cast;
-                newLeft->tid = right->tid;
-                newLeft->token = left->token;
-                newLeft->tokenCount = left->tokenCount;
-                newLeft->implicitCast = left;
+                *newLeft = implicitCastExpressionHelper(left, scope, right->tid);
                 expression.biopData->left = newLeft;
                 expression.tid = right->tid;
             } else {
                 Expression* newRight = arenaAlloc(scope->arena, sizeof(Expression));
-                newRight->type = ek_implicit_cast;
-                newRight->tid = left->tid;
-                newRight->token = right->token;
-                newRight->tokenCount = right->tokenCount;
-                newRight->implicitCast = right;
+                *newRight = implicitCastExpressionHelper(right, scope, left->tid);
                 expression.biopData->right = newRight;
                 expression.tid = left->tid;
             }
@@ -514,22 +527,14 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
         }
         if (leftKind == tk_float && rightKind == tk_int || leftKind == tk_float && rightKind == tk_uint) {
             Expression* newRight = arenaAlloc(scope->arena, sizeof(Expression));
-            newRight->type = ek_implicit_cast;
-            newRight->tid = left->tid;
-            newRight->token = right->token;
-            newRight->tokenCount = right->tokenCount;
-            newRight->implicitCast = right;
+            *newRight = implicitCastExpressionHelper(right, scope, left->tid);
             expression.biopData->right = newRight;
             expression.tid = left->tid;
             return expression;
         }
         if (leftKind == tk_int && rightKind == tk_float || leftKind == tk_uint && rightKind == tk_float) {
             Expression* newLeft = arenaAlloc(scope->arena, sizeof(Expression));
-            newLeft->type = ek_implicit_cast;
-            newLeft->tid = right->tid;
-            newLeft->token = left->token;
-            newLeft->tokenCount = left->tokenCount;
-            newLeft->implicitCast = left;
+            *newLeft = implicitCastExpressionHelper(left, scope, right->tid);
             expression.biopData->left = newLeft;
             expression.tid = right->tid;
             return expression;
@@ -647,6 +652,38 @@ Expression createBiopExpression(Expression* left, Expression* right, OurTokenTyp
     return expression;
 }
 
+Expression createBiopExpression(Expression* left, Expression* right, OurTokenType operator, Scope * scope) {
+    Expression e = _createBiopExpression(left, right, operator, scope);
+    if (e.type == ek_invalid) {
+        return e;
+    }
+    switch (operator) {
+        case tt_leq:
+        case tt_geq:
+        case tt_lt:
+        case tt_gt:
+        case tt_eq:
+        case tt_neq: {
+            Type* currentType = getTypeFromId(e.tid);
+            if (currentType->kind == tk_const_number) {
+                u64 numberSize = 256;
+                bool valid = constExpressionNumberWorksWithType(&e, getIntType(numberSize), scope->arena);
+                if (valid) {
+                    applyCastsForConstNumber(&e, getIntType(numberSize), scope);
+                } else {
+                    logErrorTokens(e.token, e.tokenCount, "constant doesn't fit in 256 bit int");
+                }
+            }
+            e.tid = boolType;
+            break;
+        }
+        default: {
+            break;
+        }
+    }
+    return e;
+}
+
 
 Expression _createExpressionFromTokens(Token** tokens, OurTokenType* delimiters, u64 numDelimiters, functionId functionId, Scope* scope, i64 precedence) {
     Token* token = *tokens;
@@ -724,9 +761,11 @@ Expression _createExpressionFromTokens(Token** tokens, OurTokenType* delimiters,
                         if (left.tid == typeType) {
                             assert(false && "Not implemented");
                         }
-                        typeId leftType = getTypeFromId(left.tid)->pointedToType;
+                        typeId leftType = left.tid;
+                        Type* leftTypePtr = getTypeFromId(leftType);
                         char* leftTypeName = getTypeFromId(leftType)->name;
                         bool isRef = getTypeFromId(left.tid)->kind == tk_ref;
+                        u64 nameLength = strlen(name);
                         if (isRef) {
                             if (strcmp(name, "ptr") == 0) {
                                 Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
@@ -744,24 +783,78 @@ Expression _createExpressionFromTokens(Token** tokens, OurTokenType* delimiters,
                                 left = new;
                                 continue;
                             }
+
+                            typeId underlyingType = leftTypePtr->pointedToType;
+                            Type* underlyingTypePtr = getTypeFromId(underlyingType);
+                            if (underlyingTypePtr->kind == tk_struct) {
+                                bool shouldContinue = false;
+                                for (u64 i = 0; i < underlyingTypePtr->structData->numFields; i++) {
+                                    if (shouldContinue) {
+                                        break;
+                                    }
+                                    // first check just getting by number
+                                    char* fieldName = underlyingTypePtr->structData->fieldNames[i];
+                                    char iAsString[1024];
+                                    sprintf(iAsString, "%llu", i);
+                                    if (strcmp(name, fieldName) == 0 || strcmp(name, iAsString) == 0) {
+                                        Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+                                        *e = left;
+                                        Expression getStructVal = getStructValue(e, i, scope, left.token, left.tokenCount);
+                                        left = getStructVal;
+                                        shouldContinue = true;
+                                        continue;
+                                    }
+                                }
+                                if (shouldContinue) {
+                                    continue;
+                                }
+                            }
                         }
                         expressionAcutalType(&left, scope);
                         bool isPtr = getTypeFromId(left.tid)->kind == tk_pointer;
                         char* typeName = getTypeFromId(left.tid)->name;
-                        if (isPtr && strcmp(name, "val") == 0) {
-                            Expression deref = { 0 };
-                            deref.type = ek_deref;
-                            deref.token = left.token;
-                            Token* start = left.token;
-                            Token* end = token;
-                            deref.tokenCount = end - start;
-                            Type* type = getTypeFromId(left.tid);
-                            deref.tid = type->pointedToType;
-                            Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-                            *e = left;
-                            deref.deref = e;
-                            left = deref;
-                            continue;
+                        if (isPtr) {
+                            if (strcmp(name, "val") == 0) {
+                                Expression deref = derefExpression(&left, scope);
+                                Token* start = left.token;
+                                Token* end = token;
+                                deref.tokenCount = end - start;
+                                left = deref;
+                                continue;
+                            }
+                            typeId underlyingType = leftTypePtr->pointedToType;
+                            Type* underlyingTypePtr = getTypeFromId(underlyingType);
+                            if (underlyingTypePtr->kind == tk_struct) {
+                                for (u64 i = 0; i < underlyingTypePtr->structData->numFields; i++) {
+                                    // first check just getting by number
+                                    char* fieldName = underlyingTypePtr->structData->fieldNames[i];
+                                    char iAsString[1024];
+                                    sprintf(iAsString, "%llu", i);
+                                    if (strcmp(name, fieldName) == 0 || strcmp(name, iAsString) == 0) {
+                                        Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+                                        *e = left;
+                                        Expression getStructVal = getStructValue(e, i, scope, left.token, left.tokenCount);
+                                        left = getStructVal;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                        bool isStruct = getTypeFromId(left.tid)->kind == tk_struct;
+                        if (isStruct) {
+                            for (u64 i = 0; i < getTypeFromId(left.tid)->structData->numFields; i++) {
+                                // first check just getting by number
+                                char* fieldName = getTypeFromId(left.tid)->structData->fieldNames[i];
+                                char iAsString[1024];
+                                sprintf(iAsString, "%llu", i);
+                                if (strcmp(name, fieldName) == 0 || strcmp(name, iAsString) == 0) {
+                                    Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
+                                    *e = left;
+                                    Expression getStructVal = getStructValue(e, i, scope, left.token, left.tokenCount);
+                                    left = getStructVal;
+                                    continue;
+                                }
+                            }
                         }
                         logErrorTokens(token, 1, "Can't use dot operator with this name: %s", name);
                         left.type = ek_invalid;
@@ -874,13 +967,7 @@ Expression _implicitCast(Expression* expression, typeId type, Scope* scope, func
             isCharPtr = intSize == 8 && underlyingType->kind == tk_uint;
         }
         if (isCharPtr) {
-            newExpression.type = ek_implicit_cast;
-            newExpression.tid = type;
-            newExpression.token = expression->token;
-            newExpression.tokenCount = expression->tokenCount;
-            Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-            *e = *expression;
-            newExpression.implicitCast = e;
+            newExpression = implicitCastExpressionHelper(expression, scope, type);
             return newExpression;
         }
         logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from compiler string to %s", getTypeFromId(type)->name);
@@ -907,25 +994,11 @@ Expression _implicitCast(Expression* expression, typeId type, Scope* scope, func
                 return *expression;
             }
             if (esize < tsize) {
-                newExpression.type = ek_implicit_cast;
-                newExpression.tid = type;
-                newExpression.token = expression->token;
-                newExpression.tokenCount = expression->tokenCount;
-                Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-                *e = *expression;
-                newExpression.implicitCast = e;
-                return newExpression;
+                return implicitCastExpressionHelper(expression, scope, type);
             }
         }
         if (tkind == tk_float && (ekind == tk_int || ekind == tk_uint)) {
-            newExpression.type = ek_implicit_cast;
-            newExpression.tid = type;
-            newExpression.token = expression->token;
-            newExpression.tokenCount = expression->tokenCount;
-            Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-            *e = *expression;
-            newExpression.implicitCast = e;
-            return newExpression;
+            return implicitCastExpressionHelper(expression, scope, type);
         }
     }
     if (type == boolType) {
@@ -933,37 +1006,15 @@ Expression _implicitCast(Expression* expression, typeId type, Scope* scope, func
         bool isPtr = getTypeFromId(expression->tid)->kind == tk_pointer;
         bool isConstNumber = getTypeFromId(expression->tid)->kind == tk_const_number;
         if (isNumber || isPtr) {
-            newExpression.type = ek_implicit_cast;
-            newExpression.tid = boolType;
-            newExpression.token = expression->token;
-            newExpression.tokenCount = expression->tokenCount;
-            Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-            *e = *expression;
-            newExpression.implicitCast = e;
-            return newExpression;
+            return implicitCastExpressionHelper(expression, scope, boolType);
         } else if (isConstNumber) {
-            newExpression.type = ek_implicit_cast;
-            newExpression.tid = boolType;
-            newExpression.token = expression->token;
-            newExpression.tokenCount = expression->tokenCount;
-
             // not the best to cast here like this but don't want to deal with case as it is never used by anyone
             // and it is optimized out anyway
             u64 numberSize = 256;
             bool valid = constExpressionNumberWorksWithType(expression, getIntType(numberSize), scope->arena);
             if (valid) {
-                Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-                *e = *expression;
-
-                Expression* toNumber = arenaAlloc(scope->arena, sizeof(Expression));
-                toNumber->type = ek_implicit_cast;
-                toNumber->tid = getIntType(numberSize);
-                toNumber->token = expression->token;
-                toNumber->tokenCount = expression->tokenCount;
-                toNumber->implicitCast = e;
-
-                newExpression.implicitCast = toNumber;
-                return newExpression;
+                applyCastsForConstNumber(expression, getIntType(numberSize), scope);
+                return implicitCastExpressionHelper(expression, scope, boolType);
             }
             if (logError) logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from %s to %s", getTypeFromId(expression->tid)->name, getTypeFromId(getIntType(numberSize))->name);
             return newExpression;
@@ -972,14 +1023,8 @@ Expression _implicitCast(Expression* expression, typeId type, Scope* scope, func
     if (ekind == tk_const_number && tisNumber) {
         bool valid = constExpressionNumberWorksWithType(expression, type, scope->arena);
         if (valid) {
-            newExpression.type = ek_implicit_cast;
-            newExpression.tid = type;
-            newExpression.token = expression->token;
-            newExpression.tokenCount = expression->tokenCount;
-            Expression* e = arenaAlloc(scope->arena, sizeof(Expression));
-            *e = *expression;
-            newExpression.implicitCast = e;
-            return newExpression;
+            applyCastsForConstNumber(expression, type, scope);
+            return *expression;
         }
         if (logError) logErrorTokens(expression->token, expression->tokenCount, "Can't implicitly cast from %s to %s", getTypeFromId(expression->tid)->name, getTypeFromId(type)->name);
         return newExpression;

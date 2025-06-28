@@ -18,6 +18,14 @@ Statement createStatmentFromTokens(Token** tokens, functionId functionId, Scope*
                 token++;
             }
             token = start;
+            typeId tid = getTypeIdFromTokens(&token);
+            if (tid != BAD_ID) {
+                if (token->type == tt_id) {
+                    hasAssignment = true;
+                }
+            }
+            token = start;
+
             if (hasAssignment) {
                 statement = createAssignmentStatement(&token, functionId, scope);
                 if (statement.kind == sk_invalid) {
@@ -226,7 +234,7 @@ Statement createReturnStatement(Token** tokens, functionId functionId, Scope* sc
 Statement createAssignmentStatement(Token** tokens, functionId functionId, Scope* scope) {
     Statement statement = { 0 };
     Token* token = *tokens;
-    OurTokenType delimiters[] = { tt_comma, tt_assign };
+    OurTokenType delimiters[] = { tt_comma, tt_assign, tt_endl };
     AssignmentStatementData* data = arenaAlloc(scope->arena, sizeof(AssignmentStatementData));
     data->numAssignee = 0;
     u64 expressionCapacity = 1;
@@ -253,9 +261,9 @@ Statement createAssignmentStatement(Token** tokens, functionId functionId, Scope
             token++;
         } else if (type != BAD_ID) {
             token = start;
-            expression = createExpressionFromTokens(&token, delimiters, 2, functionId, scope);
+            expression = createExpressionFromTokens(&token, delimiters, sizeof(delimiters) / sizeof(delimiters[0]), functionId, scope);
         } else {
-            expression = createExpressionFromTokens(&token, delimiters, 2, functionId, scope);
+            expression = createExpressionFromTokens(&token, delimiters, sizeof(delimiters) / sizeof(delimiters[0]), functionId, scope);
         }
         if (expression.type == ek_invalid) {
             return statement;
@@ -274,6 +282,21 @@ Statement createAssignmentStatement(Token** tokens, functionId functionId, Scope
             token++;
             break;
         }
+        if (token->type == tt_endl) {
+            break;
+        }
+    }
+    if (token->type == tt_endl) {
+        statement.kind = sk_assignment;
+        data->values = NULL;
+        data->numValues = 0;
+        statement.assignmentData = data;
+        statement.tokens = data->assignee[0].token;
+        Token* s = data->assignee[0].token;
+        Token* e = data->assignee[data->numAssignee - 1].token + data->assignee[data->numAssignee - 1].tokenCount;
+        statement.tokenCount = e - s;
+        *tokens = token;
+        return statement;
     }
 
     OurTokenType delimiters2[] = { tt_endl, tt_rbrace };

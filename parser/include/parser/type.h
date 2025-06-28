@@ -125,6 +125,10 @@ typeId getArrayType(typeId id, u64 size);
 
 typeId getUnnamedStructType(typeId* id, u64 numFields);
 
+typeId prototypeType(Token** tokens, projectId projectId);
+
+typeId implementType(typeId typeId, Token* token);
+
 typeId getUnnamedEnumType(typeId* id, u64 numFields);
 
 typeId getRefType(typeId id);

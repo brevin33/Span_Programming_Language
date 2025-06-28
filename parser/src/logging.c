@@ -72,8 +72,11 @@ void bluePrintf(const char* format, ...) {
     va_end(args);
 }
 
+bool hadError = false;
+
 void logError(char* error, ...) {
     // ue v redvPrintf to print the error message in red
+    hadError = true;
     va_list args;
     va_start(args, error);
     redPrintf("Error: ");
@@ -177,6 +180,7 @@ int compareU64(const void* a, const void* b) {
 
 
 void logErrorTokens(Token* token, u64 tokenCount, char* error, ...) {
+    hadError = true;
     va_list args;
     va_start(args, error);
     redPrintf("Error: ");

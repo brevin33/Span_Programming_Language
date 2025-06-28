@@ -19,6 +19,12 @@ typedef struct _SourceCode {
     Token** functionStarts;
     u64 functionStartCount;
 
+    Token** typeDeclarations;
+    u64 typeDeclarationCount;
+
+    typeId* types;
+    u64 typeCount;
+
     functionId* functions;
     u64 functionCount;
 
@@ -32,6 +38,10 @@ typedef u64 sourceCodeId;
 SourceCode* getSourceCodeFromId(sourceCodeId sourceCodeId);
 
 void protoTypeFunctions(sourceCodeId sourceCodeId);
+
+void protoTypeTypes(sourceCodeId sourceCodeId, projectId projectId);
+
+void implementTypes(sourceCodeId sourceCodeId, projectId projectId);
 
 void freeSourceCode(sourceCodeId sourceCodeId);
 

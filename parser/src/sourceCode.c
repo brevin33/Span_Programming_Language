@@ -176,6 +176,28 @@ bool looksLikeFunction(Token** tokens) {
     return true;
 }
 
+bool looksLikeTypeDeclaration(Token** tokens) {
+    Token* token = *tokens;
+    if (token->type != tt_struct && token->type != tt_enum) {
+        return false;
+    }
+    while (token->type != tt_endl) {
+        if (token->type == tt_lbrace) {
+            break;
+        }
+        token++;
+    }
+    if (token->type != tt_lbrace) {
+        return false;
+    }
+
+    if (!looksLikeScope(&token)) {
+        return false;
+    }
+    *tokens = token;
+    return true;
+}
+
 SourceCode* getSourceCodeFromId(sourceCodeId sourceCodeId) {
     return (SourceCode*)poolGetItem(&sourceCodePool, sourceCodeId);
 }
@@ -220,6 +242,10 @@ void loadSourceCode(sourceCodeId sourceCodeId) {
     sourceCode->functionStarts = arenaAlloc(sourceCode->arena, sizeof(Token*) * funcStartCapacity);
     sourceCode->functionStartCount = 0;
 
+    u64 typeDeclarationCapacity = 16;
+    sourceCode->typeDeclarations = arenaAlloc(sourceCode->arena, sizeof(Token*) * typeDeclarationCapacity);
+    sourceCode->typeDeclarationCount = 0;
+
 
     Token* token = sourceCode->tokens;
     while (token->type != tt_eof) {
@@ -231,6 +257,13 @@ void loadSourceCode(sourceCodeId sourceCodeId) {
             }
             sourceCode->functionStarts[sourceCode->functionStartCount] = startToken;
             sourceCode->functionStartCount++;
+        } else if (looksLikeTypeDeclaration(&token)) {
+            if (sourceCode->typeDeclarationCount >= typeDeclarationCapacity) {
+                sourceCode->typeDeclarations = arenaRealloc(sourceCode->arena, sourceCode->typeDeclarations, sizeof(Token*) * typeDeclarationCapacity, sizeof(Token*) * typeDeclarationCapacity * 2);
+                typeDeclarationCapacity *= 2;
+            }
+            sourceCode->typeDeclarations[sourceCode->typeDeclarationCount] = startToken;
+            sourceCode->typeDeclarationCount++;
         } else if (token->type == tt_endl) {
             token++;
         } else {
@@ -238,6 +271,7 @@ void loadSourceCode(sourceCodeId sourceCodeId) {
         }
     }
 }
+
 void protoTypeFunctions(sourceCodeId sourceCodeId) {
     SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
 
@@ -249,6 +283,38 @@ void protoTypeFunctions(sourceCodeId sourceCodeId) {
         functionId functionId = prototypeFunction(&token);
         if (functionId != BAD_ID) {
             sourceCode->functions[sourceCode->functionCount++] = functionId;
+        }
+    }
+}
+
+void protoTypeTypes(sourceCodeId sourceCodeId, projectId projectId) {
+    SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+
+    sourceCode->types = arenaAlloc(sourceCode->arena, sizeof(typeId) * sourceCode->typeDeclarationCount);
+    sourceCode->typeCount = 0;
+
+    for (u64 i = 0; i < sourceCode->typeDeclarationCount; i++) {
+        Token* token = sourceCode->typeDeclarations[i];
+        typeId typeId = prototypeType(&token, projectId);
+        if (typeId != BAD_ID) {
+            sourceCode->types[sourceCode->typeCount++] = typeId;
+        } else {
+            sourceCode->types[sourceCode->typeCount++] = BAD_ID;
+        }
+    }
+}
+
+void implementTypes(sourceCodeId sourceCodeId, projectId projectId) {
+    SourceCode* sourceCode = getSourceCodeFromId(sourceCodeId);
+    for (u64 i = 0; i < sourceCode->typeCount; i++) {
+        typeId typeId = sourceCode->types[i];
+        if (typeId == BAD_ID) {
+            continue;
+        }
+        Type* type = getTypeFromId(typeId);
+        Token* token = sourceCode->typeDeclarations[i];
+        if (type->kind == tk_struct) {
+            implementType(typeId, token);
         }
     }
 }

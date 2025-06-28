@@ -14,6 +14,8 @@ typeId constStringType;
 typeId invalidType;
 
 void setupDefaultTypes() {
+
+
     invalidType = createType(tk_invalid, "invalid", 0);
     Type* invalidTypePtr = getTypeFromId(invalidType);
     invalidTypePtr->numberSize = 0;
@@ -53,7 +55,7 @@ void setupDefaultTypes() {
     Type* i1TypePtr = getTypeFromId(i1Type);
     i1TypePtr->numberSize = 1;
 
-    boolType = createType(tk_int, "i1", 0);
+    boolType = createType(tk_int, "bool", 0);
     Type* boolTypePtr = getTypeFromId(boolType);
     boolTypePtr->numberSize = 1;
 
@@ -65,9 +67,25 @@ void setupDefaultTypes() {
     aliasType(u8Type, "char");
 
     constNumberType = createType(tk_const_number, "__const_number", 0);
+
+    typeId voidType = createType(tk_void, "void", 0);
+    Type* voidTypePtr = getTypeFromId(voidType);
+    voidTypePtr->numberSize = 0;
 }
 
 typeId createType(TypeKind kind, char* name, projectId pid) {
+    void** v = (void**)mapGet(&typeMap, name);
+    if (v != NULL) {
+        TypeList* list = *v;
+        for (u64 i = 0; i < list->count; i++) {
+            typeId typeId = list->types[i];
+            Type* type = getTypeFromId(typeId);
+            if (type->pid == pid) {
+                return BAD_ID;
+            }
+        }
+    }
+
     poolId id = poolNewItem(&typePool);
     Type* type = poolGetItem(&typePool, id);
     memset(type, 0, sizeof(Type));
@@ -124,6 +142,174 @@ TypeList* getTypeListFromName(char* name) {
         return NULL;
     }
     return *val;
+}
+
+typeId protoTypeStruct(Token* tokens, projectId projectId) {
+    Token* token = tokens;
+    assert(token->type == tt_struct);
+    token++;
+    if (token->type != tt_id) {
+        logErrorTokens(token, 1, "Expected struct name");
+        return BAD_ID;
+    }
+    char* name = token->str;
+    return createType(tk_struct, name, projectId);
+}
+
+typeId protoTypeEnum(Token* tokens, projectId projectId) {
+    Token* token = tokens;
+    assert(token->type == tt_enum);
+    token++;
+    if (token->type != tt_id) {
+        logErrorTokens(token, 1, "Expected enum name");
+        return BAD_ID;
+    }
+    char* name = token->str;
+    return createType(tk_enum, name, projectId);
+}
+
+typeId prototypeType(Token** tokens, projectId projectId) {
+    Token* token = *tokens;
+    assert(token->type == tt_struct || token->type == tt_enum);
+    if (token->type == tt_struct) {
+        return protoTypeStruct(token, projectId);
+    } else if (token->type == tt_enum) {
+        return protoTypeEnum(token, projectId);
+    }
+    assert(false && "Invalid type");
+    return BAD_ID;
+}
+
+void implementStruct(typeId tid, Token* token) {
+    Type* type = getTypeFromId(tid);
+    assert(type->kind == tk_struct);
+    assert(token->type == tt_struct);
+    token++;
+    assert(token->type == tt_id);
+    token++;
+    // TODO:
+    TemplateDefinition templateDefinition = getTemplateDefinitionFromTokens(&token, type->arena, false);
+
+    if (token->type != tt_lbrace) {
+        logErrorTokens(token, 1, "Expected struct body");
+        return;
+    }
+    token++;
+    StructData* structData = arenaAlloc(type->arena, sizeof(StructData));
+    u64 filesCapacity = 16;
+    structData->numFields = 0;
+    structData->fields = arenaAlloc(type->arena, sizeof(typeId) * filesCapacity);
+    structData->fieldNames = arenaAlloc(type->arena, sizeof(char*) * filesCapacity);
+    type->structData = structData;
+
+
+
+    while (true) {
+        if (token->type == tt_endl) {
+            token++;
+            continue;
+        }
+
+        typeId fieldType = getTypeIdFromTokens(&token);
+        if (fieldType == BAD_ID) {
+            logErrorTokens(token, 1, "Expected field type");
+            return;
+        }
+        if (token->type != tt_id) {
+            logErrorTokens(token, 1, "Expected field name");
+            return;
+        }
+        char* fieldName = token->str;
+        token++;
+        if (structData->numFields >= filesCapacity) {
+            filesCapacity *= 2;
+            structData->fields = arenaRealloc(type->arena, structData->fields, sizeof(typeId) * filesCapacity, sizeof(typeId) * filesCapacity * 2);
+            structData->fieldNames = arenaRealloc(type->arena, structData->fieldNames, sizeof(char*) * filesCapacity, sizeof(char*) * filesCapacity * 2);
+        }
+        structData->fields[structData->numFields] = fieldType;
+        u64 nameSize = strlen(fieldName) + 1;
+        structData->fieldNames[structData->numFields] = arenaAlloc(type->arena, nameSize);
+        memcpy(structData->fieldNames[structData->numFields], fieldName, nameSize);
+        structData->numFields++;
+        if (token->type == tt_endl) {
+            token++;
+            continue;
+        }
+        if (token->type == tt_rbrace) {
+            break;
+        }
+    }
+}
+
+void implementEnum(typeId tid, Token* token) {
+    Type* type = getTypeFromId(tid);
+    assert(type->kind == tk_enum);
+    assert(token->type == tt_enum);
+    token++;
+    assert(token->type == tt_id);
+    token++;
+    // TODO:
+    TemplateDefinition templateDefinition = getTemplateDefinitionFromTokens(&token, type->arena, false);
+
+    if (token->type != tt_lbrace) {
+        logErrorTokens(token, 1, "Expected enum body");
+        return;
+    }
+    token++;
+    EnumData* enumData = arenaAlloc(type->arena, sizeof(EnumData));
+    u64 filesCapacity = 16;
+    enumData->numFields = 0;
+    enumData->fields = arenaAlloc(type->arena, sizeof(typeId) * filesCapacity);
+    enumData->fieldNames = arenaAlloc(type->arena, sizeof(char*) * filesCapacity);
+    type->enumData = enumData;
+    while (true) {
+        if (token->type == tt_endl) {
+            token++;
+            continue;
+        }
+        typeId fieldType = getTypeIdFromTokens(&token);
+        if (token->type != tt_id) {
+            if (fieldType == BAD_ID) {
+                logErrorTokens(token, 1, "Expected field type or name");
+                return;
+            }
+            logErrorTokens(token, 1, "Expected field name");
+            return;
+        }
+        char* fieldName = token->str;
+        token++;
+        if (enumData->numFields >= filesCapacity) {
+            filesCapacity *= 2;
+            enumData->fields = arenaRealloc(type->arena, enumData->fields, sizeof(typeId) * filesCapacity, sizeof(typeId) * filesCapacity * 2);
+            enumData->fieldNames = arenaRealloc(type->arena, enumData->fieldNames, sizeof(char*) * filesCapacity, sizeof(char*) * filesCapacity * 2);
+        }
+        enumData->fields[enumData->numFields] = fieldType;
+        u64 nameSize = strlen(fieldName) + 1;
+        enumData->fieldNames[enumData->numFields] = arenaAlloc(type->arena, nameSize);
+        memcpy(enumData->fieldNames[enumData->numFields], fieldName, nameSize);
+        enumData->numFields++;
+        if (token->type == tt_endl) {
+            token++;
+            continue;
+        }
+        if (token->type == tt_rbrace) {
+            break;
+        }
+    }
+}
+
+typeId implementType(typeId typeId, Token* token) {
+    assert(typeId != BAD_ID);
+    Type* type = getTypeFromId(typeId);
+    if (type->kind == tk_struct) {
+        implementStruct(typeId, token);
+        return typeId;
+    } else if (type->kind == tk_enum) {
+        implementEnum(typeId, token);
+        return typeId;
+    }
+    assert(false && "Invalid type");
+    return BAD_ID;
 }
 
 bool isNumberType(typeId typeId) {

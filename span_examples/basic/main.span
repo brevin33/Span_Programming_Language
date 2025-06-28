@@ -1,9 +1,13 @@
 
+struct Test{
+	i32 a
+	i32 b
+}
+
 i32 main(){
-	if(2){
-		return 55;
-	}
-	else{
-		return 99;
-	}
+	Test t
+	t.a = 3
+	t.b = 4
+	t.a = t.a + t.b
+	return t.a;
 }
