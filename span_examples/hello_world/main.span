@@ -1,5 +1,0 @@
-extern_c int puts(char* txt)
-
-int main(){
-	return puts("hello world")
-}
