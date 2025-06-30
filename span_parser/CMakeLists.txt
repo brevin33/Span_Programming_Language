@@ -10,6 +10,7 @@ add_library(span_parser
 	src/project.c
 	src/logging.c
 	src/tokens.c
+	src/type.c
 )
 
 target_include_directories(span_parser PUBLIC include)

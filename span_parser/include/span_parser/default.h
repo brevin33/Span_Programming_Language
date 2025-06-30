@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <assert.h>
+#include <stdarg.h>
 #include <stdbool.h>
 
 typedef int8_t i8;

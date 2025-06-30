@@ -5,6 +5,8 @@
 #include "span_parser/files.h"
 #include "span_parser/logging.h"
 #include "span_parser/project.h"
+#include "span_parser/tokens.h"
+#include "span_parser/type.h"
 
 SpanProject createSpanProject(Arena arena, char* path);
 

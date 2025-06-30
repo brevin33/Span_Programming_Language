@@ -1,5 +1,4 @@
-"""
-hello 
-{world}
-again
-"""
+
+int main() {
+	return 0
+}

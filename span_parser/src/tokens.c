@@ -82,6 +82,11 @@ Token* createTokens(Arena arena, char* fileContents, u64 fileIndex) {
         }
         massert(index != UINT32_MAX, "Token index overflow");
         Token token = createToken(fileContents, &index, fileIndex, stringStack, &stringStackIndex);
+        if (token.type == tt_lbrace || token.type == tt_rbrace) {
+            if (tokens[tokenCount - 1].type == tt_endl) {
+                tokenCount--;
+            }
+        }
         tokens[tokenCount++] = token;
     }
     return tokens;
@@ -309,8 +314,6 @@ char* ourTokenTypeToString(OurTokenType type) {
             return "comma";
         case tt_colon:
             return "colon";
-        case tt_semicolon:
-            return "semicolon";
         case tt_add:
             return "add";
         case tt_sub:
@@ -446,6 +449,9 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
             case ',': {
                 token.type = tt_comma;
                 index++;
+                if (fileContent[index] == '\n') {
+                    index++;
+                }
                 break;
             }
             case ':': {
@@ -463,7 +469,7 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
                 break;
             }
             case ';': {
-                token.type = tt_semicolon;
+                token.type = tt_endl;
                 index++;
                 break;
             }

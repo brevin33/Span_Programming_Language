@@ -21,7 +21,6 @@ typedef enum _TokenType : u8 {
     tt_lbrace,
     tt_comma,
     tt_colon,
-    tt_semicolon,
     tt_add,
     tt_sub,
     tt_mul,
