@@ -11,6 +11,7 @@ add_library(span_parser
 	src/logging.c
 	src/tokens.c
 	src/type.c
+	src/utils.c
 )
 
 target_include_directories(span_parser PUBLIC include)

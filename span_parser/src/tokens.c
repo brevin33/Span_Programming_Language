@@ -237,7 +237,7 @@ static void handelString(char* fileContent, u32* indexRef, Token* token, char* s
             SpanFile* file = &project->files[token->file];
             char* fileContent = file->fileContents;
             char* internalPointer = fileContent + index;
-            u64 line = spanFileFindLineFromInternalPointer(file, internalPointer);
+            u64 line = SpanFileFindLineFromInternalPointer(file, internalPointer);
             char* fileName = file->fileName;
             logError("At line %llu in file %s. Can't directly have \" in a multi-line string. use \"\" instead", line, fileName);
         }
@@ -276,7 +276,7 @@ static void handelString(char* fileContent, u32* indexRef, Token* token, char* s
         SpanFile* file = &project->files[token->file];
         char* fileContent = file->fileContents;
         char* internalPointer = fileContent + token->tokenStart;
-        u64 line = spanFileFindLineFromInternalPointer(file, internalPointer);
+        u64 line = SpanFileFindLineFromInternalPointer(file, internalPointer);
         char* fileName = file->fileName;
         logError("unterminated string at line %llu in file %s", line, fileName);
     } else if (stringContinue) {
@@ -788,7 +788,7 @@ char* tokenGetString(Token token, char* buffer) {
             return buffer;
         }
         default: {
-            massert(false, "trying to get string for type without string");
+            massert(false, "trying to get string for token type without string");
             return "";
         }
     }
@@ -799,7 +799,7 @@ void tokenGetLineColumn(Token token, u64* outLine, u64* outColumnStart, u64* out
     SpanFile* file = &project->files[token.file];
     char* fileContent = file->fileContents;
     char* internalPointer = fileContent + token.tokenStart;
-    u64 line = spanFileFindLineFromInternalPointer(file, internalPointer);
+    u64 line = SpanFileFindLineFromInternalPointer(file, internalPointer);
     u64 columnStart = (token.tokenStart + fileContent) - file->fileLineStarts[line];
     u64 columnEnd = columnStart + token.tokenLength;
     *outLine = line;
