@@ -8,6 +8,7 @@ typedef struct _SpanFile SpanFile;
 typedef struct _TemplateDefinition TemplateDefinition;
 typedef struct _TemplateInstance TemplateInstance;
 typedef struct _SpanProject SpanProject;
+typedef struct _Type Type;
 
 typedef enum _TypeKind : u8 {
     tk_invalid = 0,
@@ -15,47 +16,53 @@ typedef enum _TypeKind : u8 {
     tk_uint,
     tk_float,
     tk_bool,
+    tk_ptr,
+    tk_ref,
+    tk_list,
+    tk_array,
+    tk_map,
+    tk_struct,
+    tk_enum,
+    tk_union,
     tk_interface,
+    tk_alias,
+    tk_distinct,
 } TypeKind;
 
-typedef enum _TypeOrigin : u8 {
-    to_invalid = 0,
-    to_original,
-    to_distinct,
-    to_alias,
-} TypeOrigin;
-
-typedef struct _NumberType {
+typedef struct _IntType {
     u64 bits;
-} NumberType;
+} IntType;
 
-typedef struct _Type Type;
+typedef struct _UintType {
+    u64 bits;
+} UintType;
+
+typedef struct _FloatType {
+    u64 bits;
+} FloatType;
+
+typedef struct _BoolType {
+    u64 bits;
+} BoolType;
+
+typedef struct _AliasType {
+    Type* type;
+} AliasType;
+
 typedef struct _Type {
-    Arena arena;
     TypeKind kind;
-    TypeOrigin origin;
-    char* name;
-    Type** alises;
-    u64 alisesCount;
-    Type* baseType;  // most of the time this is NULL
-    TemplateDefinition* templateDefinition;
-    union {  // anything bigger than a 64 bits should be a pointer to a struct
-        NumberType number;
+    char* _name;  // this will be null for stuff like ptrs. use get name function if you need the name
+    union {
+        IntType intType;
+        UintType uintType;
+        FloatType floatType;
+        BoolType boolType;
+        AliasType aliasType;  // no need for pointer as struct is 64 bits
     };
 } Type;
 
-Type* TypeFromTokens(SpanFile* file, Token** tokens, bool logError);
-
-Type* TypeCreateFromTokens(SpanFile* file, Token** tokens);
-
-Type* TypeFromNameNamespaceTemplate(SpanProject* project, char* name, char* namespace, TemplateDefinition* templateDefinition);
-
 Type* getNumberType(u64 bits, TypeKind kind);
 
-Type* TypeCreateAlias(SpanFile* file, Type* baseType, const char* name);
+Type* TypeCreateGloablAlias(Type* baseType, char* name);
 
-Type* TypeCreateAliasGlobal(Type* baseType, const char* name);
-
-Type* TypeCreateDistinct(SpanFile* file, Type* baseType, const char* name);
-
-void freeType(Type* type);
+char* TypeGetName(Type* type, char* buffer);

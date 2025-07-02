@@ -1,203 +1,85 @@
 #include "span_parser/type.h"
 #include "span_parser.h"
 
-Type* TypeFromTokens(SpanFile* file, Token** tokens, bool logError) {
-    Token* token = *tokens;
-    char buffer[4096];
-    char* namespace = getNameSpaceFromTokens(tokens, buffer);
-    if (token->type != tt_id) {
-        if (logError) logErrorTokens(token, 1, "expected type name");
-        return NULL;
-    }
-    char buffer2[4096];
-    char* name = tokenGetString(*token, buffer2);
-    token++;
-    TemplateDefinition* templateDefinition = createTemplateDefinitionFromTokens(file->arena, &token);
-
-    Type* type = TypeFromNameNamespaceTemplate(context.activeProject, name, namespace, templateDefinition);
-
-    while (true) {
-        //TODO: pointers, arrays, functions, etc
-    }
-
-    *tokens = token;
-}
-
-Type* TypeCreateFromTokens(SpanFile* file, Token** tokens) {
-    massert(false, "not implemented");
-    Token* token = *tokens;
-    switch (token->type) {
-        case tt_struct: {
-        }
-        default: {
-            return NULL;
-        }
-    }
-
-
-    *tokens = token;
-    return NULL;
-}
-
-static Type* TypeInProject(SpanProject* project, char* name, char* namespace) {
-    if (namespace != NULL) {
-        if (strcmp(namespace, project->name) != 0) {
-            return NULL;
-        }
-    }
-    for (u64 i = 0; i < project->fileCount; i++) {
-        for (u64 j = 0; j < project->files[i].typesCount; j++) {
-            Type* type = &project->files[i].types[j];
-            if (strcmp(type->name, name) == 0) {
-                return type;
-            }
-        }
-    }
-    return NULL;
-}
-
-Type* TypeFromNameNamespaceTemplate(SpanProject* project, char* name, char* namespace, TemplateDefinition* templateDefinition) {
-    Type* type = TypeInProject(project, name, namespace);
-    if (type == NULL) {
-        for (u64 i = 0; i < project->childCount; i++) {
-            SpanProject* child = &project->children[i];
-            type = TypeFromNameNamespaceTemplate(child, name, namespace, templateDefinition);
-            if (type != NULL) break;
-        }
-    }
-    if (type == NULL) return NULL;
-    //TODO: handel template if it exists
-    return type;
-}
-
 Type* getNumberType(u64 bits, TypeKind kind) {
-    massert(kind == tk_int || kind == tk_uint || kind == tk_float || kind == tk_bool, "can't create number type with this kind");
-    massert(kind != tk_float || (bits == 16 || bits == 32 || bits == 64), "floats can only be 16, 32 or 64 bits");
-    massert(kind != tk_bool || bits == 1, "bools can only be 1 bit");
-    for (u64 i = 0; i < context.baseTypesCount; i++) {
-        Type* type = context.baseTypes + i;
-        if (type->kind == tk_int && type->number.bits == bits) {
-            return type;
-        }
-    }
-
+    char buffer[4096];
+    char* bitsNumber = uintToString(bits, buffer);
+    u64 bitNumberLength = strlen(bitsNumber);
     if (context.baseTypesCount >= context.baseTypesCapacity) {
         context.baseTypes = reallocArena(context.arena, sizeof(Type) * context.baseTypesCapacity, context.baseTypes, sizeof(Type) * context.baseTypesCount * 2);
         context.baseTypesCapacity *= 2;
     }
     Type* type = context.baseTypes + context.baseTypesCount++;
-
-    type->arena = context.arena;
-
     type->kind = kind;
-
-    type->templateDefinition = NULL;
-
-    u64 digits = countDigits(bits);
-
-    if (kind != tk_bool) {
-        type->name = allocArena(context.arena, digits + 2);
-        if (kind == tk_int) {
-            type->name[0] = 'i';
-        } else if (kind == tk_uint) {
-            type->name[0] = 'u';
-        } else if (kind == tk_float) {
-            type->name[0] = 'f';
-        } else if (kind == tk_bool) {
-            type->name[0] = 'b';
+    // it is fine to use inttype because bool uint float are all the same as int
+    type->intType.bits = bits;
+    type->_name = allocArena(context.arena, bitNumberLength + 2);
+    switch (kind) {
+        case tk_int: {
+            type->_name[0] = 'i';
+            break;
         }
-        uintToString(bits, type->name + 1);
-        type->name[digits + 1] = '\0';
-    }
-
-    type->number.bits = bits;
-
-    type->alises = NULL;
-
-    type->alisesCount = 0;
-
-    type->origin = to_original;
-
+        case tk_uint: {
+            type->_name[0] = 'u';
+            break;
+        }
+        case tk_float: {
+            type->_name[0] = 'f';
+            break;
+        }
+        case tk_bool: {
+            type->_name[0] = 'b';
+            break;
+        }
+        default: {
+            massert(false, "invalid type");
+            break;
+        }
+    };
+    memcpy(type->_name + 1, bitsNumber, bitNumberLength + 1);
     return type;
 }
 
-Type* TypeCreateAliasGlobal(Type* baseType, const char* name) {
+Type* TypeCreateGloablAlias(Type* baseType, char* name) {
+    if (context.baseTypesCount >= context.baseTypesCapacity) {
+        context.baseTypes = reallocArena(context.arena, sizeof(Type) * context.baseTypesCapacity, context.baseTypes, sizeof(Type) * context.baseTypesCount * 2);
+        context.baseTypesCapacity *= 2;
+    }
     Type* type = context.baseTypes + context.baseTypesCount++;
-    *type = *baseType;
+    type->kind = tk_alias;
+    type->aliasType.type = baseType;
     u64 nameLength = strlen(name);
-    type->arena = createArena(context.arena, (nameLength + 4) * 2);
-    type->name = allocArena(type->arena, nameLength + 1);
-    memcpy(type->name, name, nameLength + 1);
-    type->baseType = baseType;
-    type->origin = to_alias;
-    type->alises = NULL;
-    type->alisesCount = 0;
-    type->templateDefinition = NULL;
-
-    if (baseType->alises == NULL) {
-        baseType->alises = allocArena(baseType->arena, sizeof(Type*) * 1);
-        baseType->alisesCount = 1;
-    } else {
-        baseType->alises = reallocArena(baseType->arena, sizeof(Type*) * baseType->alisesCount, baseType->alises, sizeof(Type*) * (baseType->alisesCount + 1));
-        baseType->alisesCount++;
-    }
-    baseType->alises[baseType->alisesCount - 1] = type;
-
+    type->_name = allocArena(context.arena, nameLength + 2);
+    memcpy(type->_name, name, nameLength + 1);
     return type;
 }
 
-Type* TypeCreateAlias(SpanFile* file, Type* baseType, const char* name) {
-    if (file->typesCount >= file->typesCapacity) {
-        file->types = reallocArena(file->arena, sizeof(Type) * file->typesCapacity, file->types, sizeof(Type) * file->typesCount * 2);
-        file->typesCapacity *= 2;
+char* TypeGetName(Type* type, char* buffer) {
+    switch (type->kind) {
+            // all the types with names are here
+        case tk_struct:
+        case tk_enum:
+        case tk_union:
+        case tk_alias:
+        case tk_distinct:
+        case tk_uint:
+        case tk_float:
+        case tk_bool:
+        case tk_interface:
+        case tk_int:
+            memcpy(buffer, type->_name, strlen(type->_name) + 1);
+            return buffer;
+        // all the types that must derive the name from the base types bellow
+        case tk_ref:
+        case tk_array:
+        case tk_map:
+        case tk_list:
+        case tk_ptr: {
+            return NULL;
+        }
+        case tk_invalid: {
+            massert(false, "should never be trying to get name of invalid type");
+            return NULL;
+        }
     }
-    Type* type = file->types + file->typesCount++;
-    *type = *baseType;
-    u64 nameLength = strlen(name);
-    type->arena = createArena(file->arena, (nameLength + 4) * 2);
-    type->name = allocArena(type->arena, nameLength + 1);
-    memcpy(type->name, name, nameLength + 1);
-    type->alises = NULL;
-    type->alisesCount = 0;
-    type->baseType = baseType;
-    type->origin = to_alias;
-    type->templateDefinition = NULL;
-
-    if (baseType->alises == NULL) {
-        baseType->alises = allocArena(baseType->arena, sizeof(Type*) * 1);
-        baseType->alisesCount = 1;
-    } else {
-        baseType->alises = reallocArena(baseType->arena, sizeof(Type*) * baseType->alisesCount, baseType->alises, sizeof(Type*) * (baseType->alisesCount + 1));
-        baseType->alisesCount++;
-    }
-    baseType->alises[baseType->alisesCount++] = type;
-
-    return type;
-}
-
-Type* TypeCreateDistinct(SpanFile* file, Type* baseType, const char* name) {
-    if (file->typesCount >= file->typesCapacity) {
-        file->types = reallocArena(file->arena, sizeof(Type) * file->typesCapacity, file->types, sizeof(Type) * file->typesCount * 2);
-        file->typesCapacity *= 2;
-    }
-    Type* type = file->types + file->typesCount++;
-    *type = *baseType;
-    u64 nameLength = strlen(name);
-    type->arena = createArena(file->arena, (nameLength + 4) * 2);
-    type->name = allocArena(type->arena, nameLength + 1);
-    memcpy(type->name, name, nameLength + 1);
-    type->baseType = baseType;
-    type->origin = to_distinct;
-    type->alises = NULL;
-    type->templateDefinition = NULL;
-    type->alisesCount = 0;
-    return type;
-}
-
-void freeType(Type* type) {
-    for (u64 i = 0; i < type->alisesCount; i++) {
-        Type* alise = type->alises[i];
-        alise->baseType = NULL;  // mark this as having no base type will let us know this type is no longer valid
-    }
-    freeArena(type->arena);
 }
