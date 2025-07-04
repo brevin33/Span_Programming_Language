@@ -1,0 +1,39 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "span",
+      "camelcase": "Span",
+      "title": "Span",
+      "scope": "source.span",
+      "file-types": [
+        "span"
+      ],
+      "injection-regex": "^span$",
+      "class-name": "TreeSitterSpan"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Span programming language tree-sitter",
+    "authors": [
+      {
+        "name": "Brevin Bell",
+        "url": "https://github.com/brevin33"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/brevin33/Span_Programming_Language"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true,
+    "zig": false
+  }
+}
