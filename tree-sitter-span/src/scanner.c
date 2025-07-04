@@ -23,20 +23,8 @@ bool tree_sitter_span_external_scanner_scan(void *payload, TSLexer *lexer, const
     while (iswspace(lexer->lookahead) && lexer->lookahead != '\n' && lexer->lookahead != '\r') {
         lexer->advance(lexer, true);
     }
-    // If lookahead is a brace, skip whitespace before and after it
-    if (lexer->lookahead == '{' || lexer->lookahead == '}') {
-        lexer->advance(lexer, false);
-        while (iswspace(lexer->lookahead) && lexer->lookahead != '\n' && lexer->lookahead != '\r') {
-            lexer->advance(lexer, true);
-        }
-        // If next is newline, do not treat as end of statement
-        if (lexer->lookahead == '\n' || lexer->lookahead == '\r') {
-            return false;
-        }
-    }
-
     // Check for comma or braces before newline
-    if (lexer->lookahead == ',' || lexer->lookahead == '{' || lexer->lookahead == '}') {
+    if (lexer->lookahead == ',') {  //|| lexer->lookahead == '{' || lexer->lookahead == '}') {
         lexer->advance(lexer, false);
         // Skip whitespace after symbol
         while (iswspace(lexer->lookahead) && lexer->lookahead != '\n' && lexer->lookahead != '\r') {

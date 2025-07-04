@@ -82,11 +82,6 @@ Token* createTokens(Arena arena, char* fileContents, u64 fileIndex) {
         }
         massert(index != UINT32_MAX, "Token index overflow");
         Token token = createToken(fileContents, &index, fileIndex, stringStack, &stringStackIndex);
-        if (token.type == tt_lbrace || token.type == tt_rbrace) {
-            if (tokens[tokenCount - 1].type == tt_endl) {
-                tokenCount--;
-            }
-        }
         tokens[tokenCount++] = token;
     }
     return tokens;
