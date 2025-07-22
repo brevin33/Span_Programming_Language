@@ -49,7 +49,7 @@ void* allocArena(Arena arena, u64 size) {
         // might already be allocated if arena got reset
         if (arena->memory[arena->bufferIndex] == NULL) {
             memoryAllocationSize = getMemoryAllocationSize(arena->initialSize, arena->bufferIndex);
-            allocInSideArena(arena, memoryAllocationSize);
+            arena->memory[arena->bufferIndex] = allocInSideArena(arena, memoryAllocationSize);
         }
         arena->memoryIndex = 0;
     }

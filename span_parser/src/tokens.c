@@ -1,3 +1,4 @@
+#include "span_parser/tokens.h"
 #include "span_parser.h"
 #include <assert.h>
 
@@ -84,6 +85,16 @@ Token* createTokens(Arena arena, char* fileContents, u64 fileIndex) {
         Token token = createToken(fileContents, &index, fileIndex, stringStack, &stringStackIndex);
         tokens[tokenCount++] = token;
     }
+    if (tokenCount >= tokensCapacity) {
+        tokens = reallocArena(arena, sizeof(Token) * (tokensCapacity * 2), tokens, sizeof(Token) * tokensCapacity);
+        tokensCapacity *= 2;
+    }
+    massert(index != UINT32_MAX, "Token index overflow");
+    Token eofToken = createToken(fileContents, &index, fileIndex, stringStack, &stringStackIndex);
+    tokens[tokenCount++] = eofToken;
+
+
+
     return tokens;
 }
 
@@ -177,6 +188,7 @@ static void handelIdOrKeyword(char* fileContent, u32* indexRef, Token* token) {
     while (isIdChar(fileContent[index])) {
         buffer[idBufferIndex++] = fileContent[index++];
     }
+    buffer[idBufferIndex] = '\0';
     token->type = tt_id;
     handelKeyword(token, buffer);
     *indexRef = index;
@@ -184,9 +196,21 @@ static void handelIdOrKeyword(char* fileContent, u32* indexRef, Token* token) {
 
 static void handelNumber(char* fileContent, u32* indexRef, Token* token) {
     u32 index = *indexRef;
-    token->type = tt_number;
     char numberBuffer[4096];
-    getNumberString(fileContent, &index, numberBuffer);
+    char* numberString = getNumberString(fileContent, &index, numberBuffer);
+    u64 numberStringLength = strlen(numberString);
+    bool isFloat = false;
+    for (u64 i = 0; i < numberStringLength; i++) {
+        if (numberString[i] == '.') {
+            isFloat = true;
+            break;
+        }
+    }
+    if (isFloat) {
+        token->type = tt_float;
+    } else {
+        token->type = tt_int;
+    }
     *indexRef = index;
 }
 
@@ -293,8 +317,10 @@ char* ourTokenTypeToString(OurTokenType type) {
             return "id";
         case tt_dot:
             return "dot";
-        case tt_number:
-            return "number";
+        case tt_int:
+            return "int";
+        case tt_float:
+            return "float";
         case tt_string_end:
             return "string_end";
         case tt_string_continue:
@@ -377,6 +403,22 @@ char* ourTokenTypeToString(OurTokenType type) {
             return "union";
         case tt_interface:
             return "interface";
+        case tt_bit_and:
+            return "&";
+        case tt_and:
+            return "&&";
+        case tt_bit_or:
+            return "|";
+        case tt_or:
+            return "||";
+        case tt_lshift:
+            return "<<";
+        case tt_rshift:
+            return ">>";
+        case tt_xor:
+            return "^";
+        case tt_elipsis:
+            return "...";
     }
     return "no string add for this token type";
 }
@@ -399,8 +441,13 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
                     handelNumber(fileContent, &index, &token);
                     break;
                 }
-                token.type = tt_dot;
                 index++;
+                if (fileContent[index] == '.' && fileContent[index + 1] == '.') {
+                    token.type = tt_elipsis;
+                    index += 2;
+                    break;
+                }
+                token.type = tt_dot;
                 break;
             }
             CASE_NUMBER: {
@@ -545,6 +592,11 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
                     index++;
                     break;
                 }
+                if (fileContent[index] == '<') {
+                    token.type = tt_lshift;
+                    index++;
+                    break;
+                }
                 token.type = tt_lt;
                 break;
             }
@@ -552,6 +604,11 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
                 index++;
                 if (fileContent[index] == '=') {
                     token.type = tt_ge;
+                    index++;
+                    break;
+                }
+                if (fileContent[index] == '>') {
+                    token.type = tt_rshift;
                     index++;
                     break;
                 }
@@ -583,6 +640,26 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
                 index++;
                 break;
             }
+            case '&': {
+                index++;
+                if (fileContent[index] == '&') {
+                    token.type = tt_and;
+                    index++;
+                    break;
+                }
+                token.type = tt_bit_and;
+                break;
+            }
+            case '|': {
+                index++;
+                if (fileContent[index] == '|') {
+                    token.type = tt_or;
+                    index++;
+                    break;
+                }
+                token.type = tt_bit_or;
+                break;
+            }
             case '\'': {
                 index++;
                 if (fileContent[index] == '\\') {
@@ -609,6 +686,11 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
                     break;
                 }
                 token.type = tt_sptr;
+                break;
+            }
+            case '\0': {
+                token.type = tt_eof;
+                index++;
                 break;
             }
             default: {
@@ -689,6 +771,18 @@ void handelStringEscape(char* string, Token token) {
     *newString = '\0';
 }
 
+u64 getTokenInt(Token token) {
+    char buffer[4096];
+    char* numberString = tokenGetString(token, buffer);
+    return atoll(numberString);
+}
+
+double getTokenFloat(Token token) {
+    char buffer[4096];
+    char* numberString = tokenGetString(token, buffer);
+    return atof(numberString);
+}
+
 char tokenGetTypeChar(Token token) {
     massert(token.type == tt_char, "not a char");
     SpanProject* project = context.activeProject;
@@ -749,7 +843,8 @@ char* tokenGetString(Token token, char* buffer) {
             buffer[idBufferIndex] = '\0';
             return buffer;
         }
-        case tt_number: {
+        case tt_int:
+        case tt_float: {
             return getNumberString(fileContent, &index, buffer);
         }
         case tt_string_end:
@@ -795,7 +890,7 @@ void tokenGetLineColumn(Token token, u64* outLine, u64* outColumnStart, u64* out
     char* fileContent = file->fileContents;
     char* internalPointer = fileContent + token.tokenStart;
     u64 line = SpanFileFindLineFromInternalPointer(file, internalPointer);
-    u64 columnStart = (token.tokenStart + fileContent) - file->fileLineStarts[line];
+    u64 columnStart = (token.tokenStart + fileContent) - file->fileLineStarts[line - 1];
     u64 columnEnd = columnStart + token.tokenLength;
     *outLine = line;
     *outColumnStart = columnStart;

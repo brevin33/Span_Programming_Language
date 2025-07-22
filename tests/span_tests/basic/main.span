@@ -1,4 +1,5 @@
-
-int main() {
-	return 0 
+struct foo{
+	int x
+	int y	
 }
+

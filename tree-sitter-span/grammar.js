@@ -14,16 +14,27 @@ module.exports = grammar({
     $.end_of_statement
   ],
 
+  conflicts: $ => [
+    [$.moop, $.grouped_expression],
+    [$.variable_declaration, $.type],
+  ],
+
 
   rules: {
     source_file: $ => repeat($.top_level_statment),
 
-    top_level_statment: $ => choice(
+    top_level_statment: $ => prec(1,choice(
       $.function,
       $.expression_statement,
-    ),
+      $.struct_definition,
+      $.enum_definition,
+      $.union_definition,
+      $.interface_definition,
+      $.assignment_statement,
+      $.inner_statment, //HACK: this makes the highlighting work even with weird braces and stuff
+    )),
 
-    inner_statment: $ => choice(
+    inner_statment: $ => prec(0,choice(
       $.expression_statement,
       $.return_statement,
       $.if_statement,
@@ -37,7 +48,7 @@ module.exports = grammar({
       $.scope,
       $.yeild_statement,
       $.assignment_statement,
-    ),
+    )),
 
 
     return: $ => 'return',
@@ -53,6 +64,10 @@ module.exports = grammar({
     continue: $ => 'continue',
     scontinue: $ => 'scontinue',
     in: $ => 'in',
+    struct: $ => 'struct',
+    union: $ => 'union',
+    enum: $ => 'enum',
+    interface: $ => 'interface',
 
     assignment: $ => seq(
       $.assignment_assignee,
@@ -110,12 +125,62 @@ module.exports = grammar({
       $.end_of_statement,
     ),
 
-    for_statement: $ => seq(
+    for_in_statement: $ => seq(
       $.for,
-      $.identifier,
-      $.in,
-      $.expression,
-      $.scope,
+      choice(
+        seq(
+          $.identifier,
+          $.in,
+          $.expression,
+          $.scope,
+        ),
+        seq(
+          '(',
+          $.identifier,
+          $.in,
+          $.expression,
+          ')',
+          $.scope,
+        ),
+      ),
+    ),
+
+    for_c_statement: $ => seq(
+      $.for,
+      choice(
+        seq(
+          optional(choice(
+            $.expression,
+            $.assignment,
+          )),
+          $.end_of_statement,
+          optional($.expression),
+          $.end_of_statement,
+          optional(choice(
+            $.expression,
+            $.assignment,
+          )),
+          $.scope,
+        ),
+        seq(
+          '(',
+          optional($.assignment),
+          $.end_of_statement,
+          $.expression,
+          $.end_of_statement,
+          choice(
+            $.expression,
+            $.assignment,
+          ),
+          ')',
+          $.scope,
+        ),
+      ),
+    ),
+
+    for_statement: $ => choice(
+      $.for_in_statement,
+      $.for_c_statement,
     ),
 
     return_statement: $ => seq(
@@ -183,7 +248,18 @@ module.exports = grammar({
       $.biop,
       $.method_call,
       $.grouped_expression,
+      $.moop,
     )),
+
+    moop_operator: $ => choice(
+      '++',
+      '--',
+    ),
+
+    moop: $ => seq(
+      $.expression,
+      $.moop_operator,
+    ),
 
     grouped_expression: $ => prec.left(2, seq(
       $.expression,
@@ -254,20 +330,101 @@ module.exports = grammar({
       $.end_of_statement,
     ),
 
-    struct_definition: $ => seq(
-      'struct',
+    union_definition: $ => seq(
+      $.union,
+      optional($.identifier),
+      optional($.template_definition),
+      $.union_scope,
+    ),
+
+    union_scope: $ => seq(
+      '{',
+      repeat($.union_field),
+      '}',
+      $.end_of_statement,
+    ),
+
+    union_field: $ => seq(
+      $.type,
+      $.identifier,
+      $.end_of_statement,
+    ),
+
+    enum_definition: $ => seq(
+      $.enum,
       $.identifier,
       optional($.template_definition),
-      // TODO: more
+      $.enum_scope,
+    ),
+
+    enum_scope: $ => seq(
+      '{',
+      repeat($.enum_field),
+      '}',
+      $.end_of_statement,
+    ),
+
+    enum_field: $ => seq(
+      optional($.type),
+      $.identifier,
+      $.end_of_statement,
+    ),
+
+    interface_definition: $ => seq(
+      $.interface,
+      $.identifier,
+      optional($.template_definition),
+      $.interface_scope,
+    ),
+    interface_scope: $ => seq(
+      '{',
+      repeat($.interface_field),
+      '}',
+      $.end_of_statement,
+    ),
+
+    interface_field: $ => choice(seq(
+        $.type,
+        $.identifier,
+        $.end_of_statement,
+      ),
+      seq(
+        $.function_definition,
+        $.end_of_statement,
+      ),
+    ),
+
+    struct_definition: $ => seq(
+      $.struct,
+      $.identifier,
+      optional($.template_definition),
+      $.struct_scope,
+    ),
+
+    struct_field: $ => seq(
+      $.type,
+      $.identifier,
+      $.end_of_statement,
+    ),
+
+    struct_scope: $ => seq(
+      '{',
+      repeat($.struct_field),
+      '}',
+      $.end_of_statement,
     ),
 
     function: $ => seq(
+      $.function_definition,
+      $.scope,
+    ),
+
+    function_definition: $ => seq(
       field("return_type", $.type),
       field("method_type", optional(seq($.type, '.'))),
       field("name", $.identifier),
       optional($.template_definition),
       $.function_definition_parameter_list,
-      $.scope,
     ),
 
     function_definition_parameter_list: $ => seq(
@@ -349,12 +506,8 @@ module.exports = grammar({
       '>',
     ),
 
-
-
-
     number: $ => /\d+(\.\d+)?/,
     identifier: $ => /[a-zA-Z_]\w*/,
-
 
     string_open: $ => '"',
     string_close: $ => '"',

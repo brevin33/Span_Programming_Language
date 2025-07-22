@@ -14,7 +14,9 @@ typedef enum _TokenType : u8 {
     tt_interface,
     tt_id,
     tt_dot,
-    tt_number,
+    tt_elipsis,
+    tt_float,
+    tt_int,
     tt_string_end,
     tt_string_continue,
     tt_rbrace,
@@ -50,6 +52,13 @@ typedef enum _TokenType : u8 {
     tt_char,
     tt_endl,
     tt_eof,
+    tt_bit_and,
+    tt_and,
+    tt_bit_or,
+    tt_or,
+    tt_lshift,
+    tt_rshift,
+    tt_xor,
 } OurTokenType;
 
 
@@ -69,5 +78,9 @@ char* ourTokenTypeToString(OurTokenType type);
 char* tokenGetString(Token token, char* buffer);
 
 char tokenGetTypeChar(Token token);
+
+u64 getTokenInt(Token token);
+
+double getTokenFloat(Token token);
 
 void tokenGetLineColumn(Token token, u64* outLine, u64* outColumnStart, u64* outColumnEnd);

@@ -1,117 +1,14 @@
 #include "span_parser.h"
+#include "span_parser/tokens.h"
+#include "span_parser/type.h"
 
 
 void initializeContext(Arena arena) {
     context.arena = arena;
     context.activeProject = NULL;
-
-    context.baseTypes = allocArena(arena, sizeof(Type) * 64);
-    context.baseTypesCount = 0;
-    context.baseTypesCapacity = 64;
-
-    Type* intType = getNumberType(64, tk_int);
-    TypeCreateAliasGlobal(intType, "int");
-    Type* uintType = getNumberType(64, tk_uint);
-    TypeCreateAliasGlobal(uintType, "uint");
-    Type* floatType = getNumberType(32, tk_float);
-    TypeCreateAliasGlobal(floatType, "float");
-    Type* doubleType = getNumberType(64, tk_float);
-    TypeCreateAliasGlobal(doubleType, "double");
-    Type* boolType = getNumberType(1, tk_bool);
-    TypeCreateAliasGlobal(boolType, "bool");
-
+    context.namespaceCounter = 1;
     context.initialized = true;
 }
-
-TemplateDefinition* createTemplateDefinitionFromTokens(Arena arena, Token** tokens) {
-    Token* token = *tokens;
-    if (token->type != tt_lt) {
-        return NULL;
-    }
-    token++;
-    char** names = allocArena(arena, sizeof(char*) * 8);
-    Type** interfaces = allocArena(arena, sizeof(Type*) * 8);
-    u64 templateCount = 0;
-    u64 templateCapacity = 8;
-    while (true) {
-        if (token->type == tt_gt) {
-            break;
-        }
-        if (token->type != tt_id) {
-            return NULL;
-        }
-        if (templateCount >= templateCapacity) {
-            names = reallocArena(arena, sizeof(char*) * templateCapacity, names, sizeof(char*) * (templateCapacity * 2));
-            interfaces = reallocArena(arena, sizeof(Type*) * templateCapacity, interfaces, sizeof(Type*) * (templateCapacity * 2));
-            templateCapacity *= 2;
-        }
-        char buffer[4096];
-        char* name = tokenGetString(*token, buffer);
-        u64 nameLength = strlen(name);
-        names[templateCount] = allocArena(arena, nameLength + 1);
-        memcpy(names[templateCount], name, nameLength + 1);
-        token++;
-        if (token->type == tt_colon) {
-            token++;
-            Type* interface = TypeFromTokens(NULL, &token, false);
-            if (interface == NULL) {
-                return NULL;
-            }
-            if (interface->kind != tk_interface) {
-                return NULL;
-            }
-            interfaces[templateCount] = interface;
-        } else {
-            interfaces[templateCount] = NULL;
-        }
-        templateCount++;
-    }
-    if (templateCount == 0) {
-        return NULL;
-    }
-
-    TemplateDefinition* templateDefinition = allocArena(arena, sizeof(TemplateDefinition));
-    templateDefinition->names = names;
-    templateDefinition->interfaces = interfaces;
-    templateDefinition->templateCount = templateCount;
-    *tokens = token;
-    return templateDefinition;
-}
-
-TemplateInstance* createTemplateInstanceCreateFromTokens(Arena arena, Token** tokens) {
-    Token* token = *tokens;
-    if (token->type != tt_lt) {
-        return NULL;
-    }
-    token++;
-    Type** types = allocArena(arena, sizeof(Type*) * 8);
-    u64 templateCount = 0;
-    u64 templateCapacity = 8;
-    while (true) {
-        if (token->type == tt_gt) {
-            break;
-        }
-        Type* type = TypeFromTokens(NULL, &token, false);
-        if (type == NULL) {
-            return NULL;
-        }
-        if (templateCount >= templateCapacity) {
-            types = reallocArena(arena, sizeof(Type*) * templateCapacity, types, sizeof(Type*) * (templateCapacity * 2));
-            templateCapacity *= 2;
-        }
-        types[templateCount++] = type;
-    }
-    if (templateCount == 0) {
-        return NULL;
-    }
-
-    TemplateInstance* templateInstance = allocArena(arena, sizeof(TemplateInstance));
-    templateInstance->types = types;
-    templateInstance->templateCount = templateCount;
-    *tokens = token;
-    return templateInstance;
-}
-
 
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
     u64 lineStartsCount = 0;
@@ -126,17 +23,6 @@ char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
     }
     *outLineStartsCount = lineStartsCount;
     return lineStarts;
-}
-
-char* SpanFileGetLine(SpanFile* file, u64 line, char* buffer) {
-    char* lineStart = file->fileLineStarts[line];
-    while (*lineStart != '\n') {
-        *buffer = *lineStart;
-        buffer++;
-        lineStart++;
-    }
-    *buffer = '\0';
-    return buffer;
 }
 
 u64 SpanFileFindLineFromInternalPointer(SpanFile* file, char* internalPointer) {
@@ -159,9 +45,6 @@ SpanFile createSpanFile(Arena arena, char* fileName, char* directory, u64 fileIn
     sprintf(filePath, "%s/%s", directory, fileName);
     file.fileContents = readFile(file.arena, filePath);
     file.fileLineStarts = getLineStarts(file.arena, file.fileContents, &file.fileLineStartsCount);
-    file.types = allocArena(file.arena, sizeof(Type) * 8);
-    file.typesCount = 0;
-    file.typesCapacity = 8;
     return file;
 }
 
@@ -176,8 +59,16 @@ char* getNameSpaceFromTokens(Token** tokens, char* buffer) {
     return namespace;
 }
 
-void getTokensForFile(SpanFile* file, u64 fileIndex) {
+void SpanFileGetTokensForFile(SpanFile* file, u64 fileIndex) {
     file->tokens = createTokens(file->arena, file->fileContents, fileIndex);
+
+    u64 fileDefinitionStartsCapacity = 4;
+    u64 fileDefinitionStartsCount = 0;
+    Token** fileDefinitionStarts = allocArena(file->arena, sizeof(Token*) * fileDefinitionStartsCapacity);
+}
+
+void SpanFileGetAstForFile(SpanFile* file) {
+    file->ast = createAst(file->arena, &file->tokens);
 }
 
 SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path) {
@@ -190,6 +81,7 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     project.name = allocArena(project.arena, 4096);
     project.name = getDirectoryNameFromPath(path, project.name);
     project.parent = parent;
+    project.namespace = context.namespaceCounter++;
 
     u64 directoryCount;
     char** directories = getDirectoryNamesInDirectory(project.arena, path, &directoryCount);
@@ -208,7 +100,8 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     project.files = allocArena(project.arena, sizeof(SpanFile) * project.fileCount);
     for (u64 i = 0; i < project.fileCount; i++) {
         project.files[i] = createSpanFile(project.arena, fileNames[i], path, i);
-        getTokensForFile(&project.files[i], i);
+        SpanFileGetTokensForFile(&project.files[i], i);
+        SpanFileGetAstForFile(&project.files[i]);
     }
 
     return project;
@@ -216,4 +109,50 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
 
 SpanProject createSpanProject(Arena arena, char* path) {
     return createSpanProjectHelper(arena, NULL, path);
+}
+
+Namespace _getNamespace(char* name, SpanProject* project) {
+    if (strcmp(name, project->name) == 0) {
+        return project->namespace;
+    }
+    for (u64 i = 0; i < project->childCount; i++) {
+        Namespace namespace = _getNamespace(name, &project->children[i]);
+        if (namespace != NO_NAMESPACE) {
+            return namespace;
+        }
+    }
+    return NO_NAMESPACE;
+}
+
+Namespace getNamespace(char* name) {
+    SpanProject* project = context.activeProject;
+    return _getNamespace(name, project);
+}
+
+SpanProject* _SpanProjectFromNamespace(Namespace namespace, SpanProject* project) {
+    if (project->namespace == namespace) {
+        return project;
+    }
+    for (u64 i = 0; i < project->childCount; i++) {
+        SpanProject* child = &project->children[i];
+        SpanProject* found = _SpanProjectFromNamespace(namespace, child);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    massert(false, "namespace not found");
+    return NULL;
+}
+
+SpanProject* SpanProjectFromNamespace(Namespace namespace) {
+    SpanProject* project = context.activeProject;
+    return _SpanProjectFromNamespace(namespace, project);
+}
+
+SpanFile* SpanFileFromTokenAndNamespace(Token token, Namespace namespace) {
+    massert(namespace != NO_NAMESPACE, "namespace must be valid");
+    SpanProject* project = SpanProjectFromNamespace(namespace);
+    u16 fileIndex = token.file;
+    SpanFile* file = &project->files[fileIndex];
+    return file;
 }

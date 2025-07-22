@@ -8,18 +8,14 @@
 #include "span_parser/tokens.h"
 #include "span_parser/type.h"
 #include "span_parser/utils.h"
+#include "span_parser/ast.h"
 
 SpanProject createSpanProject(Arena arena, char* path);
 
 typedef struct _SpanContext {
     Arena arena;
-
     SpanProject* activeProject;
-
-    Type* baseTypes;
-    u64 baseTypesCount;
-    u64 baseTypesCapacity;
-
+    u32 namespaceCounter;
     bool initialized;
 } SpanContext;
 

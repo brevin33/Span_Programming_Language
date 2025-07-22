@@ -74,10 +74,11 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
 
     // print lines and underline the tokens
     for (u64 i = 0; i < lineCount; i++) {
-        char lineBuffer[4096];
+        printf("%06llu| ", lines[i]);
+        char lineBuffer[4096 * 4] = { 0 };
         u64 lineBufferCount = 0;
         memset(lineBuffer, 0, sizeof(lineBuffer));
-        char* lineStart = file->fileLineStarts[lines[i]];
+        char* lineStart = file->fileLineStarts[lines[i] - 1];
         while (*lineStart != '\n') {
             lineBuffer[lineBufferCount++] = *lineStart;
             lineStart++;
@@ -85,9 +86,11 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
         lineBuffer[lineBufferCount] = '\0';
         printf(lineBuffer, "%06llu| %s\n", lines[i], lineBuffer);
 
+        printf("\n");
+
         // underline the tokens
         printf("%06llu| ", lines[i]);
-        lineStart = file->fileLineStarts[lines[i]];
+        lineStart = file->fileLineStarts[lines[i] - 1];
         u64 lineStartCount = 0;
         while (lineStart[lineStartCount] != '\n') {
             bool charIsToken = false;
@@ -98,7 +101,7 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
                 }
                 u64 tokenColumnStart = columnStarts[j];
                 u64 tokenColumnEnd = columnEnds[j];
-                charIsToken = tokenColumnStart >= lineStartCount && tokenColumnEnd <= lineStartCount;
+                charIsToken = tokenColumnStart <= lineStartCount && tokenColumnEnd > lineStartCount;
                 if (charIsToken) {
                     break;
                 }
@@ -128,12 +131,13 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
                 break;
             }
         }
-        if (!charAtEndOfLine) {
+        if (charAtEndOfLine) {
             printf("^");
         }
     }
 
 
+    printf("\n");
 
     printBar();
 }

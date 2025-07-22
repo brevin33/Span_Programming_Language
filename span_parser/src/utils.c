@@ -1,4 +1,3 @@
-
 #include "span_parser.h"
 
 char* uintToString(u64 number, char* buffer) {
