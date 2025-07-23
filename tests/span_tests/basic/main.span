@@ -3,3 +3,7 @@ struct foo{
 	int y	
 }
 
+void main(){
+	foo f
+}
+

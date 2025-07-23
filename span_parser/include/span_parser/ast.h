@@ -5,11 +5,16 @@
 
 typedef struct _SpanAst SpanAst;
 
+typedef enum programAction {
+    pa_return,
+    pa_break,
+    pa_continue,
+} ProgramAction;
+
 typedef enum _SpanASTType : u8 {
     ast_invalid = 0,
     ast_file,
     ast_struct,
-    ast_struct_field,
     ast_type,
     ast_tmod_ptr,
     ast_tmod_ref,
@@ -18,6 +23,10 @@ typedef enum _SpanASTType : u8 {
     ast_tmod_array,
     ast_tmod_list,
     ast_tmod_slice,
+    ast_variable_declaration,
+    ast_parameter_delcaration,
+    ast_func_param,
+    ast_scope,
 } SpanASTType;
 
 typedef struct _SpanAstTmodPtr {
@@ -42,30 +51,45 @@ typedef struct _SpanAstTmodList {
 typedef struct _SpanAstTmodSlice {
 } SpanAstTmodSlice;
 
+typedef struct _SpanAstFunctionParameterDeclaration {
+    SpanAst* params;
+    u64 paramsCount;
+} SpanAstFunctionParameterDeclaration;
+
+typedef struct _SpanAstFunctionDeclaration {
+    char* name;
+    SpanAst* returnType;
+    SpanAst* paramList;
+    SpanAst* body;
+} SpanAstFunctionDeclaration;
+
 typedef struct _SpanAstType {
     char* name;
     SpanAst* mods;
-    u32 modsCount;
-    u32 modsCapacity;
+    u64 modsCount;
 } SpanAstType;
 
 typedef struct _SpanAstFile {
     SpanAst* globalStatements;
-    u32 globalStatementsCount;
-    u32 globalStatementsCapacity;
+    u64 globalStatementsCount;
 } SpanAstFile;
 
 typedef struct _SpanAstStruct {
     char* name;
     SpanAst* fields;
-    u32 fieldsCount;
-    u32 fieldsCapacity;
+    u64 fieldsCount;
+    SpanAst* body;
 } SpanAstStruct;
 
-typedef struct _SpanAstStructField {
+typedef struct _SpanAstVariableDeclaration {
     char* name;
     SpanAst* type;
-} SpanAstStructField;
+} SpanAstVariableDeclaration;
+
+typedef struct _SpanAstScope {
+    SpanAst* statements;
+    u64 statementsCount;
+} SpanAstScope;
 
 typedef struct _SpanAst {
     SpanASTType type;
@@ -75,7 +99,6 @@ typedef struct _SpanAst {
         // anything larger than 64 bits should be a pointer
         SpanAstFile* file;
         SpanAstStruct* struct_;
-        SpanAstStructField* structField;
         SpanAstType* type_;
         SpanAstTmodPtr tmodPtr;
         SpanAstTmodRef tmodRef;
@@ -84,13 +107,16 @@ typedef struct _SpanAst {
         SpanAstTmodArray tmodArray;
         SpanAstTmodList tmodList;
         SpanAstTmodSlice tmodSlice;
+        SpanAstFunctionDeclaration* functionDeclaration;
+        SpanAstVariableDeclaration* variableDeclaration;
+        SpanAstFunctionParameterDeclaration* funcParam;
+        SpanAstScope* scope;
     };
 } SpanAst;
 
 SpanAst AstGeneralIdParse(Arena arena, Token** tokens);
 SpanAst createAst(Arena arena, Token** tokens);
 SpanAst AstGeneralParse(Arena arena, Token** tokens);
-SpanAst AstStructFieldParse(Arena arena, Token** tokens);
 SpanAst AstStructParse(Arena arena, Token** tokens);
 SpanAst AstTypeParse(Arena arena, Token** tokens);
 SpanAst AstTmodParse(Arena arena, Token** tokens);
@@ -99,6 +125,10 @@ SpanAst AstTmodRefParse(Arena arena, Token** tokens);
 SpanAst AstTmodUptrParse(Arena arena, Token** tokens);
 SpanAst AstTmodSptrParse(Arena arena, Token** tokens);
 SpanAst AstTmodListLikeParse(Arena arena, Token** tokens);
+SpanAst AstFunctionDeclarationParse(Arena arena, Token** tokens);
+SpanAst AstVariableDeclarationParse(Arena arena, Token** tokens);
+SpanAst AstFunctionParameterDeclarationParse(Arena arena, Token** tokens);
+SpanAst AstScopeParse(Arena arena, Token** tokens);
 
 bool looksLikeFunctionDeclaration(Token** tokens);
 bool looksLikeType(Token** tokens);

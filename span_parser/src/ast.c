@@ -1,4 +1,5 @@
 #include "span_parser.h"
+#include "span_parser/tokens.h"
 
 SpanAst createAst(Arena arena, Token** tokens) {
     Token* token = *tokens;
@@ -9,13 +10,13 @@ SpanAst createAst(Arena arena, Token** tokens) {
     ast.file = allocArena(arena, sizeof(SpanAstFile));
 
     ast.file->globalStatementsCount = 0;
-    ast.file->globalStatementsCapacity = 2;
-    ast.file->globalStatements = allocArena(arena, sizeof(SpanAst) * ast.file->globalStatementsCapacity);
+    u64 globalStatementsCapacity = 2;
+    ast.file->globalStatements = allocArena(arena, sizeof(SpanAst) * globalStatementsCapacity);
 
     while (token->type != tt_eof) {
-        if (ast.file->globalStatementsCount >= ast.file->globalStatementsCapacity) {
-            ast.file->globalStatements = reallocArena(arena, sizeof(SpanAst) * ast.file->globalStatementsCapacity * 2, ast.file->globalStatements, sizeof(SpanAst) * ast.file->globalStatementsCapacity);
-            ast.file->globalStatementsCapacity *= 2;
+        if (ast.file->globalStatementsCount >= globalStatementsCapacity) {
+            ast.file->globalStatements = reallocArena(arena, sizeof(SpanAst) * globalStatementsCapacity * 2, ast.file->globalStatements, sizeof(SpanAst) * globalStatementsCapacity);
+            globalStatementsCapacity *= 2;
         }
         ast.file->globalStatements[ast.file->globalStatementsCount++] = AstGeneralParse(arena, &token);
         while (token->type == tt_endl)
@@ -60,15 +61,15 @@ SpanAst AstStructParse(Arena arena, Token** tokens) {
         token++;
 
     ast.struct_->fieldsCount = 0;
-    ast.struct_->fieldsCapacity = 2;
-    ast.struct_->fields = allocArena(arena, sizeof(SpanAstStructField) * ast.struct_->fieldsCapacity);
+    u64 fieldsCapacity = 2;
+    ast.struct_->fields = allocArena(arena, sizeof(SpanAstVariableDeclaration) * fieldsCapacity);
 
     while (token->type != tt_rbrace) {
-        if (ast.struct_->fieldsCount >= ast.struct_->fieldsCapacity) {
-            ast.struct_->fields = reallocArena(arena, sizeof(SpanAstStructField) * ast.struct_->fieldsCapacity * 2, ast.struct_->fields, sizeof(SpanAstStructField) * ast.struct_->fieldsCapacity);
-            ast.struct_->fieldsCapacity *= 2;
+        if (ast.struct_->fieldsCount >= fieldsCapacity) {
+            ast.struct_->fields = reallocArena(arena, sizeof(SpanAstVariableDeclaration) * fieldsCapacity * 2, ast.struct_->fields, sizeof(SpanAstVariableDeclaration) * fieldsCapacity);
+            fieldsCapacity *= 2;
         }
-        SpanAst field = AstStructFieldParse(arena, &token);
+        SpanAst field = AstVariableDeclarationParse(arena, &token);
         if (field.type == ast_invalid) {
             // skip to the next field
             Token braceTokenStack[1024];
@@ -99,6 +100,7 @@ SpanAst AstStructParse(Arena arena, Token** tokens) {
         }
     }
     token++;
+
     ast.tokenLength = token - *tokens;
     *tokens = token;
     return ast;
@@ -106,8 +108,51 @@ SpanAst AstStructParse(Arena arena, Token** tokens) {
 
 bool looksLikeType(Token** tokens) {
     Token* token = *tokens;
-
-    *tokens = token;
+    if (token->type != tt_id) {
+        return false;
+    }
+    token++;
+    while (true) {
+        switch (token->type) {
+            case tt_mul:
+            case tt_bit_and:
+            case tt_uptr:
+            case tt_sptr:
+                token++;
+                break;
+            case tt_lbracket:
+                token++;
+                if (token->type == tt_rbracket) {
+                    token++;
+                    break;
+                }
+                if (token->type == tt_elipsis) {
+                    token++;
+                    if (token->type == tt_rbracket) {
+                        token++;
+                        break;
+                    } else {
+                        token -= 2;
+                        *tokens = token;
+                        return true;
+                    }
+                }
+                if (token->type == tt_int) {
+                    token++;
+                    if (token->type == tt_rbracket) {
+                        token++;
+                        break;
+                    } else {
+                        token -= 2;
+                        *tokens = token;
+                        return true;
+                    }
+                }
+            default:
+                *tokens = token;
+                return true;
+        }
+    }
 }
 
 bool looksLikeFunctionDeclaration(Token** tokens) {
@@ -136,8 +181,10 @@ bool looksLikeFunctionDeclaration(Token** tokens) {
                 break;
             }
         }
+        if (token->type == tt_endl) return false;
         token++;
     }
+    token++;
 
     while (token->type == tt_endl)
         token++;
@@ -150,21 +197,226 @@ bool looksLikeFunctionDeclaration(Token** tokens) {
     return true;
 }
 
-SpanAst AstGeneralIdParse(Arena arena, Token** tokens) {
+static ProgramAction handelErrorFunctionParamParse(Token** tokens, Token firstParenToken) {
+    Token parenStackTokenStack[1024];
+    parenStackTokenStack[1] = firstParenToken;
+    Token* token = *tokens;
+    u32 parenStack = 1;
+    while (true) {
+        if (token->type == tt_rparen) parenStack--;
+        if (token->type == tt_lparen) {
+            parenStack++;
+            parenStackTokenStack[parenStack] = *token;
+        }
+        if (token->type == tt_endl) break;
+        if (token->type == tt_comma && parenStack == 1) break;
+        if (parenStack == 0) break;
+        if (token->type == tt_eof) {
+            logErrorTokens(&parenStackTokenStack[parenStack], 1, "left paren is never closed");
+            *tokens = token;
+            return pa_return;
+        }
+        token++;
+    }
+    if (token->type == tt_endl) {
+        if (parenStack != 0) {
+            Token parenToken = parenStackTokenStack[parenStack];
+            logErrorTokens(&parenToken, 1, "left paren is never closed");
+        }
+        *tokens = token;
+        return pa_break;
+    }
+    if (parenStack == 0) {
+        *tokens = token;
+        return pa_break;
+    }
+    token++;
+    *tokens = token;
+    return pa_continue;
+}
+
+SpanAst AstFunctionParameterDeclarationParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
     SpanAst ast = { 0 };
     ast.token = token;
+    ast.type = ast_func_param;
+    ast.funcParam = allocArena(arena, sizeof(SpanAstFunctionParameterDeclaration));
+
+    if (token->type != tt_lparen) {
+        logErrorTokens(token, 1, "Expected ( for function parameters");
+        SpanAst err = { 0 };
+        return err;
+    }
+    token++;
+
+    Token firstParenToken = *token;
+    if (token->type != tt_rparen) {
+        u64 paramsCount = 0;
+        u64 paramsCapacity = 2;
+        ast.funcParam->params = allocArena(arena, sizeof(SpanAstVariableDeclaration) * paramsCapacity);
+        while (true) {
+            SpanAst param = AstVariableDeclarationParse(arena, &token);
+            if (param.type == ast_invalid) {
+                ProgramAction action = handelErrorFunctionParamParse(tokens, firstParenToken);
+                if (action == pa_return) {
+                    return param;
+                } else if (action == pa_break) {
+                    break;
+                } else if (action == pa_continue) {
+                    continue;
+                }
+            }
+            if (paramsCount >= paramsCapacity) {
+                ast.funcParam->params = reallocArena(arena, sizeof(SpanAstVariableDeclaration) * paramsCapacity * 2, ast.funcParam->params, sizeof(SpanAstVariableDeclaration) * paramsCapacity);
+                paramsCapacity *= 2;
+            }
+            ast.funcParam->params[paramsCount++] = param;
+            if (token->type == tt_rparen) break;
+            if (token->type == tt_comma) {
+                token++;
+                continue;
+            }
+            if (token->type == tt_eof) {
+                logErrorTokens(token, 1, "never closed function param list");
+                SpanAst err = { 0 };
+                *tokens = token;
+                return err;
+            }
+            logErrorTokens(token, 1, "Expected comma or right paren");
+
+            ProgramAction action = handelErrorFunctionParamParse(tokens, firstParenToken);
+            if (action == pa_return) {
+                SpanAst err = { 0 };
+                return err;
+            } else if (action == pa_break) {
+                break;
+            } else if (action == pa_continue) {
+                continue;
+            }
+        }
+    } else {
+        ast.funcParam->paramsCount = 0;
+        ast.funcParam->params = NULL;
+    }
+    massert(token->type == tt_rparen, "should be a left paren");
+    token++;
+
+    ast.tokenLength = token - *tokens;
+    *tokens = token;
+    return ast;
+}
+
+SpanAst AstScopeParse(Arena arena, Token** tokens) {
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.token = token;
+    ast.type = ast_scope;
+    ast.scope = allocArena(arena, sizeof(SpanAstScope));
+
+    if (token->type != tt_lbrace) {
+        logErrorTokens(token, 1, "Expected scope body");
+        SpanAst err = { 0 };
+        return err;
+    }
+    token++;
+
+    // TODO: parse scope
+    // bs for testing
+    u64 statementCapacity = 2;
+    ast.scope->statements = allocArena(arena, sizeof(SpanAst) * statementCapacity);
+    ast.scope->statementsCount = 0;
+    while (token->type != tt_rbrace) {
+        if (token->type == tt_endl) {
+            token++;
+            continue;
+        }
+        SpanAst statement = AstGeneralParse(arena, &token);
+        if (statement.type == ast_invalid) {
+            while (token->type != tt_endl)
+                token++;
+            continue;
+        }
+        if (ast.scope->statementsCount >= statementCapacity) {
+            ast.scope->statements = reallocArena(arena, sizeof(SpanAst) * statementCapacity * 2, ast.scope->statements, sizeof(SpanAst) * statementCapacity);
+            statementCapacity *= 2;
+        }
+        ast.scope->statements[ast.scope->statementsCount++] = statement;
+    }
+    massert(token->type == tt_rbrace, "should be a right brace");
+    token++;
+    ast.scope->statementsCount = 0;
+    ast.scope->statements = NULL;
+
+    ast.tokenLength = token - *tokens;
+    *tokens = token;
+    return ast;
+}
+
+SpanAst AstFunctionDeclarationParse(Arena arena, Token** tokens) {
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.token = token;
+    ast.functionDeclaration = allocArena(arena, sizeof(SpanAstFunctionDeclaration));
+    ast.functionDeclaration->returnType = allocArena(arena, sizeof(SpanAst));
+    *ast.functionDeclaration->returnType = AstTypeParse(arena, &token);
+    if (ast.functionDeclaration->returnType->type == ast_invalid) {
+        SpanAst err = { 0 };
+        return err;
+    }
+    if (token->type != tt_id) {
+        logErrorTokens(token, 1, "Expected function name");
+        SpanAst err = { 0 };
+        return err;
+    }
+    char buffer[4096];
+    tokenGetString(*token, buffer);
+    u64 nameLength = strlen(buffer);
+    ast.functionDeclaration->name = allocArena(arena, nameLength + 1);
+    memcpy(ast.functionDeclaration->name, buffer, nameLength + 1);
+    token++;
+
+    SpanAst paramList = AstFunctionParameterDeclarationParse(arena, &token);
+    if (paramList.type == ast_invalid) {
+        while (token->type == tt_lbrace)
+            token++;
+    }
+    ast.functionDeclaration->paramList = allocArena(arena, sizeof(SpanAstFunctionParameterDeclaration));
+    *ast.functionDeclaration->paramList = paramList;
+
+    while (token->type == tt_endl)
+        token++;
+
+    SpanAst scope = AstScopeParse(arena, &token);
+    if (scope.type == ast_invalid) {
+        // TODO: figure out what to do here if anything
+    }
+    ast.functionDeclaration->body = allocArena(arena, sizeof(SpanAstScope));
+    *ast.functionDeclaration->body = scope;
+
+    ast.tokenLength = token - *tokens;
+    *tokens = token;
+    return ast;
+}
+
+SpanAst AstGeneralIdParse(Arena arena, Token** tokens) {
+    Token* token = *tokens;
+    Token* t = token;
+    SpanAst ast = { 0 };
     massert(token->type == tt_id, "Should have id");
 
-    if (looksLikeFunctionDeclaration(tokens)) {
-        //TODO: function declaration
+    if (looksLikeFunctionDeclaration(&t)) {  // use t because we don't want to move forward our tokens
+        ast = AstFunctionDeclarationParse(arena, &token);
     } else {
         //TODO: expression
     }
+
+    *tokens = token;
+    return ast;
 }
 
 SpanAst AstGeneralParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
+    massert(token->type != tt_endl, "Should not have end line");
     SpanAst ast = { 0 };
     ast.token = token;
     switch (token->type) {
@@ -187,14 +439,14 @@ SpanAst AstGeneralParse(Arena arena, Token** tokens) {
     return ast;
 }
 
-SpanAst AstStructFieldParse(Arena arena, Token** tokens) {
+SpanAst AstVariableDeclarationParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
     while (token->type == tt_endl)
         token++;
     SpanAst ast = { 0 };
-    ast.type = ast_struct_field;
+    ast.type = ast_variable_declaration;
     ast.token = token;
-    ast.structField = allocArena(arena, sizeof(SpanAstStructField));
+    ast.variableDeclaration = allocArena(arena, sizeof(SpanAstVariableDeclaration));
 
     SpanAst type = AstTypeParse(arena, &token);
     if (type.type == ast_invalid) {
@@ -209,8 +461,8 @@ SpanAst AstStructFieldParse(Arena arena, Token** tokens) {
     char buffer[4096];
     tokenGetString(*token, buffer);
     u64 nameLength = strlen(buffer);
-    ast.structField->name = allocArena(arena, nameLength + 1);
-    memcpy(ast.structField->name, buffer, nameLength + 1);
+    ast.variableDeclaration->name = allocArena(arena, nameLength + 1);
+    memcpy(ast.variableDeclaration->name, buffer, nameLength + 1);
     token++;
 
     ast.tokenLength = token - *tokens;
@@ -238,8 +490,8 @@ SpanAst AstTypeParse(Arena arena, Token** tokens) {
     token++;
 
     ast.type_->modsCount = 0;
-    ast.type_->modsCapacity = 2;
-    ast.type_->mods = allocArena(arena, sizeof(SpanAst) * ast.type_->modsCapacity);
+    u64 modsCapacity = 2;
+    ast.type_->mods = allocArena(arena, sizeof(SpanAst) * modsCapacity);
 
     while (true) {
         SpanAst tmod = AstTmodParse(arena, &token);
@@ -247,9 +499,9 @@ SpanAst AstTypeParse(Arena arena, Token** tokens) {
             break;
         }
 
-        if (ast.type_->modsCount >= ast.type_->modsCapacity) {
-            ast.type_->mods = reallocArena(arena, sizeof(SpanAst) * ast.type_->modsCapacity * 2, ast.type_->mods, sizeof(SpanAst) * ast.type_->modsCapacity);
-            ast.type_->modsCapacity *= 2;
+        if (ast.type_->modsCount >= modsCapacity) {
+            ast.type_->mods = reallocArena(arena, sizeof(SpanAst) * modsCapacity * 2, ast.type_->mods, sizeof(SpanAst) * modsCapacity);
+            modsCapacity *= 2;
         }
         ast.type_->mods[ast.type_->modsCount++] = tmod;
     }

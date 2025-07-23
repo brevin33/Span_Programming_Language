@@ -26,6 +26,5 @@ int main(void) {
         printBar();
     }
 
-
     return 0;
 }
