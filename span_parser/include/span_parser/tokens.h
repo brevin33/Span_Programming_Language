@@ -84,3 +84,5 @@ u64 getTokenInt(Token token);
 double getTokenFloat(Token token);
 
 void tokenGetLineColumn(Token token, u64* outLine, u64* outColumnStart, u64* outColumnEnd);
+
+bool isAssignmentToken(Token token);

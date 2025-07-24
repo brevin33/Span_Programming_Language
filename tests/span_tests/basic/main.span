@@ -4,6 +4,6 @@ struct foo{
 }
 
 void main(){
-	foo f
+	x + y
 }
 

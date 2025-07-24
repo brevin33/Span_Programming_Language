@@ -14,13 +14,15 @@ SpanAst createAst(Arena arena, Token** tokens) {
     ast.file->globalStatements = allocArena(arena, sizeof(SpanAst) * globalStatementsCapacity);
 
     while (token->type != tt_eof) {
+        if (token->type == tt_endl) {
+            token++;
+            continue;
+        }
         if (ast.file->globalStatementsCount >= globalStatementsCapacity) {
             ast.file->globalStatements = reallocArena(arena, sizeof(SpanAst) * globalStatementsCapacity * 2, ast.file->globalStatements, sizeof(SpanAst) * globalStatementsCapacity);
             globalStatementsCapacity *= 2;
         }
         ast.file->globalStatements[ast.file->globalStatementsCount++] = AstGeneralParse(arena, &token);
-        while (token->type == tt_endl)
-            token++;
     }
 
     ast.tokenLength = token - *tokens;
@@ -196,6 +198,8 @@ bool looksLikeFunctionDeclaration(Token** tokens) {
     *tokens = token;
     return true;
 }
+
+
 
 static ProgramAction handelErrorFunctionParamParse(Token** tokens, Token firstParenToken) {
     Token parenStackTokenStack[1024];
@@ -398,20 +402,164 @@ SpanAst AstFunctionDeclarationParse(Arena arena, Token** tokens) {
     return ast;
 }
 
+SpanAst AstAssignmentParse(Arena arena, Token** tokens) {
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.token = token;
+    ast.type = ast_assignment;
+    ast.assignment = allocArena(arena, sizeof(SpanAstAssignment));
+
+
+    //TODO:
+
+    ast.tokenLength = token - *tokens;
+    *tokens = token;
+    return ast;
+}
+
 SpanAst AstGeneralIdParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
     Token* t = token;
+    Token* start = token;
     SpanAst ast = { 0 };
     massert(token->type == tt_id, "Should have id");
 
     if (looksLikeFunctionDeclaration(&t)) {  // use t because we don't want to move forward our tokens
         ast = AstFunctionDeclarationParse(arena, &token);
     } else {
-        //TODO: expression
+        bool isAssignment = false;
+        while (token->type != tt_endl) {
+            if (isAssignmentToken(*token)) {
+                isAssignment = true;
+                break;
+            }
+            token++;
+        }
+        token = start;
+
+        if (isAssignment) {
+            ast = AstAssignmentParse(arena, &token);
+        } else {
+            OurTokenType delimeters[] = { tt_endl };
+            ast = AstExpressionParse(arena, &token, delimeters, 1);
+        }
     }
 
     *tokens = token;
     return ast;
+}
+
+i64 getBiopPrecedence(OurTokenType tokenType) {
+    switch (tokenType) {
+        case tt_mul:
+        case tt_div:
+        case tt_mod:
+            return 1;
+        case tt_add:
+        case tt_sub:
+            return 2;
+        case tt_lshift:
+        case tt_rshift:
+            return 3;
+        case tt_lt:
+        case tt_gt:
+        case tt_le:
+        case tt_ge:
+            return 4;
+        case tt_eq:
+        case tt_neq:
+            return 5;
+        case tt_bit_and:
+            return 6;
+        case tt_uptr:  // xor
+            return 7;
+        case tt_bit_or:
+            return 8;
+        case tt_and:
+            return 9;
+        case tt_or:
+            return 10;
+        default:
+            return -1;
+    }
+}
+
+SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurTokenType* delimeters, u64 delimetersCount) {
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.token = token;
+    SpanAst lhs = AstExpressionValueParse(arena, &token);
+    if (lhs.type == ast_invalid) {
+        return lhs;
+    }
+    while (true) {
+        for (u64 i = 0; i < delimetersCount; i++) {
+            if (token->type == delimeters[i]) {
+                *tokens = token;
+                ast.tokenLength = token - *tokens;
+                return ast;
+            }
+        }
+        if (token->type == tt_eof) {
+            SpanAst err = { 0 };
+            logErrorTokens(token, 1, "Unexpected end of file");
+            return err;
+        }
+
+        i64 biopPrecedence = getBiopPrecedence(token->type);
+        if (biopPrecedence == -1) {
+            logErrorTokens(token, 1, "expected biop");
+            SpanAst err = { 0 };
+            return err;
+        }
+
+        if (biopPrecedence >= precedence) {
+            *tokens = token;
+            ast.tokenLength = token - *tokens;
+            return ast;
+        }
+        token++;
+
+
+
+        SpanAst rhs = AstExpressionBiopParse(arena, &token, precedence, delimeters, delimetersCount);
+        if (rhs.type == ast_invalid) {
+            return rhs;
+        }
+    }
+}
+
+SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.token = token;
+
+    switch (token->type) {
+        case tt_id: {
+            ast.type = ast_expr_word;
+            ast.exprWord = allocArena(arena, sizeof(SpanAstExprWord));
+            char buffer[4096];
+            tokenGetString(*token, buffer);
+            u64 nameLength = strlen(buffer);
+            char* word = allocArena(arena, nameLength + 1);
+            memcpy(word, buffer, nameLength + 1);
+            ast.exprWord->word = word;
+            token++;
+            break;
+        }
+        default: {
+            massert(false, "Unexpected token");
+            break;
+        }
+    }
+
+    ast.tokenLength = token - *tokens;
+    *tokens = token;
+    return ast;
+}
+
+SpanAst AstExpressionParse(Arena arena, Token** tokens, OurTokenType* delimeters, u64 delimetersCount) {
+    return AstExpressionBiopParse(arena, tokens, INT64_MAX, delimeters, delimetersCount);
 }
 
 SpanAst AstGeneralParse(Arena arena, Token** tokens) {

@@ -896,3 +896,18 @@ void tokenGetLineColumn(Token token, u64* outLine, u64* outColumnStart, u64* out
     *outColumnStart = columnStart;
     *outColumnEnd = columnEnd;
 }
+
+bool isAssignmentToken(Token token) {
+    switch (token.type) {
+        case tt_assign:
+        case tt_assign_add:
+        case tt_assign_sub:
+        case tt_assign_mul:
+        case tt_assign_div:
+        case tt_assign_mod:
+        case tt_assign_infer:
+            return true;
+        default:
+            return false;
+    }
+}

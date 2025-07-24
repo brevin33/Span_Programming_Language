@@ -27,6 +27,8 @@ typedef enum _SpanASTType : u8 {
     ast_parameter_delcaration,
     ast_func_param,
     ast_scope,
+    ast_expr_word,
+    ast_assignment,
 } SpanASTType;
 
 typedef struct _SpanAstTmodPtr {
@@ -55,6 +57,10 @@ typedef struct _SpanAstFunctionParameterDeclaration {
     SpanAst* params;
     u64 paramsCount;
 } SpanAstFunctionParameterDeclaration;
+
+typedef struct _SpanAstExprWord {
+    char* word;
+} SpanAstExprWord;
 
 typedef struct _SpanAstFunctionDeclaration {
     char* name;
@@ -91,6 +97,13 @@ typedef struct _SpanAstScope {
     u64 statementsCount;
 } SpanAstScope;
 
+
+typedef struct _SpanAstAssignment {
+    SpanAst* assignees;
+    u64 assigneesCount;
+    SpanAst* value;
+} SpanAstAssignment;
+
 typedef struct _SpanAst {
     SpanASTType type;
     u32 tokenLength;
@@ -111,6 +124,8 @@ typedef struct _SpanAst {
         SpanAstVariableDeclaration* variableDeclaration;
         SpanAstFunctionParameterDeclaration* funcParam;
         SpanAstScope* scope;
+        SpanAstAssignment* assignment;
+        SpanAstExprWord* exprWord;
     };
 } SpanAst;
 
@@ -129,6 +144,12 @@ SpanAst AstFunctionDeclarationParse(Arena arena, Token** tokens);
 SpanAst AstVariableDeclarationParse(Arena arena, Token** tokens);
 SpanAst AstFunctionParameterDeclarationParse(Arena arena, Token** tokens);
 SpanAst AstScopeParse(Arena arena, Token** tokens);
+SpanAst AstExpressionParse(Arena arena, Token** tokens, OurTokenType* delimeters, u64 delimetersCount);
+SpanAst AstAssignmentParse(Arena arena, Token** tokens);
+SpanAst AstExpressionValueParse(Arena arena, Token** tokens);
+SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurTokenType* delimeters, u64 delimetersCount);
+
+
 
 bool looksLikeFunctionDeclaration(Token** tokens);
 bool looksLikeType(Token** tokens);
