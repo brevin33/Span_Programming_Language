@@ -50,8 +50,8 @@ typedef enum _TokenType : u8 {
     tt_uptr,
     tt_sptr,
     tt_char,
-    tt_endl,
     tt_eof,
+    tt_end_statement,
     tt_bit_and,
     tt_and,
     tt_bit_or,
@@ -59,6 +59,9 @@ typedef enum _TokenType : u8 {
     tt_lshift,
     tt_rshift,
     tt_xor,
+    tt_fallthrough,
+    tt_break,
+    tt_continue,
 } OurTokenType;
 
 
@@ -71,7 +74,7 @@ typedef struct _Token {
 
 Token* createTokens(Arena arena, char* fileContents, u64 fileIndex);
 
-Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringStack, u64* stringStackIndex);
+Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringStack, u64* stringStackIndexRef, OurTokenType previousTokenType);
 
 char* ourTokenTypeToString(OurTokenType type);
 

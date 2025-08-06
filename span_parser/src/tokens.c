@@ -76,13 +76,15 @@ Token* createTokens(Arena arena, char* fileContents, u64 fileIndex) {
     char stringStack[512];
     memset(stringStack, 0, sizeof(stringStack));
     u64 stringStackIndex = 0;
+    OurTokenType previousTokenType = tt_invalid;
     while (fileContents[index] != '\0') {
         if (tokenCount >= tokensCapacity) {
             tokens = reallocArena(arena, sizeof(Token) * (tokensCapacity * 2), tokens, sizeof(Token) * tokensCapacity);
             tokensCapacity *= 2;
         }
         massert(index != UINT32_MAX, "Token index overflow");
-        Token token = createToken(fileContents, &index, fileIndex, stringStack, &stringStackIndex);
+        Token token = createToken(fileContents, &index, fileIndex, stringStack, &stringStackIndex, previousTokenType);
+        previousTokenType = token.type;
         tokens[tokenCount++] = token;
     }
     if (tokenCount >= tokensCapacity) {
@@ -90,7 +92,7 @@ Token* createTokens(Arena arena, char* fileContents, u64 fileIndex) {
         tokensCapacity *= 2;
     }
     massert(index != UINT32_MAX, "Token index overflow");
-    Token eofToken = createToken(fileContents, &index, fileIndex, stringStack, &stringStackIndex);
+    Token eofToken = createToken(fileContents, &index, fileIndex, stringStack, &stringStackIndex, previousTokenType);
     tokens[tokenCount++] = eofToken;
 
 
@@ -102,6 +104,7 @@ static bool isIdChar(char c) {
     switch (c) {
         case '_':
         CASE_LETTER:
+        CASE_NUMBER:
             return true;
         default:
             return false;
@@ -110,8 +113,9 @@ static bool isIdChar(char c) {
 
 static bool isNumberChar(char c) {
     switch (c) {
-    CASE_NUMBER:
-        return true;
+        case '_':
+        CASE_NUMBER:
+            return true;
         default:
             return false;
     }
@@ -146,6 +150,18 @@ static void handelKeyword(Token* token, char* id) {
         token->type = tt_interface;
         return;
     }
+    if (strcmp(id, "fallthrough") == 0) {
+        token->type = tt_fallthrough;
+        return;
+    }
+    if (strcmp(id, "break") == 0) {
+        token->type = tt_break;
+        return;
+    }
+    if (strcmp(id, "continue") == 0) {
+        token->type = tt_continue;
+        return;
+    }
 }
 
 
@@ -154,11 +170,19 @@ static char* getNumberString(char* fileContent, u32* indexRef, char* buffer) {
     u32 index = *indexRef;
 
     while (isNumberChar(fileContent[index])) {
+        if (fileContent[index] == '_') {
+            index++;
+            continue;
+        }
         buffer[numberBufferIndex++] = fileContent[index++];
     }
     if (fileContent[index] == '.') {
         index++;
         while (isNumberChar(fileContent[index])) {
+            if (fileContent[index] == '_') {
+                index++;
+                continue;
+            }
             buffer[numberBufferIndex++] = fileContent[index++];
         }
     }
@@ -183,7 +207,7 @@ static char* getStringString(char* fileContent, u32* indexRef, char* buffer, u16
 
 static void handelIdOrKeyword(char* fileContent, u32* indexRef, Token* token) {
     u32 index = *indexRef;
-    char buffer[4096];
+    char buffer[BUFFER_SIZE];
     u32 idBufferIndex = 0;
     while (isIdChar(fileContent[index])) {
         buffer[idBufferIndex++] = fileContent[index++];
@@ -196,7 +220,7 @@ static void handelIdOrKeyword(char* fileContent, u32* indexRef, Token* token) {
 
 static void handelNumber(char* fileContent, u32* indexRef, Token* token) {
     u32 index = *indexRef;
-    char numberBuffer[4096];
+    char numberBuffer[BUFFER_SIZE];
     char* numberString = getNumberString(fileContent, &index, numberBuffer);
     u64 numberStringLength = strlen(numberString);
     bool isFloat = false;
@@ -313,6 +337,12 @@ char* ourTokenTypeToString(OurTokenType type) {
             return "invalid";
         case tt_return:
             return "return";
+        case tt_break:
+            return "break";
+        case tt_continue:
+            return "continue";
+        case tt_fallthrough:
+            return "fallthrough";
         case tt_id:
             return "id";
         case tt_dot:
@@ -329,8 +359,8 @@ char* ourTokenTypeToString(OurTokenType type) {
             return "rbrace";
         case tt_lbrace:
             return "lbrace";
-        case tt_endl:
-            return "endl";
+        case tt_end_statement:
+            return "end_statement";
         case tt_comma:
             return "comma";
         case tt_colon:
@@ -422,8 +452,27 @@ char* ourTokenTypeToString(OurTokenType type) {
     }
     return "no string add for this token type";
 }
+bool lastTokenInsertsEndStatement(OurTokenType type) {
+    switch (type) {
+        case tt_id:
+        case tt_int:
+        case tt_float:
+        case tt_char:
+        case tt_string_end:
+        case tt_return:
+        case tt_continue:
+        case tt_break:
+        case tt_fallthrough:
+        case tt_rparen:
+        case tt_rbrace:
+        case tt_rbracket:
+            return true;
+        default:
+            return false;
+    }
+}
 
-Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringStack, u64* stringStackIndexRef) {
+Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringStack, u64* stringStackIndexRef, OurTokenType previousTokenType) {
     Token token;
     u32 index = *indexRef;
     u64 stringStackIndex = *stringStackIndexRef;
@@ -478,9 +527,13 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
                 break;
             }
             case '\n': {
-                token.type = tt_endl;
+                if (lastTokenInsertsEndStatement(previousTokenType)) {
+                    token.type = tt_end_statement;
+                    index++;
+                    break;
+                }
                 index++;
-                break;
+                continue;
             }
             case ' ':
             case '\t':
@@ -511,7 +564,7 @@ Token createToken(char* fileContent, u32* indexRef, u16 fileIndex, char* stringS
                 break;
             }
             case ';': {
-                token.type = tt_endl;
+                token.type = tt_end_statement;
                 index++;
                 break;
             }
@@ -772,13 +825,13 @@ void handelStringEscape(char* string, Token token) {
 }
 
 u64 getTokenInt(Token token) {
-    char buffer[4096];
+    char buffer[BUFFER_SIZE];
     char* numberString = tokenGetString(token, buffer);
     return atoll(numberString);
 }
 
 double getTokenFloat(Token token) {
-    char buffer[4096];
+    char buffer[BUFFER_SIZE];
     char* numberString = tokenGetString(token, buffer);
     return atof(numberString);
 }

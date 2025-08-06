@@ -1,6 +1,7 @@
 #pragma once
 #include "default.h"
 #include "span_parser/tokens.h"
+#include "span_parser/ast.h"
 
 #ifdef NDEBUG
     #define massert(condition, message)
@@ -11,6 +12,8 @@
 void logError(const char* message, ...);
 
 void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...);
+
+void logErrorAst(SpanAst* ast, const char* message, ...);
 
 void __mAssert(bool condition, const char* message);
 

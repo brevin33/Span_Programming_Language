@@ -27,6 +27,27 @@ char* intToString(i64 number, char* buffer) {
     }
 }
 
+u64 stringToUint(char* string) {
+    char* end;
+    unsigned long long int value = strtoull(string, &end, 10);
+    if (errno == ERANGE) {
+        errno = 0;
+        return 0;
+    }
+    return value;
+}
+
+
+bool stringIsUint(char* string) {
+    char* end;
+    unsigned long long int value = strtoull(string, &end, 10);
+    if (errno == ERANGE) {
+        errno = 0;
+        return false;
+    }
+    return *end == '\0' && value <= ULLONG_MAX;
+}
+
 u64 countDigits(u64 n) {
     u64 digits = 0;
     do {

@@ -4,7 +4,7 @@
 
 int main(void) {
     const char* variableValue = getenv("Span_Language_Dir");
-    char pathToSpanTests[4096];
+    char pathToSpanTests[BUFFER_SIZE];
     sprintf(pathToSpanTests, "%s/tests/span_tests", variableValue);
     Arena arena = createRootArena(1024 * 1024 * 4);
 
@@ -12,7 +12,7 @@ int main(void) {
     char** directories = getDirectoryNamesInDirectory(arena, pathToSpanTests, &directoryCount);
 
     for (u64 i = 0; i < directoryCount; i++) {
-        char directoryPath[4096];
+        char directoryPath[BUFFER_SIZE];
         sprintf(directoryPath, "%s/%s", pathToSpanTests, directories[i]);
         printf("\n");
         printBar();
@@ -26,5 +26,6 @@ int main(void) {
         printBar();
     }
 
+    freeArena(arena);
     return 0;
 }

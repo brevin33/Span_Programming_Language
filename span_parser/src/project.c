@@ -8,6 +8,9 @@ void initializeContext(Arena arena) {
     context.activeProject = NULL;
     context.namespaceCounter = 1;
     context.initialized = true;
+    context.baseTypesCapacity = 8;
+    context.baseTypesCount = 0;
+    context.baseTypes = allocArena(arena, sizeof(SpanTypeBase) * context.baseTypesCapacity);
 }
 
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
@@ -17,6 +20,10 @@ char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
     lineStarts[lineStartsCount++] = fileContents;
     while (*fileContents != '\0') {
         if (*fileContents == '\n') {
+            if (lineStartsCount >= lineStartsCapacity) {
+                lineStarts = reallocArena(arena, sizeof(char*) * lineStartsCapacity * 2, lineStarts, sizeof(char*) * lineStartsCapacity);
+                lineStartsCapacity *= 2;
+            }
             lineStarts[lineStartsCount++] = fileContents + 1;
         }
         fileContents++;
@@ -37,11 +44,37 @@ u64 SpanFileFindLineFromInternalPointer(SpanFile* file, char* internalPointer) {
     return line;
 }
 
+void SpanFilePrototypeTypes(SpanFile* file) {
+    u64 fileDefinitionStartsCapacity = 4;
+    file->fileDefinedTypes = allocArena(file->arena, sizeof(SpanTypeBase*) * fileDefinitionStartsCapacity);
+    file->fileDefinedTypesCount = 0;
+    for (u64 i = 0; i < file->ast.file->globalStatementsCount; i++) {
+        SpanAst* statement = &file->ast.file->globalStatements[i];
+        if (AstIsTypeDefinition(statement)) {
+            SpanTypeBase* type = prototypeType(statement);
+            if (type == NULL) {
+                continue;
+            }
+            if (file->fileDefinedTypesCount >= fileDefinitionStartsCapacity) {
+                file->fileDefinedTypes = reallocArena(file->arena, sizeof(SpanTypeBase*) * fileDefinitionStartsCapacity * 2, file->fileDefinedTypes, sizeof(SpanTypeBase*) * fileDefinitionStartsCapacity);
+                fileDefinitionStartsCapacity *= 2;
+            }
+            file->fileDefinedTypes[file->fileDefinedTypesCount++] = type;
+        }
+    }
+}
+
+void SpanFileImplementTypes(SpanFile* file) {
+    for (u64 i = 0; i < file->fileDefinedTypesCount; i++) {
+        implementType(file->fileDefinedTypes[i]);
+    }
+}
+
 SpanFile createSpanFile(Arena arena, char* fileName, char* directory, u64 fileIndex) {
     SpanFile file;
     file.arena = createArena(arena, 1024);
     file.fileName = fileName;
-    char filePath[4096];
+    char filePath[BUFFER_SIZE];
     sprintf(filePath, "%s/%s", directory, fileName);
     file.fileContents = readFile(file.arena, filePath);
     file.fileLineStarts = getLineStarts(file.arena, file.fileContents, &file.fileLineStartsCount);
@@ -78,8 +111,14 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     SpanProject project;
     context.activeProject = &project;
     project.arena = createArena(arena, 1024 * 8);
-    project.name = allocArena(project.arena, 4096);
-    project.name = getDirectoryNameFromPath(path, project.name);
+
+    char buffer[BUFFER_SIZE];
+    char* dirName = getDirectoryNameFromPath(path, buffer);
+    u32 dirNameLength = strlen(dirName);
+
+    project.name = allocArena(project.arena, dirNameLength + 1);
+    memcpy(project.name, dirName, dirNameLength + 1);
+
     project.parent = parent;
     project.namespace = context.namespaceCounter++;
 
@@ -87,10 +126,12 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     char** directories = getDirectoryNamesInDirectory(project.arena, path, &directoryCount);
     project.childCount = 0;
     project.childCapacity = directoryCount;
-    project.children = allocArena(project.arena, sizeof(SpanProject) * directoryCount);
+    if (directoryCount > 0) project.children = allocArena(project.arena, sizeof(SpanProject) * directoryCount);
+    else
+        project.children = NULL;
     for (u64 i = 0; i < directoryCount; i++) {
         char* directory = directories[i];
-        char directoryPath[4096];
+        char directoryPath[BUFFER_SIZE];
         sprintf(directoryPath, "%s/%s", path, directory);
         SpanProject child = createSpanProjectHelper(project.arena, &project, directoryPath);
         project.children[project.childCount++] = child;
@@ -103,6 +144,14 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
         SpanFileGetTokensForFile(&project.files[i], i);
         SpanFileGetAstForFile(&project.files[i]);
     }
+
+    for (u64 i = 0; i < project.fileCount; i++) {
+        SpanFilePrototypeTypes(&project.files[i]);
+    }
+    for (u64 i = 0; i < project.fileCount; i++) {
+        SpanFileImplementTypes(&project.files[i]);
+    }
+
 
     return project;
 }

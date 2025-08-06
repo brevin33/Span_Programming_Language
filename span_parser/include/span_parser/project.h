@@ -3,6 +3,7 @@
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
 #include "span_parser/ast.h"
+#include "span_parser/type.h"
 
 #define NO_NAMESPACE 0
 
@@ -18,6 +19,9 @@ typedef struct _SpanFile {
 
     Token* tokens;
 
+    SpanTypeBase** fileDefinedTypes;
+    u64 fileDefinedTypesCount;
+
     SpanAst ast;
 } SpanFile;
 
@@ -28,6 +32,10 @@ SpanFile createSpanFile(Arena arena, char* fileName, char* directory, u64 fileIn
 void SpanFileGetTokensForFile(SpanFile* file, u64 fileIndex);
 
 void SpanFileGetAstForFile(SpanFile* file);
+
+void SpanFilePrototypeTypes(SpanFile* file);
+
+void SpanFileImplementTypes(SpanFile* file);
 
 u64 SpanFileFindLineFromInternalPointer(SpanFile* file, char* internalPointer);
 

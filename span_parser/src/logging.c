@@ -24,6 +24,13 @@ void logError(const char* message, ...) {
     printBar();
 }
 
+void logErrorAst(SpanAst* ast, const char* message, ...) {
+    va_list args;
+    va_start(args, message);
+    logErrorTokens(ast->token, ast->tokenLength, message, args);
+    va_end(args);
+}
+
 void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
     makeRed();
     u64 lines[128];
@@ -75,7 +82,7 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
     // print lines and underline the tokens
     for (u64 i = 0; i < lineCount; i++) {
         printf("%06llu| ", lines[i]);
-        char lineBuffer[4096 * 4] = { 0 };
+        char lineBuffer[BUFFER_SIZE] = { 0 };
         u64 lineBufferCount = 0;
         memset(lineBuffer, 0, sizeof(lineBuffer));
         char* lineStart = file->fileLineStarts[lines[i] - 1];
@@ -126,7 +133,7 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
             if (tokens[j].type == tt_eof) {
                 charAtEndOfLine = true;
                 break;
-            } else if (tokens[j].type == tt_endl) {
+            } else if (tokens[j].type == tt_end_statement) {
                 charAtEndOfLine = true;
                 break;
             }

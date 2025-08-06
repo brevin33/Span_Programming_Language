@@ -42,6 +42,7 @@ Arena createArena(Arena parent, u64 initialSize) {
 }
 
 void* allocArena(Arena arena, u64 size) {
+    massert(size > 0, "size should be greater than 0");
     u64 memoryAllocationSize = getMemoryAllocationSize(arena->initialSize, arena->bufferIndex);
     while (arena->memoryIndex + size > memoryAllocationSize) {
         arena->bufferIndex++;
@@ -59,14 +60,15 @@ void* allocArena(Arena arena, u64 size) {
 }
 
 void freeArena(Arena arena) {
-    massert(arena->parent == NULL, "Cannot free arena with parent");
+    if (arena->parent != NULL) {
+        return;
+    }
     for (u64 i = 1; i < maxArenaMemoryAllocations; i++) {
         if (arena->memory[i] != NULL) {
             free(arena->memory[i]);
         }
     }
-    // the first allocation is the arena itself
-    free(arena->memory[0]);
+    free(arena);
 }
 
 void arenaReset(Arena arena) {

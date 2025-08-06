@@ -1,9 +1,17 @@
+
 struct foo{
-	int x
-	int y	
+
+	i32 x
+
+	i32 y	
+
 }
 
 void main(){
-	x + y
+
+	i32 x = 3
+
+	return x
+
 }
 

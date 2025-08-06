@@ -61,7 +61,7 @@ bool deleteDirectory(const char* directory) {
     int ret = 0;
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-        char path[4096];
+        char path[BUFFER_SIZE];
         snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
 
         struct stat statbuf;

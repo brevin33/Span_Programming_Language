@@ -9,6 +9,9 @@
 #include "span_parser/type.h"
 #include "span_parser/utils.h"
 #include "span_parser/ast.h"
+#include "span_parser/function.h"
+
+#define BUFFER_SIZE 4096
 
 SpanProject createSpanProject(Arena arena, char* path);
 
@@ -17,6 +20,12 @@ typedef struct _SpanContext {
     SpanProject* activeProject;
     u32 namespaceCounter;
     bool initialized;
+    SpanTypeBase* baseTypes;
+    u64 baseTypesCount;
+    u64 baseTypesCapacity;
+    SpanFunction* functions;
+    u64 functionsCount;
+    u64 functionsCapacity;
 } SpanContext;
 
 extern SpanContext context;

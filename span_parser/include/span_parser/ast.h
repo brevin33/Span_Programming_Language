@@ -26,10 +26,18 @@ typedef enum _SpanASTType : u8 {
     ast_variable_declaration,
     ast_parameter_delcaration,
     ast_func_param,
+    ast_function_declaration,
     ast_scope,
     ast_expr_word,
     ast_assignment,
+    ast_expr_biop,
+    ast_number_literal,
+    ast_return,
+    ast_end_statement,
 } SpanASTType;
+
+typedef struct _SpanAstEndStatement {
+} SpanAstEndStatement;
 
 typedef struct _SpanAstTmodPtr {
 } SpanAstTmodPtr;
@@ -62,6 +70,10 @@ typedef struct _SpanAstExprWord {
     char* word;
 } SpanAstExprWord;
 
+typedef struct _SpanAstNumberLiteral {
+    char* word;
+} SpanAstNumberLiteral;
+
 typedef struct _SpanAstFunctionDeclaration {
     char* name;
     SpanAst* returnType;
@@ -84,7 +96,6 @@ typedef struct _SpanAstStruct {
     char* name;
     SpanAst* fields;
     u64 fieldsCount;
-    SpanAst* body;
 } SpanAstStruct;
 
 typedef struct _SpanAstVariableDeclaration {
@@ -97,12 +108,22 @@ typedef struct _SpanAstScope {
     u64 statementsCount;
 } SpanAstScope;
 
+typedef struct _SpanAstReturn {
+    SpanAst* value;
+} SpanAstReturn;
 
 typedef struct _SpanAstAssignment {
     SpanAst* assignees;
     u64 assigneesCount;
     SpanAst* value;
+    OurTokenType assignmentType;
 } SpanAstAssignment;
+
+typedef struct _SpanAstExprBiop {
+    SpanAst* lhs;
+    SpanAst* rhs;
+    OurTokenType op;
+} SpanAstExprBiop;
 
 typedef struct _SpanAst {
     SpanASTType type;
@@ -125,15 +146,21 @@ typedef struct _SpanAst {
         SpanAstFunctionParameterDeclaration* funcParam;
         SpanAstScope* scope;
         SpanAstAssignment* assignment;
-        SpanAstExprWord* exprWord;
+        SpanAstExprWord exprWord;
+        SpanAstExprBiop* exprBiop;
+        SpanAstNumberLiteral numberLiteral;
+        SpanAstReturn return_;
+        SpanAstEndStatement endStatement;
     };
 } SpanAst;
 
+bool AstIsTypeDefinition(SpanAst* ast);
 SpanAst AstGeneralIdParse(Arena arena, Token** tokens);
 SpanAst createAst(Arena arena, Token** tokens);
 SpanAst AstGeneralParse(Arena arena, Token** tokens);
 SpanAst AstStructParse(Arena arena, Token** tokens);
-SpanAst AstTypeParse(Arena arena, Token** tokens);
+SpanAst AstReturnParse(Arena arena, Token** tokens);
+SpanAst AstTypeParse(Arena arena, Token** tokens, bool logError);
 SpanAst AstTmodParse(Arena arena, Token** tokens);
 SpanAst AstTmodPtrParse(Arena arena, Token** tokens);
 SpanAst AstTmodRefParse(Arena arena, Token** tokens);
@@ -141,7 +168,7 @@ SpanAst AstTmodUptrParse(Arena arena, Token** tokens);
 SpanAst AstTmodSptrParse(Arena arena, Token** tokens);
 SpanAst AstTmodListLikeParse(Arena arena, Token** tokens);
 SpanAst AstFunctionDeclarationParse(Arena arena, Token** tokens);
-SpanAst AstVariableDeclarationParse(Arena arena, Token** tokens);
+SpanAst AstVariableDeclarationParse(Arena arena, Token** tokens, bool logError);
 SpanAst AstFunctionParameterDeclarationParse(Arena arena, Token** tokens);
 SpanAst AstScopeParse(Arena arena, Token** tokens);
 SpanAst AstExpressionParse(Arena arena, Token** tokens, OurTokenType* delimeters, u64 delimetersCount);
