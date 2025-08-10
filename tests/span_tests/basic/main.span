@@ -1,17 +1,5 @@
 
-struct foo{
-
-	i32 x
-
-	i32 y	
-
-}
-
-void main(){
-
+i32 main(){
 	i32 x = 3
-
 	return x
-
 }
-

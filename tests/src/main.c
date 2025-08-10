@@ -1,3 +1,4 @@
+#include <sal.h>
 #include <stdio.h>
 #include "span_parser.h"
 #include "span_parser/logging.h"
@@ -26,6 +27,8 @@ int main(void) {
         printBar();
     }
 
+
     freeArena(arena);
+    debugbreak();
     return 0;
 }

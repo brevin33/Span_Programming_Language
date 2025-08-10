@@ -154,9 +154,6 @@ void __mAssert(bool condition, const char* message) {
         makeRed();
         printf("Assertion failed: %s\n", message);
         resetColor();
-#ifdef _WIN32
-        __debugbreak();
-#endif
-        abort();
+        debugbreak();
     }
 }

@@ -14,6 +14,10 @@ add_library(span_parser
 	src/utils.c
 	src/ast.c
 	src/function.c
+	src/expression.c
+	src/variable.c
+	src/statment.c
+	src/scope.c
 )
 
 target_include_directories(span_parser PUBLIC include)

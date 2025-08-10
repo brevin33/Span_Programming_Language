@@ -8,13 +8,15 @@
 typedef struct _SpanTypeBase SpanTypeBase;
 
 typedef enum _SpanTypeType : u8 {
-    st_invalid = 0,
-    st_struct,
-    st_int,
-    st_uint,
-    st_float,
-    st_function,
+    t_invalid = 0,
+    t_struct,
+    t_int,
+    t_uint,
+    t_float,
+    t_function,
+    t_numberic_literal,
 } SpanTypeType;
+
 
 typedef struct _SpanTypeStruct {
     SpanTypeBase** fields;
@@ -68,6 +70,15 @@ SpanTypeBase* prototypeType(SpanAst* ast);
 SpanTypeBase* prototypeStuctType(SpanAst* structAst);
 void implementType(SpanTypeBase* type);
 void implementStuctType(SpanTypeBase* structType);
-SpanTypeBase* getIntType(u64 size);
-SpanTypeBase* getFloatType(u64 size);
-SpanTypeBase* getUintType(u64 size);
+SpanTypeBase* getIntTypeBase(u64 size);
+SpanTypeBase* getFloatTypeBase(u64 size);
+SpanTypeBase* getUintTypeBase(u64 size);
+SpanTypeBase* getNumbericLiteralTypeBase();
+SpanTypeBase* getInvalidTypeBase();
+SpanType getIntType(u64 size);
+SpanType getFloatType(u64 size);
+SpanType getUintType(u64 size);
+SpanType getNumbericLiteralType();
+SpanType getInvalidType();
+SpanType getInvalidTypeAst(SpanAst* ast);
+SpanType getType(SpanAst* ast);

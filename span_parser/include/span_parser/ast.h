@@ -31,7 +31,7 @@ typedef enum _SpanASTType : u8 {
     ast_expr_word,
     ast_assignment,
     ast_expr_biop,
-    ast_number_literal,
+    ast_expr_number_literal,
     ast_return,
     ast_end_statement,
 } SpanASTType;
@@ -130,10 +130,9 @@ typedef struct _SpanAst {
     u32 tokenLength;
     Token* token;
     union {
-        // anything larger than 64 bits should be a pointer
-        SpanAstFile* file;
-        SpanAstStruct* struct_;
-        SpanAstType* type_;
+        SpanAstFile file;
+        SpanAstStruct struct_;
+        SpanAstType type_;
         SpanAstTmodPtr tmodPtr;
         SpanAstTmodRef tmodRef;
         SpanAstTmodUptr tmodUptr;
@@ -141,13 +140,13 @@ typedef struct _SpanAst {
         SpanAstTmodArray tmodArray;
         SpanAstTmodList tmodList;
         SpanAstTmodSlice tmodSlice;
-        SpanAstFunctionDeclaration* functionDeclaration;
-        SpanAstVariableDeclaration* variableDeclaration;
-        SpanAstFunctionParameterDeclaration* funcParam;
-        SpanAstScope* scope;
-        SpanAstAssignment* assignment;
+        SpanAstFunctionDeclaration functionDeclaration;
+        SpanAstVariableDeclaration variableDeclaration;
+        SpanAstFunctionParameterDeclaration funcParam;
+        SpanAstScope scope;
+        SpanAstAssignment assignment;
         SpanAstExprWord exprWord;
-        SpanAstExprBiop* exprBiop;
+        SpanAstExprBiop exprBiop;
         SpanAstNumberLiteral numberLiteral;
         SpanAstReturn return_;
         SpanAstEndStatement endStatement;
@@ -155,6 +154,7 @@ typedef struct _SpanAst {
 } SpanAst;
 
 bool AstIsTypeDefinition(SpanAst* ast);
+bool AstIsTypeModifier(SpanAst* ast);
 SpanAst AstGeneralIdParse(Arena arena, Token** tokens);
 SpanAst createAst(Arena arena, Token** tokens);
 SpanAst AstGeneralParse(Arena arena, Token** tokens);
@@ -175,6 +175,12 @@ SpanAst AstExpressionParse(Arena arena, Token** tokens, OurTokenType* delimeters
 SpanAst AstAssignmentParse(Arena arena, Token** tokens);
 SpanAst AstExpressionValueParse(Arena arena, Token** tokens);
 SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurTokenType* delimeters, u64 delimetersCount);
+
+bool AstIsExpression(SpanAst* ast);
+#define CASE_AST_EXPR                                                                                                                                                                                                                \
+    case ast_expr_biop:                                                                                                                                                                                                              \
+    case ast_expr_word:                                                                                                                                                                                                              \
+    case ast_expr_number_literal
 
 
 

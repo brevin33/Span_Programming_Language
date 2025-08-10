@@ -41,8 +41,15 @@ Arena createArena(Arena parent, u64 initialSize) {
     return arena;
 }
 
+u64 allignTo(u64 size, u64 alignment) {
+    return (size + alignment - 1) & ~(alignment - 1);
+}
+
 void* allocArena(Arena arena, u64 size) {
     massert(size > 0, "size should be greater than 0");
+    massert(size < 1024 * 4, "a really big allocation probably a bug");
+    size = allignTo(size, 8);
+
     u64 memoryAllocationSize = getMemoryAllocationSize(arena->initialSize, arena->bufferIndex);
     while (arena->memoryIndex + size > memoryAllocationSize) {
         arena->bufferIndex++;

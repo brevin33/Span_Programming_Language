@@ -4,15 +4,20 @@
 #include "span_parser/tokens.h"
 #include "span_parser/ast.h"
 #include "span_parser/type.h"
+#include "span_parser/scope.h"
 
 typedef struct _SpanFunction {
     SpanTypeBase* functionType;
+    SpanAst* ast;
     char* name;
     char* scrambledName;
+    SpanScope scope;
 } SpanFunction;
 
 SpanFunction* addFunction(SpanFunction* function);
 
-SpanFunction* findFunction(char* name, u32 namespace);
+SpanFunction* findFunctions(char* name, u32 namespace, SpanFunction* buffer, u32* functionsCountOut);
 
-SpanFunction* implementFunction(SpanAst* ast);
+SpanFunction* prototypeFunction(SpanAst* ast);
+
+void implementFunction(SpanFunction* function);

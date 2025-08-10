@@ -28,29 +28,131 @@ SpanTypeBase* findBaseType(char* name, u32 namespace) {
     return NULL;
 }
 
+SpanTypeBase* getInvalidTypeBase() {
+    SpanTypeBase base;
+    base.type = t_invalid;
+    base.namespace = NO_NAMESPACE;
+    base.ast = NULL;
+    base.name = "%invalid%";
+
+    SpanTypeBase* existing = findBaseType(base.name, NO_NAMESPACE);
+    if (existing != NULL) {
+        return existing;
+    }
+
+    return addBaseType(&base);
+}
+
+SpanType getInvalidType() {
+    SpanTypeBase* base = getInvalidTypeBase();
+    SpanType type;
+    type.base = base;
+    type.mods = NULL;
+    type.modsCount = 0;
+    return type;
+}
+
+SpanType getInvalidTypeAst(SpanAst* ast) {
+    massert(ast->type == ast_type, "should be an invalid ast");
+    SpanTypeBase* base = getInvalidTypeBase();
+    SpanType type;
+    type.base = base;
+    type.mods = ast->type_.mods;
+    type.modsCount = ast->type_.modsCount;
+    return type;
+}
+
+SpanType getType(SpanAst* ast) {
+    massert(ast->type == ast_type, "should be a type");
+    SpanTypeBase* base = typeFromTypeAst(ast);
+    if (base == NULL) {
+        logErrorAst(ast, "type not found");
+        return getInvalidTypeAst(ast);
+    }
+    SpanType type;
+    type.base = base;
+    type.modsCount = ast->type_.modsCount;
+    type.mods = ast->type_.mods;
+
+    // debug check
+    for (u64 i = 0; i < type.modsCount; i++) {
+        SpanAst* mod = &type.mods[i];
+        massert(AstIsTypeModifier(mod), "should be a type modifier");
+    }
+
+    return type;
+}
+
 SpanTypeBase* prototypeStuctType(SpanAst* structAst) {
     massert(structAst->type == ast_struct, "should be a struct");
     SpanTypeBase base;
-    base.type = st_struct;
+    base.type = t_struct;
     base.namespace = context.activeProject->namespace;
     base.ast = structAst;
-    base.name = structAst->struct_->name;
+    base.name = structAst->struct_.name;
 
+    return addBaseType(&base);
+}
+
+SpanType getIntType(u64 size) {
+    SpanTypeBase* base = getIntTypeBase(size);
+    SpanType type;
+    type.base = base;
+    type.mods = NULL;
+    type.modsCount = 0;
+    return type;
+}
+SpanType getFloatType(u64 size) {
+    SpanTypeBase* base = getFloatTypeBase(size);
+    SpanType type;
+    type.base = base;
+    type.mods = NULL;
+    type.modsCount = 0;
+    return type;
+}
+SpanType getUintType(u64 size) {
+    SpanTypeBase* base = getUintTypeBase(size);
+    SpanType type;
+    type.base = base;
+    type.mods = NULL;
+    type.modsCount = 0;
+    return type;
+}
+
+SpanType getNumbericLiteralType() {
+    SpanTypeBase* base = getNumbericLiteralTypeBase();
+    SpanType type;
+    type.base = base;
+    type.mods = NULL;
+    type.modsCount = 0;
+    return type;
+}
+
+SpanTypeBase* getNumbericLiteralTypeBase() {
+    SpanTypeBase base;
+    base.type = t_numberic_literal;
+    base.namespace = NO_NAMESPACE;
+    base.ast = NULL;
+    base.name = "numberic_literal";
+    SpanTypeBase* existing = findBaseType(base.name, NO_NAMESPACE);
+    if (existing != NULL) {
+        return existing;
+    }
     return addBaseType(&base);
 }
 
 SpanTypeBase* typeFromTypeAst(SpanAst* typeAst) {
     massert(typeAst->type == ast_type, "should be a type");
-    char* typeName = typeAst->type_->name;
+    char* typeName = typeAst->type_.name;
 
     char firstChar = typeName[0];
     bool isNumber = firstChar == 'i' || firstChar == 'u' || firstChar == 'f';
     isNumber = isNumber && stringIsUint(typeName + 1);
     if (isNumber) {
         u64 size = stringToUint(typeName + 1);
-        if (firstChar == 'i') return getIntType(size);
-        if (firstChar == 'u') return getUintType(size);
-        if (firstChar == 'f') return getFloatType(size);
+        if (firstChar == 'i') return getIntTypeBase(size);
+        if (firstChar == 'u') return getUintTypeBase(size);
+        if (firstChar == 'f') return getFloatTypeBase(size);
     }
 
     SpanTypeBase* existing = findBaseType(typeName, NO_NAMESPACE);
@@ -70,7 +172,7 @@ SpanTypeBase* prototypeType(SpanAst* ast) {
 }
 
 void implementType(SpanTypeBase* type) {
-    if (type->type == st_struct) {
+    if (type->type == t_struct) {
         SpanTypeBase* base = &context.baseTypes[0];
         int i = 0;
         implementStuctType(type);
@@ -80,19 +182,19 @@ void implementType(SpanTypeBase* type) {
 }
 
 void implementStuctType(SpanTypeBase* structType) {
-    massert(structType->type == st_struct, "should be a struct");
+    massert(structType->type == t_struct, "should be a struct");
     SpanAst* ast = structType->ast;
     u64 fieldsCapacity = 2;
 
     structType->struct_.fields = allocArena(context.arena, sizeof(SpanTypeBase*) * fieldsCapacity);
     structType->struct_.fieldsNames = allocArena(context.arena, sizeof(char*) * fieldsCapacity);
     structType->struct_.fieldsCount = 0;
-    for (u64 i = 0; i < ast->struct_->fieldsCount; i++) {
-        SpanAst* field = &ast->struct_->fields[i];
+    for (u64 i = 0; i < ast->struct_.fieldsCount; i++) {
+        SpanAst* field = &ast->struct_.fields[i];
         massert(field->type == ast_variable_declaration, "should be a variable declaration");
-        SpanAst* type = field->variableDeclaration->type;
+        SpanAst* type = field->variableDeclaration.type;
         massert(type->type == ast_type, "should be a type");
-        char* name = field->variableDeclaration->name;
+        char* name = field->variableDeclaration.name;
         SpanTypeBase* base = typeFromTypeAst(type);
         if (base == NULL) {
             logErrorTokens(type->token, 1, "type not found");
@@ -107,9 +209,9 @@ void implementStuctType(SpanTypeBase* structType) {
     }
 }
 
-SpanTypeBase* getIntType(u64 size) {
+SpanTypeBase* getIntTypeBase(u64 size) {
     SpanTypeBase base;
-    base.type = st_int;
+    base.type = t_int;
     base.namespace = NO_NAMESPACE;
     base.int_.size = size;
     base.ast = NULL;
@@ -132,9 +234,9 @@ SpanTypeBase* getIntType(u64 size) {
 
 SpanTypeBase* getFunctionType(SpanAst* ast) {
     massert(ast->type == ast_function_declaration, "should be a function");
-    SpanAstFunctionDeclaration* functionDeclaration = ast->functionDeclaration;
+    SpanAstFunctionDeclaration* functionDeclaration = &ast->functionDeclaration;
 
-    char* returnTypeName = functionDeclaration->returnType->type_->name;
+    char* returnTypeName = functionDeclaration->returnType->type_.name;
     u32 returnTypeNameSize = strlen(returnTypeName);
     char buffer[BUFFER_SIZE];
     u32 bufferIndex = 0;
@@ -146,14 +248,16 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
     buffer[bufferIndex++] = '(';
     SpanAst* paramList = functionDeclaration->paramList;
     massert(paramList->type == ast_func_param, "should be a scope");
-    SpanAstFunctionParameterDeclaration* params = paramList->funcParam;
-    for (u64 i = 0; i < params->paramsCount; i++) {
-        SpanAst* param = &params->params[i];
-        char* paramName = param->variableDeclaration->name;
-        u32 paramNameSize = strlen(paramName);
-        memcpy(buffer + bufferIndex, paramName, paramNameSize);
-        bufferIndex += paramNameSize;
-        if (i != params->paramsCount - 1) buffer[bufferIndex++] = ',';
+    SpanAstFunctionParameterDeclaration* params = &paramList->funcParam;
+    if (params != NULL) {
+        for (u64 i = 0; i < params->paramsCount; i++) {
+            SpanAst* param = &params->params[i];
+            char* paramName = param->variableDeclaration.name;
+            u32 paramNameSize = strlen(paramName);
+            memcpy(buffer + bufferIndex, paramName, paramNameSize);
+            bufferIndex += paramNameSize;
+            if (i != params->paramsCount - 1) buffer[bufferIndex++] = ',';
+        }
     }
     buffer[bufferIndex++] = ')';
     buffer[bufferIndex++] = 0;
@@ -166,24 +270,31 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
     memcpy(name, buffer, bufferIndex);
 
     SpanTypeBase base;
-    base.type = st_function;
+    base.type = t_function;
     base.namespace = context.activeProject->namespace;
     base.ast = ast;
     base.name = name;
     base.function.returnType = typeFromTypeAst(functionDeclaration->returnType);
-    base.function.paramTypes = allocArena(context.arena, sizeof(SpanTypeBase*) * params->paramsCount);
-    base.function.paramTypesCount = params->paramsCount;
-    for (u64 i = 0; i < params->paramsCount; i++) {
-        SpanAst* param = &params->params[i];
-        massert(param->type == ast_variable_declaration, "should be a variable declaration");
-        base.function.paramTypes[i] = typeFromTypeAst(param->variableDeclaration->type);
+    if (params == NULL) {
+        base.function.paramTypes = NULL;
+        base.function.paramTypesCount = 0;
+    } else {
+        if (params->paramsCount > 0) base.function.paramTypes = allocArena(context.arena, sizeof(SpanTypeBase*) * params->paramsCount);
+        else
+            base.function.paramTypes = NULL;
+        base.function.paramTypesCount = params->paramsCount;
+        for (u64 i = 0; i < params->paramsCount; i++) {
+            SpanAst* param = &params->params[i];
+            massert(param->type == ast_variable_declaration, "should be a variable declaration");
+            base.function.paramTypes[i] = typeFromTypeAst(param->variableDeclaration.type);
+        }
     }
     return addBaseType(&base);
 }
 
-SpanTypeBase* getFloatType(u64 size) {
+SpanTypeBase* getFloatTypeBase(u64 size) {
     SpanTypeBase base;
-    base.type = st_float;
+    base.type = t_float;
     base.namespace = NO_NAMESPACE;
     base.int_.size = size;
     base.ast = NULL;
@@ -204,9 +315,9 @@ SpanTypeBase* getFloatType(u64 size) {
     return addBaseType(&base);
 }
 
-SpanTypeBase* getUintType(u64 size) {
+SpanTypeBase* getUintTypeBase(u64 size) {
     SpanTypeBase base;
-    base.type = st_uint;
+    base.type = t_uint;
     base.namespace = NO_NAMESPACE;
     base.int_.size = size;
     base.ast = NULL;

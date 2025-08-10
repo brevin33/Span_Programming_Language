@@ -4,14 +4,13 @@
 #include "span_parser/tokens.h"
 #include "span_parser/ast.h"
 #include "span_parser/type.h"
+#include "span_parser/function.h"
 
 #define NO_NAMESPACE 0
 
 typedef u32 Namespace;
 
 typedef struct _SpanFile {
-    Arena arena;
-
     char* fileName;
     char* fileContents;
     char** fileLineStarts;
@@ -21,6 +20,9 @@ typedef struct _SpanFile {
 
     SpanTypeBase** fileDefinedTypes;
     u64 fileDefinedTypesCount;
+
+    SpanFunction** fileDefinedFunctions;
+    u64 fileDefinedFunctionsCount;
 
     SpanAst ast;
 } SpanFile;
@@ -36,6 +38,10 @@ void SpanFileGetAstForFile(SpanFile* file);
 void SpanFilePrototypeTypes(SpanFile* file);
 
 void SpanFileImplementTypes(SpanFile* file);
+
+void SpanFilePrototypeFunctions(SpanFile* file);
+
+void SpanFileImplementFunctions(SpanFile* file);
 
 u64 SpanFileFindLineFromInternalPointer(SpanFile* file, char* internalPointer);
 

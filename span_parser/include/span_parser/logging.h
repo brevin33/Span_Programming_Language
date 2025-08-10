@@ -9,6 +9,13 @@
     #define massert(condition, message) __mAssert(condition, message)
 #endif
 
+#ifdef _WIN32
+    #define debugbreak() __debugbreak()
+#else
+    #define debugbreak()
+#endif
+
+
 void logError(const char* message, ...);
 
 void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...);

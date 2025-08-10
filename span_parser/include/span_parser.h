@@ -10,6 +10,12 @@
 #include "span_parser/utils.h"
 #include "span_parser/ast.h"
 #include "span_parser/function.h"
+#include "span_parser/expression.h"
+#include "span_parser/statment.h"
+#include "span_parser/variable.h"
+#include "span_parser/scope.h"
+#include "span_parser/llvm.h"
+
 
 #define BUFFER_SIZE 4096
 
