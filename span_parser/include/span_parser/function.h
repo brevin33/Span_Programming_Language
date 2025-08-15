@@ -12,6 +12,7 @@ typedef struct _SpanFunction {
     char* name;
     char* scrambledName;
     SpanScope scope;
+    LLVMValueRef llvmFunc;
 } SpanFunction;
 
 SpanFunction* addFunction(SpanFunction* function);
@@ -21,3 +22,7 @@ SpanFunction* findFunctions(char* name, u32 namespace, SpanFunction* buffer, u32
 SpanFunction* prototypeFunction(SpanAst* ast);
 
 void implementFunction(SpanFunction* function);
+
+void compilePrototypeFunctions();
+
+void compileFunction(SpanFunction* function);

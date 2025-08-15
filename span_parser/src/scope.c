@@ -20,6 +20,13 @@ SpanScope createSpanScope(SpanAst* ast, SpanScope* parent) {
     return scope;
 }
 
+void compileScope(SpanScope* scope) {
+    for (u64 i = 0; i < scope->statmentsCount; i++) {
+        SpanStatement* statement = &scope->statments[i];
+        compileStatement(statement);
+    }
+}
+
 SpanVariable* addVariableToScope(SpanScope* scope, char* name, SpanType type, SpanAst* ast) {
     for (u64 i = 0; i < scope->variablesCount; i++) {
         SpanVariable* variable = &scope->variables[i];

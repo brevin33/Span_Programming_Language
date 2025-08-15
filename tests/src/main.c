@@ -17,16 +17,17 @@ int main(void) {
         sprintf(directoryPath, "%s/%s", pathToSpanTests, directories[i]);
         printf("\n");
         printBar();
-        printf("running test for %s:\n", directories[i]);
+        printf("parsing project %s\n", directories[i]);
         printBar();
-        printf("\n");
         SpanProject project = createSpanProject(arena, directoryPath);
-        printf("\n");
+        printBar();
+        printf("compiling project %s\n", directories[i]);
+        printBar();
+        compileSpanProject(&project);
         printBar();
         printf("test done for %s\n", directories[i]);
         printBar();
     }
-
 
     freeArena(arena);
     debugbreak();

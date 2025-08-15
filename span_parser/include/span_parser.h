@@ -12,7 +12,6 @@
 #include "span_parser/function.h"
 #include "span_parser/expression.h"
 #include "span_parser/statment.h"
-#include "span_parser/variable.h"
 #include "span_parser/scope.h"
 #include "span_parser/llvm.h"
 
@@ -21,17 +20,21 @@
 
 SpanProject createSpanProject(Arena arena, char* path);
 
+void compileSpanProject(SpanProject* project);
+
 typedef struct _SpanContext {
     Arena arena;
     SpanProject* activeProject;
     u32 namespaceCounter;
     bool initialized;
-    SpanTypeBase* baseTypes;
+    SpanTypeBase** baseTypes;
     u64 baseTypesCount;
     u64 baseTypesCapacity;
-    SpanFunction* functions;
+    SpanFunction** functions;
     u64 functionsCount;
     u64 functionsCapacity;
+    LLVMContextRef llvmContext;
+    LLVMBuilderRef builder;
 } SpanContext;
 
 extern SpanContext context;

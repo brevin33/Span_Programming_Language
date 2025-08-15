@@ -4,8 +4,15 @@
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
 #include "span_parser/ast.h"
+#include "span_parser/llvm.h"
+
 
 typedef struct _SpanTypeBase SpanTypeBase;
+typedef struct _SpanType {
+    SpanTypeBase* base;
+    SpanAst* mods;
+    u64 modsCount;
+} SpanType;
 
 typedef enum _SpanTypeType : u8 {
     t_invalid = 0,
@@ -19,7 +26,7 @@ typedef enum _SpanTypeType : u8 {
 
 
 typedef struct _SpanTypeStruct {
-    SpanTypeBase** fields;
+    SpanType* fields;
     char** fieldsNames;
     u64 fieldsCount;
 } SpanTypeStruct;
@@ -37,14 +44,15 @@ typedef struct _SpanTypeUint {
 } SpanTypeUint;
 
 typedef struct _SpanTypeFunction {
-    SpanTypeBase* returnType;
-    SpanTypeBase** paramTypes;
+    SpanType returnType;
+    SpanType* paramTypes;
     u64 paramTypesCount;
 } SpanTypeFunction;
 
 typedef struct _SpanTypeBase {
     SpanTypeType type;
     u32 namespace;
+    LLVMTypeRef llvmType;
     char* name;
     SpanAst* ast;
     union {
@@ -56,11 +64,6 @@ typedef struct _SpanTypeBase {
     };
 } SpanTypeBase;
 
-typedef struct _SpanType {
-    SpanTypeBase* base;
-    SpanAst* mods;
-    u64 modsCount;
-} SpanType;
 
 SpanTypeBase* getFunctionType(SpanAst* ast);
 SpanTypeBase* typeFromTypeAst(SpanAst* typeAst);
@@ -82,3 +85,24 @@ SpanType getNumbericLiteralType();
 SpanType getInvalidType();
 SpanType getInvalidTypeAst(SpanAst* ast);
 SpanType getType(SpanAst* ast);
+bool isTypeEqual(SpanType* type1, SpanType* type2);
+bool isTypeModifierEqual(SpanAst* mod1, SpanAst* mod2);
+
+char* getTypeName(SpanType* type, char* buffer);
+
+bool isTypeReference(SpanType* type);
+bool isTypePointer(SpanType* type);
+bool isTypeArray(SpanType* type);
+bool isTypeSlice(SpanType* type);
+bool isTypeList(SpanType* type);
+bool isTypeStruct(SpanType* type);
+bool isTypeFunction(SpanType* type);
+bool isTypeNumbericLiteral(SpanType* type);
+bool isTypeInvalid(SpanType* type);
+bool isIntType(SpanType* type);
+bool isUintType(SpanType* type);
+bool isFloatType(SpanType* type);
+
+LLVMTypeRef getLLVMType(SpanType* type);
+void createLLVMTypeBaseTypes();
+void addLLVMTypeBaseType(SpanTypeBase* type);

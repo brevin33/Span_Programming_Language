@@ -14,6 +14,7 @@ typedef enum _SpanExpressionType {
     et_number_literal,
     et_variable,
     et_biop,
+    et_cast,
 } SpanExpressionType;
 
 typedef struct _SpanExpressionNumberLiteral {
@@ -24,6 +25,10 @@ typedef struct _SpanExpressionVariable {
     SpanVariable* variable;
 } SpanExpressionVariable;
 
+typedef struct _SpanExpressionCast {
+    SpanExpression* expression;
+} SpanExpressionCast;
+
 typedef struct _SpanExpression {
     SpanAst* ast;
     SpanExpressionType exprType;
@@ -31,9 +36,12 @@ typedef struct _SpanExpression {
     union {
         SpanExpressionNumberLiteral numberLiteral;
         SpanExpressionVariable variable;
+        SpanExpressionCast cast;
     };
 } SpanExpression;
 
 SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanNumberLiteralExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope);
+SpanExpression createCastExpression(SpanExpression* expr, SpanType* type);
+void implicitlyCast(SpanExpression* expression, SpanType* type);

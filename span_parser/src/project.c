@@ -1,4 +1,5 @@
 #include "span_parser.h"
+#include "span_parser/arena.h"
 #include "span_parser/tokens.h"
 #include "span_parser/type.h"
 
@@ -14,6 +15,10 @@ void initializeContext(Arena arena) {
     context.functionsCapacity = 8;
     context.functionsCount = 0;
     context.functions = allocArena(arena, sizeof(SpanFunction) * context.functionsCapacity);
+
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
 }
 
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
@@ -136,9 +141,12 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     if (!context.initialized) {
         initializeContext(arena);
     }
+    massert(path != NULL, "path should not be null");
     SpanProject project;
     context.activeProject = &project;
     project.arena = arena;
+    project.llvmModule = NULL;
+    project.mainFunction = NULL;
 
     char buffer[BUFFER_SIZE];
     char* dirName = getDirectoryNameFromPath(path, buffer);
@@ -188,7 +196,6 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     for (u64 i = 0; i < project.fileCount; i++) {
         SpanFileImplementFunctions(&project.files[i]);
     }
-
 
 
     return project;
@@ -242,4 +249,19 @@ SpanFile* SpanFileFromTokenAndNamespace(Token token, Namespace namespace) {
     u16 fileIndex = token.file;
     SpanFile* file = &project->files[fileIndex];
     return file;
+}
+
+
+void compileSpanProject(SpanProject* project) {
+    context.llvmContext = LLVMGetModuleContext(project->llvmModule);
+    project->llvmModule = LLVMModuleCreateWithName(project->name);
+    context.builder = LLVMCreateBuilder();
+    createLLVMTypeBaseTypes();
+    compilePrototypeFunctions();
+    massert(project->mainFunction != NULL, "main function should not be null");
+    compileFunction(project->mainFunction);
+
+    LLVMDisposeBuilder(context.builder);
+    LLVMDisposeModule(project->llvmModule);
+    LLVMContextDispose(context.llvmContext);
 }

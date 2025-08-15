@@ -1,7 +1,4 @@
-#include "span_parser/statment.h"
 #include "span_parser.h"
-#include "span_parser/ast.h"
-#include "span_parser/type.h"
 
 SpanStatement createSpanStatement(SpanAst* ast, SpanScope* scope) {
     switch (ast->type) {
@@ -61,6 +58,11 @@ SpanStatement createSpanAssignStatement(SpanAst* ast, SpanScope* scope) {
     }
     SpanAst* value = ast->assignment.value;
     statement.assign.value = createSpanExpression(value, scope);
+    if (statement.assign.assigneesCount == 1) {
+        implicitlyCast(&statement.assign.value, &statement.assign.assignees[0].variable->type);
+        return statement;
+    }
+    massert(false, "not implemented");
     return statement;
 }
 

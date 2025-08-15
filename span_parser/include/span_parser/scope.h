@@ -27,3 +27,4 @@ typedef struct _SpanScope {
 SpanScope createSpanScope(SpanAst* ast, SpanScope* parent);
 SpanVariable* addVariableToScope(SpanScope* scope, char* name, SpanType type, SpanAst* ast);
 SpanVariable* getVariableFromScope(SpanScope* scope, char* name);
+void compileScope(SpanScope* scope);

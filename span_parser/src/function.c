@@ -3,17 +3,33 @@
 
 SpanFunction* addFunction(SpanFunction* function) {
     if (context.functionsCount >= context.functionsCapacity) {
-        context.functions = reallocArena(context.arena, sizeof(SpanFunction) * context.functionsCapacity * 2, context.functions, sizeof(SpanFunction) * context.functionsCapacity);
+        context.functions = reallocArena(context.arena, sizeof(SpanFunction*) * context.functionsCapacity * 2, context.functions, sizeof(SpanFunction*) * context.functionsCapacity);
         context.functionsCapacity *= 2;
     }
-    context.functions[context.functionsCount++] = *function;
-    return &context.functions[context.functionsCount - 1];
+    SpanFunction* f = allocArena(context.arena, sizeof(SpanFunction));
+    *f = *function;
+    f->llvmFunc = NULL;
+    context.functions[context.functionsCount++] = f;
+
+    char* name = function->name;
+    if (strcmp(name, "main") == 0) {
+        context.activeProject->mainFunction = function;
+    }
+
+    return f;
+}
+
+void compileFunction(SpanFunction* function) {
+    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(function->llvmFunc, "entry");
+    LLVMPositionBuilderAtEnd(context.builder, entry);
+    SpanScope* scope = &function->scope;
+    compileScope(scope);
 }
 
 SpanFunction* findFunctions(char* name, u32 namespace, SpanFunction* buffer, u32* functionsCountOut) {
     u32 functionsCount = 0;
     for (u64 i = 0; i < context.functionsCount; i++) {
-        SpanFunction* function = &context.functions[i];
+        SpanFunction* function = context.functions[i];
         bool validNamespace = function->functionType->namespace == namespace;
         validNamespace = validNamespace || function->functionType->namespace == NO_NAMESPACE;
         bool validName = strcmp(function->name, name) == 0;
@@ -66,6 +82,17 @@ void implementFunction(SpanFunction* function) {
     function->scope = createSpanScope(body, NULL);
 }
 
+void compilePrototypeFunctions() {
+    for (u64 i = 0; i < context.functionsCount; i++) {
+        SpanFunction* function = context.functions[i];
+        SpanTypeBase* functionType = function->functionType;
+        LLVMTypeRef llvmFuncType = functionType->llvmType;
+        massert(llvmFuncType != NULL, "llvm type should not be null");
+        LLVMValueRef llvmFunc = LLVMAddFunction(context.activeProject->llvmModule, context.functions[i]->scrambledName, llvmFuncType);
+        function->llvmFunc = llvmFunc;
+    }
+}
+
 SpanFunction* prototypeFunction(SpanAst* ast) {
     massert(ast->type == ast_function_declaration, "should be a function");
     SpanAstFunctionDeclaration* functionDeclaration = &ast->functionDeclaration;
@@ -94,9 +121,9 @@ SpanFunction* prototypeFunction(SpanAst* ast) {
             continue;
         }
         for (u64 j = 0; j < funcType2->function.paramTypesCount; j++) {
-            SpanTypeBase* paramType2 = funcType2->function.paramTypes[j];
-            SpanTypeBase* paramType1 = functionType->function.paramTypes[j];
-            if (paramType1 != paramType2) {
+            SpanType paramType2 = funcType2->function.paramTypes[j];
+            SpanType paramType1 = functionType->function.paramTypes[j];
+            if (isTypeEqual(&paramType1, &paramType2) == false) {
                 paramTypesMatch = false;
                 break;
             }

@@ -25,6 +25,7 @@ typedef struct _SpanFile {
     u64 fileDefinedFunctionsCount;
 
     SpanAst ast;
+
 } SpanFile;
 
 void initializeContext(Arena arena);
@@ -36,6 +37,7 @@ void SpanFileGetTokensForFile(SpanFile* file, u64 fileIndex);
 void SpanFileGetAstForFile(SpanFile* file);
 
 void SpanFilePrototypeTypes(SpanFile* file);
+void compilePrototypeSpanFile(SpanFile* file);
 
 void SpanFileImplementTypes(SpanFile* file);
 
@@ -60,6 +62,8 @@ typedef struct _SpanProject {
     u64 childCount;
     u64 childCapacity;
     u32 namespace;
+    LLVMModuleRef llvmModule;
+    SpanFunction* mainFunction;
 } SpanProject;
 
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount);

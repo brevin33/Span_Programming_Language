@@ -1,5 +1,6 @@
 #include "span_parser.h"
 #include "span_parser/ast.h"
+#include "span_parser/utils.h"
 
 
 SpanTypeBase* addBaseType(SpanTypeBase* base) {
@@ -7,17 +8,20 @@ SpanTypeBase* addBaseType(SpanTypeBase* base) {
         context.baseTypes = reallocArena(context.arena, sizeof(SpanTypeBase) * context.baseTypesCapacity * 2, context.baseTypes, sizeof(SpanTypeBase) * context.baseTypesCapacity);
         context.baseTypesCapacity *= 2;
     }
+    SpanTypeBase* b = allocArena(context.arena, sizeof(SpanTypeBase));
+    *b = *base;
+    b->llvmType = NULL;
     u64 index = context.baseTypesCount++;
-    context.baseTypes[index] = *base;
+    context.baseTypes[index] = b;
 
     SpanTypeBase* existing = findBaseType(base->name, base->namespace);
 
-    return &context.baseTypes[index];
+    return b;
 }
 
 SpanTypeBase* findBaseType(char* name, u32 namespace) {
     for (u64 i = 0; i < context.baseTypesCount; i++) {
-        SpanTypeBase* base = &context.baseTypes[i];
+        SpanTypeBase* base = context.baseTypes[i];
         bool validNamespace = base->namespace == namespace;
         validNamespace = validNamespace || base->namespace == NO_NAMESPACE;
         bool validName = strcmp(base->name, name) == 0;
@@ -81,6 +85,201 @@ SpanType getType(SpanAst* ast) {
     }
 
     return type;
+}
+
+LLVMTypeRef getLLVMType(SpanType* type) {
+    LLVMTypeRef llvmType = type->base->llvmType;
+    if (llvmType == NULL) {
+        addLLVMTypeBaseType(type->base);
+        llvmType = type->base->llvmType;
+    }
+    massert(type->base->type != t_invalid, "type is invalid");
+    massert(type->base->type != t_numberic_literal, "type is numberic literal");
+    for (u64 i = 0; i < type->modsCount; i++) {
+        massert(false, "not implemented");
+    }
+    return llvmType;
+}
+
+void createLLVMTypeBaseTypes() {
+    for (u64 i = 0; i < context.baseTypesCount; i++) {
+        SpanTypeBase* type = context.baseTypes[i];
+        addLLVMTypeBaseType(type);
+    }
+}
+
+bool isTypeEqual(SpanType* type1, SpanType* type2) {
+    bool isEqual = type1->base == type2->base;
+    isEqual = isEqual && type1->modsCount == type2->modsCount;
+    for (u64 i = 0; i < type1->modsCount; i++) {
+        isEqual = isEqual && isTypeModifierEqual(type1->mods + i, type2->mods + i);
+    }
+    return isEqual;
+}
+
+bool isTypeReference(SpanType* type) {
+    if (type->modsCount == 0) return false;
+    return type->mods[type->modsCount - 1].type == ast_tmod_ref;
+}
+bool isTypePointer(SpanType* type) {
+    if (type->modsCount == 0) return false;
+    return type->mods[type->modsCount - 1].type == ast_tmod_ptr;
+}
+bool isTypeArray(SpanType* type) {
+    if (type->modsCount == 0) return false;
+    return type->mods[type->modsCount - 1].type == ast_tmod_array;
+}
+bool isTypeSlice(SpanType* type) {
+    if (type->modsCount == 0) return false;
+    return type->mods[type->modsCount - 1].type == ast_tmod_slice;
+}
+bool isTypeList(SpanType* type) {
+    if (type->modsCount == 0) return false;
+    return type->mods[type->modsCount - 1].type == ast_tmod_list;
+}
+bool isTypeStruct(SpanType* type) {
+    if (type->modsCount != 0) return false;
+    return type->base->type == t_struct;
+}
+bool isTypeFunction(SpanType* type) {
+    if (type->modsCount != 0) return false;
+    return type->base->type == t_function;
+}
+bool isTypeNumbericLiteral(SpanType* type) {
+    if (type->modsCount != 0) return false;
+    return type->base->type == t_numberic_literal;
+}
+bool isTypeInvalid(SpanType* type) {
+    if (type->modsCount != 0) return false;
+    return type->base->type == t_invalid;
+}
+
+bool isIntType(SpanType* type) {
+    if (type->modsCount != 0) return false;
+    return type->base->type == t_int;
+}
+
+bool isUintType(SpanType* type) {
+    if (type->modsCount != 0) return false;
+    return type->base->type == t_uint;
+}
+
+bool isFloatType(SpanType* type) {
+    if (type->modsCount != 0) return false;
+    return type->base->type == t_float;
+}
+
+char* getTypeName(SpanType* type, char* buffer) {
+    char* baseName = type->base->name;
+    u32 baseNameSize = strlen(baseName);
+    memcpy(buffer, baseName, baseNameSize);
+    u32 bufferIndex = baseNameSize;
+    for (u64 i = 0; i < type->modsCount; i++) {
+        SpanAst* mod = &type->mods[i];
+        switch (mod->type) {
+            case ast_tmod_array:
+                buffer[bufferIndex++] = '[';
+                char* number = uintToString(mod->tmodArray.size, buffer + bufferIndex);
+                u32 numberSize = strlen(number);
+                bufferIndex += numberSize;
+                buffer[bufferIndex++] = ']';
+                break;
+            case ast_tmod_ptr:
+                buffer[bufferIndex++] = '*';
+                break;
+            case ast_tmod_ref:
+                buffer[bufferIndex++] = '&';
+                break;
+            case ast_tmod_uptr:
+                buffer[bufferIndex++] = '^';
+                break;
+            case ast_tmod_sptr:
+                buffer[bufferIndex++] = '!';
+                break;
+            case ast_tmod_list:
+                buffer[bufferIndex++] = '[';
+                buffer[bufferIndex++] = ']';
+                break;
+            case ast_tmod_slice:
+                buffer[bufferIndex++] = '[';
+                buffer[bufferIndex++] = '.';
+                buffer[bufferIndex++] = '.';
+                buffer[bufferIndex++] = '.';
+                buffer[bufferIndex++] = ']';
+                break;
+            default:
+                massert(false, "unknown type modifier");
+                break;
+        }
+    }
+    return buffer;
+}
+
+bool isTypeModifierEqual(SpanAst* mod1, SpanAst* mod2) {
+    if (mod1->type != mod2->type) return false;
+    switch (mod1->type) {
+        case ast_tmod_array:
+            return mod1->tmodArray.size == mod2->tmodArray.size;
+        case ast_tmod_ptr:
+        case ast_tmod_ref:
+        case ast_tmod_uptr:
+        case ast_tmod_sptr:
+        case ast_tmod_list:
+        case ast_tmod_slice:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void addLLVMTypeBaseType(SpanTypeBase* type) {
+    if (type->llvmType != NULL) return;
+    switch (type->type) {
+        case t_int:
+            type->llvmType = LLVMIntType(type->int_.size);
+            break;
+        case t_uint:
+            type->llvmType = LLVMIntType(type->uint.size);
+            break;
+        case t_float:
+            type->llvmType = LLVMFloatType();
+            break;
+        case t_function: {
+            SpanTypeFunction* functionType = &type->function;
+            SpanType* returnType = &functionType->returnType;
+            LLVMTypeRef returnLLVMType = getLLVMType(returnType);
+            LLVMTypeRef paramTypes[BUFFER_SIZE];
+            for (u64 i = 0; i < functionType->paramTypesCount; i++) {
+                SpanType paramType = functionType->paramTypes[i];
+                paramTypes[i] = getLLVMType(&paramType);
+            }
+            type->llvmType = LLVMFunctionType(returnLLVMType, paramTypes, functionType->paramTypesCount, 0);
+            break;
+        }
+        case t_struct: {
+            SpanTypeStruct* structType = &type->struct_;
+            LLVMTypeRef structTypes[BUFFER_SIZE];
+            for (u64 i = 0; i < structType->fieldsCount; i++) {
+                SpanType* fieldType = &structType->fields[i];
+                LLVMTypeRef fieldLLVMType = getLLVMType(fieldType);
+                structTypes[i] = fieldLLVMType;
+            }
+            type->llvmType = LLVMStructTypeInContext(context.llvmContext, structTypes, structType->fieldsCount, 0);
+            break;
+        }
+        case t_numberic_literal: {
+            // should never instantiate this
+            type->llvmType = LLVMVoidType();
+            break;
+        }
+        case t_invalid:
+            // should never instantiate this
+            type->llvmType = LLVMVoidType();
+            break;
+        default:
+            massert(false, "unknown type type");
+            break;
+    }
 }
 
 SpanTypeBase* prototypeStuctType(SpanAst* structAst) {
@@ -173,7 +372,7 @@ SpanTypeBase* prototypeType(SpanAst* ast) {
 
 void implementType(SpanTypeBase* type) {
     if (type->type == t_struct) {
-        SpanTypeBase* base = &context.baseTypes[0];
+        SpanTypeBase* base = context.baseTypes[0];
         int i = 0;
         implementStuctType(type);
     } else {
@@ -186,7 +385,7 @@ void implementStuctType(SpanTypeBase* structType) {
     SpanAst* ast = structType->ast;
     u64 fieldsCapacity = 2;
 
-    structType->struct_.fields = allocArena(context.arena, sizeof(SpanTypeBase*) * fieldsCapacity);
+    structType->struct_.fields = allocArena(context.arena, sizeof(SpanType) * fieldsCapacity);
     structType->struct_.fieldsNames = allocArena(context.arena, sizeof(char*) * fieldsCapacity);
     structType->struct_.fieldsCount = 0;
     for (u64 i = 0; i < ast->struct_.fieldsCount; i++) {
@@ -195,8 +394,8 @@ void implementStuctType(SpanTypeBase* structType) {
         SpanAst* type = field->variableDeclaration.type;
         massert(type->type == ast_type, "should be a type");
         char* name = field->variableDeclaration.name;
-        SpanTypeBase* base = typeFromTypeAst(type);
-        if (base == NULL) {
+        SpanType base = getType(type);
+        if (base.base->type == t_invalid) {
             logErrorTokens(type->token, 1, "type not found");
         }
         if (structType->struct_.fieldsCount >= fieldsCapacity) {
@@ -274,19 +473,19 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
     base.namespace = context.activeProject->namespace;
     base.ast = ast;
     base.name = name;
-    base.function.returnType = typeFromTypeAst(functionDeclaration->returnType);
+    base.function.returnType = getType(functionDeclaration->returnType);
     if (params == NULL) {
         base.function.paramTypes = NULL;
         base.function.paramTypesCount = 0;
     } else {
-        if (params->paramsCount > 0) base.function.paramTypes = allocArena(context.arena, sizeof(SpanTypeBase*) * params->paramsCount);
+        if (params->paramsCount > 0) base.function.paramTypes = allocArena(context.arena, sizeof(SpanType) * params->paramsCount);
         else
             base.function.paramTypes = NULL;
         base.function.paramTypesCount = params->paramsCount;
         for (u64 i = 0; i < params->paramsCount; i++) {
             SpanAst* param = &params->params[i];
             massert(param->type == ast_variable_declaration, "should be a variable declaration");
-            base.function.paramTypes[i] = typeFromTypeAst(param->variableDeclaration.type);
+            base.function.paramTypes[i] = getType(param->variableDeclaration.type);
         }
     }
     return addBaseType(&base);

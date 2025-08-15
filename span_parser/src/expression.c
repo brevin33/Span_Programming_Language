@@ -42,3 +42,42 @@ SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope) {
     expression.type = variable->type;
     return expression;
 }
+
+SpanExpression createCastExpression(SpanExpression* expr, SpanType* type) {
+    SpanExpression expression;
+    expression.ast = expr->ast;
+    expression.exprType = et_cast;
+    expression.type = *type;
+    expression.cast.expression = expr;
+    return expression;
+}
+
+void implicitlyCast(SpanExpression* expression, SpanType* type) {
+    SpanType* currentType = &expression->type;
+    if (isTypeEqual(currentType, type)) return;
+
+    if (isTypeNumbericLiteral(currentType)) {
+        if (isIntType(type)) {
+            *expression = createCastExpression(expression, type);
+            return;
+        }
+        if (isUintType(type)) {
+            *expression = createCastExpression(expression, type);
+            return;
+        }
+        if (isFloatType(type)) {
+            *expression = createCastExpression(expression, type);
+            return;
+        }
+    }
+
+    while (isTypeReference(currentType)) {
+        *expression = createCastExpression(expression, type);
+        implicitlyCast(expression, type);
+    }
+    char buffer[BUFFER_SIZE];
+    char* currentTypeName = getTypeName(currentType, buffer);
+    char buffer2[BUFFER_SIZE];
+    char* typeName = getTypeName(type, buffer2);
+    logErrorAst(expression->ast, "cannot implicitly cast %s to %s", currentTypeName, typeName);
+}

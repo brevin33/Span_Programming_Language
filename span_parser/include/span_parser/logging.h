@@ -3,17 +3,25 @@
 #include "span_parser/tokens.h"
 #include "span_parser/ast.h"
 
-#ifdef NDEBUG
-    #define massert(condition, message)
-#else
-    #define massert(condition, message) __mAssert(condition, message)
-#endif
-
 #ifdef _WIN32
     #define debugbreak() __debugbreak()
 #else
     #define debugbreak()
 #endif
+
+#ifdef NDEBUG
+    #define massert(condition, message)
+#else
+    #define massert(condition, message)                                                                                                                                                                                              \
+        if (!(condition)) {                                                                                                                                                                                                          \
+            makeRed();                                                                                                                                                                                                               \
+            printf("Assertion failed: %s\n", message);                                                                                                                                                                               \
+            resetColor();                                                                                                                                                                                                            \
+            debugbreak();                                                                                                                                                                                                            \
+            abort();                                                                                                                                                                                                                 \
+        }
+#endif
+
 
 
 void logError(const char* message, ...);

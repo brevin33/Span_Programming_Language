@@ -148,12 +148,3 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
 
     printBar();
 }
-
-void __mAssert(bool condition, const char* message) {
-    if (!condition) {
-        makeRed();
-        printf("Assertion failed: %s\n", message);
-        resetColor();
-        debugbreak();
-    }
-}
