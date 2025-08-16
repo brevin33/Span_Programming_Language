@@ -38,3 +38,7 @@ void makeRed();
 void resetColor();
 
 void printBar();
+
+void greenprintf(const char* message, ...);
+
+void redprintf(const char* message, ...);

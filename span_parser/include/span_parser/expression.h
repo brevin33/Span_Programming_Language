@@ -17,6 +17,7 @@ typedef enum _SpanExpressionType {
     et_variable,
     et_biop,
     et_cast,
+    et_functionCall,
 } SpanExpressionType;
 
 typedef struct _SpanExpressionNumberLiteral {
@@ -31,6 +32,18 @@ typedef struct _SpanExpressionCast {
     SpanExpression* expression;
 } SpanExpressionCast;
 
+typedef struct _SpanExpressionFunctionCall {
+    SpanFunction* function;
+    SpanExpression* args;
+    u64 argsCount;
+} SpanExpressionFunctionCall;
+
+typedef struct _SpanExpressionBiop {
+    SpanExpression* lhs;
+    SpanExpression* rhs;
+    OurTokenType op;
+} SpanExpressionBiop;
+
 typedef struct _SpanExpression {
     SpanAst* ast;
     SpanExpressionType exprType;
@@ -39,6 +52,8 @@ typedef struct _SpanExpression {
         SpanExpressionNumberLiteral numberLiteral;
         SpanExpressionVariable variable;
         SpanExpressionCast cast;
+        SpanExpressionBiop biop;
+        SpanExpressionFunctionCall functionCall;
     };
     LLVMValueRef llvmValue;
 } SpanExpression;
@@ -46,11 +61,20 @@ typedef struct _SpanExpression {
 SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanNumberLiteralExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope);
-SpanExpression createCastExpression(SpanExpression* expr, SpanType* type);
-void implicitlyCast(SpanExpression* expression, SpanType* type);
+SpanExpression createSpanBinaryExpression(SpanAst* ast, SpanScope* scope);
+SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope);
+void makeCastExpression(SpanExpression* expr, SpanType* type);
+
+bool implicitlyCast(SpanExpression* expression, SpanType* type, bool logError);
+
+void completeAddExpression(SpanExpression* expression, SpanScope* scope);
 
 void compileExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 
 void compileNumberLiteralExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 void compileVariableExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileBinaryExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileFunctionCallExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+
+void compileAddExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);

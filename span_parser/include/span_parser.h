@@ -34,8 +34,10 @@ typedef struct _SpanContext {
     SpanFunction** functions;
     u64 functionsCount;
     u64 functionsCapacity;
+    u32 numberOfErrors;
     LLVMContextRef llvmContext;
     LLVMBuilderRef builder;
+    LLVMBasicBlockRef currentBlock;
 } SpanContext;
 
 extern SpanContext context;

@@ -1,6 +1,22 @@
 #include "span_parser.h"
 #include <stdarg.h>
 
+void greenprintf(const char* message, ...) {
+    printf("\x1b[32m");
+    va_list args;
+    va_start(args, message);
+    vprintf(message, args);
+    printf("\x1b[0m");
+}
+
+void redprintf(const char* message, ...) {
+    printf("\x1b[31m");
+    va_list args;
+    va_start(args, message);
+    vprintf(message, args);
+    printf("\x1b[0m");
+}
+
 void makeRed() {
     printf("\x1b[31m");
 }
@@ -14,6 +30,7 @@ void printBar() {
 }
 
 void logError(const char* message, ...) {
+    context.numberOfErrors++;
     makeRed();
     printf("Error: ");
     va_list args;
@@ -24,14 +41,9 @@ void logError(const char* message, ...) {
     printBar();
 }
 
-void logErrorAst(SpanAst* ast, const char* message, ...) {
-    va_list args;
-    va_start(args, message);
-    logErrorTokens(ast->token, ast->tokenLength, message, args);
-    va_end(args);
-}
 
-void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
+static void logErrorTokensV(Token* tokens, u64 tokenCount, const char* message, va_list args) {
+    context.numberOfErrors++;
     makeRed();
     u64 lines[128];
     u64 tokenLines[128];
@@ -72,8 +84,6 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
     } else {
         printf("Error on lines %s in file %s: ", linesStr, filename);
     }
-    va_list args;
-    va_start(args, message);
     vprintf(message, args);
     printf("\n");
     resetColor();
@@ -147,4 +157,18 @@ void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
     printf("\n");
 
     printBar();
+}
+
+void logErrorAst(SpanAst* ast, const char* message, ...) {
+    va_list args;
+    va_start(args, message);
+    logErrorTokensV(ast->token, ast->tokenLength, message, args);
+    va_end(args);
+}
+
+void logErrorTokens(Token* tokens, u64 tokenCount, const char* message, ...) {
+    va_list args;
+    va_start(args, message);
+    logErrorTokensV(tokens, tokenCount, message, args);
+    va_end(args);
 }

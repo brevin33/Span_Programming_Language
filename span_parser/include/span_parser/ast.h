@@ -35,6 +35,8 @@ typedef enum _SpanASTType {
     ast_expr_number_literal,
     ast_return,
     ast_end_statement,
+    ast_function_call,
+    ast_call_paramerter_list,
 } SpanASTType;
 
 
@@ -106,6 +108,17 @@ typedef struct _SpanAstExprBiop {
     OurTokenType op;
 } SpanAstExprBiop;
 
+
+typedef struct _SpanAstFunctionCall {
+    char* name;
+    SpanAst* args;
+} SpanAstFunctionCall;
+
+typedef struct _SpanAstCallParamerterList {
+    SpanAst* params;
+    u64 paramsCount;
+} SpanAstCallParamerterList;
+
 typedef struct _SpanAst {
     SpanASTType type;
     u32 tokenLength;
@@ -124,6 +137,8 @@ typedef struct _SpanAst {
         SpanAstExprBiop exprBiop;
         SpanAstNumberLiteral numberLiteral;
         SpanAstReturn return_;
+        SpanAstFunctionCall functionCall;
+        SpanAstCallParamerterList callParamerterList;
     };
 } SpanAst;
 
@@ -149,6 +164,8 @@ SpanAst AstExpressionParse(Arena arena, Token** tokens, OurTokenType* delimeters
 SpanAst AstAssignmentParse(Arena arena, Token** tokens);
 SpanAst AstExpressionValueParse(Arena arena, Token** tokens);
 SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurTokenType* delimeters, u64 delimetersCount);
+SpanAst AstCallParamerterListParse(Arena arena, Token** tokens);
+SpanAst AstFunctionCallParse(Arena arena, Token** tokens);
 
 bool AstIsExpression(SpanAst* ast);
 #define CASE_AST_EXPR                                                                                                                                                                                                                \

@@ -1,3 +1,4 @@
+#include "span_parser/type.h"
 #include "span_parser.h"
 #include "span_parser/ast.h"
 #include "span_parser/utils.h"
@@ -51,17 +52,52 @@ SpanType getInvalidType() {
     SpanTypeBase* base = getInvalidTypeBase();
     SpanType type;
     type.base = base;
-    type.mods = NULL;
     type.modsCount = 0;
     return type;
 }
+
+SpanTypeModifier getModifier(SpanAst* ast) {
+    SpanTypeModifier modifier;
+    switch (ast->type) {
+        case ast_tmod_array:
+            modifier.type = tm_array;
+            modifier.arraySize = ast->tmodArray.size;
+            break;
+        case ast_tmod_ptr:
+            modifier.type = tm_ptr;
+            break;
+        case ast_tmod_ref:
+            modifier.type = tm_ref;
+            break;
+        case ast_tmod_uptr:
+            modifier.type = tm_uptr;
+            break;
+        case ast_tmod_sptr:
+            modifier.type = tm_sptr;
+            break;
+        case ast_tmod_list:
+            modifier.type = tm_list;
+            break;
+        case ast_tmod_slice:
+            modifier.type = tm_slice;
+            break;
+        default:
+            massert(false, "unknown type modifier");
+            break;
+    }
+    return modifier;
+}
+
 
 SpanType getInvalidTypeAst(SpanAst* ast) {
     massert(ast->type == ast_type, "should be an invalid ast");
     SpanTypeBase* base = getInvalidTypeBase();
     SpanType type;
     type.base = base;
-    type.mods = ast->type_.mods;
+    for (u64 i = 0; i < ast->type_.modsCount; i++) {
+        SpanTypeModifier modifier = getModifier(&ast->type_.mods[i]);
+        type.mods[i] = modifier;
+    }
     type.modsCount = ast->type_.modsCount;
     return type;
 }
@@ -76,12 +112,8 @@ SpanType getType(SpanAst* ast) {
     SpanType type;
     type.base = base;
     type.modsCount = ast->type_.modsCount;
-    type.mods = ast->type_.mods;
-
-    // debug check
     for (u64 i = 0; i < type.modsCount; i++) {
-        SpanAst* mod = &type.mods[i];
-        massert(AstIsTypeModifier(mod), "should be a type modifier");
+        type.mods[i] = getModifier(&ast->type_.mods[i]);
     }
 
     return type;
@@ -119,23 +151,23 @@ bool isTypeEqual(SpanType* type1, SpanType* type2) {
 
 bool isTypeReference(SpanType* type) {
     if (type->modsCount == 0) return false;
-    return type->mods[type->modsCount - 1].type == ast_tmod_ref;
+    return type->mods[type->modsCount - 1].type == tm_ref;
 }
 bool isTypePointer(SpanType* type) {
     if (type->modsCount == 0) return false;
-    return type->mods[type->modsCount - 1].type == ast_tmod_ptr;
+    return type->mods[type->modsCount - 1].type == tm_ptr;
 }
 bool isTypeArray(SpanType* type) {
     if (type->modsCount == 0) return false;
-    return type->mods[type->modsCount - 1].type == ast_tmod_array;
+    return type->mods[type->modsCount - 1].type == tm_array;
 }
 bool isTypeSlice(SpanType* type) {
     if (type->modsCount == 0) return false;
-    return type->mods[type->modsCount - 1].type == ast_tmod_slice;
+    return type->mods[type->modsCount - 1].type == tm_slice;
 }
 bool isTypeList(SpanType* type) {
     if (type->modsCount == 0) return false;
-    return type->mods[type->modsCount - 1].type == ast_tmod_list;
+    return type->mods[type->modsCount - 1].type == tm_list;
 }
 bool isTypeStruct(SpanType* type) {
     if (type->modsCount != 0) return false;
@@ -159,6 +191,10 @@ bool isIntType(SpanType* type) {
     return type->base->type == t_int;
 }
 
+bool isNumbericType(SpanType* type) {
+    return isIntType(type) || isUintType(type) || isFloatType(type) || isTypeNumbericLiteral(type);
+}
+
 bool isUintType(SpanType* type) {
     if (type->modsCount != 0) return false;
     return type->base->type == t_uint;
@@ -169,38 +205,45 @@ bool isFloatType(SpanType* type) {
     return type->base->type == t_float;
 }
 
+bool typeIsReferenceOf(SpanType* type, SpanType* otherType) {
+    if (!isTypeReference(type)) return false;
+    SpanType derefType = dereferenceType(type);
+    return isTypeEqual(&derefType, otherType);
+}
+
 char* getTypeName(SpanType* type, char* buffer) {
     char* baseName = type->base->name;
     u32 baseNameSize = strlen(baseName);
     memcpy(buffer, baseName, baseNameSize);
     u32 bufferIndex = baseNameSize;
     for (u64 i = 0; i < type->modsCount; i++) {
-        SpanAst* mod = &type->mods[i];
+        SpanTypeModifier* mod = &type->mods[i];
         switch (mod->type) {
-            case ast_tmod_array:
+            case tm_array:
                 buffer[bufferIndex++] = '[';
-                char* number = uintToString(mod->tmodArray.size, buffer + bufferIndex);
+                u64 size = mod->arraySize;
+                char* number = uintToString(size, buffer + bufferIndex);
                 u32 numberSize = strlen(number);
                 bufferIndex += numberSize;
                 buffer[bufferIndex++] = ']';
                 break;
-            case ast_tmod_ptr:
+            case tm_ptr:
                 buffer[bufferIndex++] = '*';
                 break;
-            case ast_tmod_ref:
+            case tm_ref:
                 buffer[bufferIndex++] = '&';
                 break;
-            case ast_tmod_uptr:
+            case tm_uptr:
                 buffer[bufferIndex++] = '^';
                 break;
-            case ast_tmod_sptr:
-                buffer[bufferIndex++] = '!';
+            case tm_sptr:
+                buffer[bufferIndex++] = '\'';
                 break;
-            case ast_tmod_list:
+            case tm_list:
                 buffer[bufferIndex++] = '[';
                 buffer[bufferIndex++] = ']';
                 break;
-            case ast_tmod_slice:
+            case tm_slice:
                 buffer[bufferIndex++] = '[';
                 buffer[bufferIndex++] = '.';
                 buffer[bufferIndex++] = '.';
@@ -212,20 +255,21 @@ char* getTypeName(SpanType* type, char* buffer) {
                 break;
         }
     }
+    buffer[bufferIndex] = '\0';
     return buffer;
 }
 
-bool isTypeModifierEqual(SpanAst* mod1, SpanAst* mod2) {
+bool isTypeModifierEqual(SpanTypeModifier* mod1, SpanTypeModifier* mod2) {
     if (mod1->type != mod2->type) return false;
     switch (mod1->type) {
-        case ast_tmod_array:
-            return mod1->tmodArray.size == mod2->tmodArray.size;
-        case ast_tmod_ptr:
-        case ast_tmod_ref:
-        case ast_tmod_uptr:
-        case ast_tmod_sptr:
-        case ast_tmod_list:
-        case ast_tmod_slice:
+        case tm_array:
+            return mod1->arraySize == mod2->arraySize;
+        case tm_ptr:
+        case tm_ref:
+        case tm_uptr:
+        case tm_sptr:
+        case tm_list:
+        case tm_slice:
             return true;
         default:
             return false;
@@ -310,7 +354,6 @@ SpanType getIntType(u64 size) {
     SpanTypeBase* base = getIntTypeBase(size);
     SpanType type;
     type.base = base;
-    type.mods = NULL;
     type.modsCount = 0;
     return type;
 }
@@ -318,7 +361,6 @@ SpanType getFloatType(u64 size) {
     SpanTypeBase* base = getFloatTypeBase(size);
     SpanType type;
     type.base = base;
-    type.mods = NULL;
     type.modsCount = 0;
     return type;
 }
@@ -326,7 +368,6 @@ SpanType getUintType(u64 size) {
     SpanTypeBase* base = getUintTypeBase(size);
     SpanType type;
     type.base = base;
-    type.mods = NULL;
     type.modsCount = 0;
     return type;
 }
@@ -335,7 +376,6 @@ SpanType getNumbericLiteralType() {
     SpanTypeBase* base = getNumbericLiteralTypeBase();
     SpanType type;
     type.base = base;
-    type.mods = NULL;
     type.modsCount = 0;
     return type;
 }
@@ -525,6 +565,42 @@ SpanTypeBase* getFloatTypeBase(u64 size) {
     memcpy(base.name, buffer, nameLength + 1);
 
     return addBaseType(&base);
+}
+
+SpanType getPointerType(SpanType* type) {
+    SpanType newType = *type;
+    int backIndex = type->modsCount - 1;
+    newType.mods[backIndex + 1].type = tm_ptr;
+    newType.modsCount++;
+    return newType;
+}
+SpanType getReferenceType(SpanType* type) {
+    SpanType newType = *type;
+    int backIndex = type->modsCount - 1;
+    newType.mods[backIndex + 1].type = tm_ref;
+    newType.modsCount++;
+    return newType;
+}
+
+SpanType dereferenceType(SpanType* type) {
+    SpanType newType = *type;
+    massert(type->modsCount > 0, "should be a pointer");
+    int backIndex = type->modsCount - 1;
+    SpanTypeModifier* mod = &type->mods[backIndex];
+    massert(mod->type == tm_ptr || mod->type == tm_ref, "should be a pointer");
+    switch (mod->type) {
+        case tm_ptr: {
+            newType.mods[backIndex].type = tm_ref;
+            break;
+        }
+        case tm_ref:
+            newType.modsCount--;
+            break;
+        default:
+            massert(false, "unknown type modifier");
+            break;
+    }
+    return newType;
 }
 
 SpanTypeBase* getUintTypeBase(u64 size) {

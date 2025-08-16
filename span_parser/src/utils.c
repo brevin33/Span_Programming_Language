@@ -1,4 +1,73 @@
 #include "span_parser.h"
+#if defined(_WIN32) || defined(_WIN64)
+    #include <windows.h>
+#endif
+
+#ifdef _WIN32
+    #include <windows.h>
+double getTimeSeconds() {
+    LARGE_INTEGER freq, counter;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&counter);
+    return (double)counter.QuadPart / freq.QuadPart;
+}
+#else
+    #include <sys/time.h>
+double getTimeSeconds() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
+#endif
+
+bool mkdir(const char* path) {
+    char buffer[BUFFER_SIZE];
+    sprintf(buffer, "mkdir %s > NUL 2>&1", path);
+    return system(buffer) == 0;
+}
+
+bool rmdir(const char* path) {
+    char buffer[BUFFER_SIZE];
+#if defined(_WIN32) || defined(_WIN64)
+    sprintf(buffer, "rmdir /S /Q %s > NUL 2>&1", path);
+#else
+    sprintf(buffer, "rm -rf %s", path);
+#endif
+    return system(buffer) == 0;
+}
+
+void swapSlashes(char* path) {
+    for (u64 i = 0; i < strlen(path); i++) {
+        if (path[i] == '/') {
+            path[i] = '\\';
+        }
+    }
+}
+
+int runExe(char* exeName) {
+    char buffer[BUFFER_SIZE];
+#if defined(_WIN32) || defined(_WIN64)
+    char name[BUFFER_SIZE];
+    sprintf(name, "%s", exeName);
+    swapSlashes(name);
+    return system(name);
+#else
+    sprintf(buffer, "./%s", exeName);
+    return system(exeName);
+#endif
+}
+
+bool linkExe(char** objFiles, u64 objFilesCount, char* exeName) {
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
+    for (u64 i = 0; i < objFilesCount; i++) {
+        sprintf(buffer, "%s %s", buffer, objFiles[i]);
+    }
+    char buffer2[BUFFER_SIZE];
+    sprintf(buffer2, "lld-link %s /out:%s /subsystem:console /defaultlib:libcmt", buffer, exeName);
+    bool worked = system(buffer2) == 0;
+    return worked;
+}
 
 char* uintToString(u64 number, char* buffer) {
     u64 i = 0;

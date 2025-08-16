@@ -14,3 +14,13 @@ char* getDirectoryNameFromPath(char* path, char* buffer);
 u64 stringToUint(char* string);
 
 bool stringIsUint(char* string);
+
+bool mkdir(const char* path);
+
+bool rmdir(const char* path);
+
+bool linkExe(char** objFiles, u64 objFilesCount, char* exeName);
+
+int runExe(char* exeName);
+
+double getTimeSeconds();

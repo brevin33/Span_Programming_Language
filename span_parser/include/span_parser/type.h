@@ -8,9 +8,28 @@
 #include "span_parser/llvm.h"
 
 typedef struct _SpanTypeBase SpanTypeBase;
+
+typedef enum _SpanTypeModifierType {
+    tm_invalid = 0,
+    tm_ptr,
+    tm_ref,
+    tm_uptr,
+    tm_sptr,
+    tm_array,
+    tm_list,
+    tm_slice,
+} SpanTypeModifierType;
+
+typedef struct _SpanTypeModifier {
+    SpanTypeModifierType type;
+    union {
+        u64 arraySize;
+    };
+} SpanTypeModifier;
+
 typedef struct _SpanType {
     SpanTypeBase* base;
-    SpanAst* mods;
+    SpanTypeModifier mods[4];
     u64 modsCount;
 } SpanType;
 
@@ -86,7 +105,7 @@ SpanType getInvalidType();
 SpanType getInvalidTypeAst(SpanAst* ast);
 SpanType getType(SpanAst* ast);
 bool isTypeEqual(SpanType* type1, SpanType* type2);
-bool isTypeModifierEqual(SpanAst* mod1, SpanAst* mod2);
+bool isTypeModifierEqual(SpanTypeModifier* mod1, SpanTypeModifier* mod2);
 
 char* getTypeName(SpanType* type, char* buffer);
 
@@ -102,7 +121,16 @@ bool isTypeInvalid(SpanType* type);
 bool isIntType(SpanType* type);
 bool isUintType(SpanType* type);
 bool isFloatType(SpanType* type);
+bool isNumbericType(SpanType* type);
+
+bool typeIsReferenceOf(SpanType* type, SpanType* otherType);
+
+SpanType dereferenceType(SpanType* type);
+SpanType getPointerType(SpanType* type);
+SpanType getReferenceType(SpanType* type);
 
 LLVMTypeRef getLLVMType(SpanType* type);
 void createLLVMTypeBaseTypes();
 void addLLVMTypeBaseType(SpanTypeBase* type);
+
+SpanTypeModifier getModifier(SpanAst* ast);

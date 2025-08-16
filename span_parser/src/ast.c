@@ -320,6 +320,7 @@ SpanAst AstFunctionParameterDeclarationParse(Arena arena, Token** tokens) {
                 continue;
             }
         }
+        ast.funcParam.paramsCount = paramsCount;
     } else {
         ast.funcParam.paramsCount = 0;
         ast.funcParam.params = NULL;
@@ -430,7 +431,7 @@ SpanAst AstAssignmentParse(Arena arena, Token** tokens) {
     while (true) {
         SpanAst assignee = AstVariableDeclarationParse(arena, &token, false);
         if (assignee.type == ast_invalid) {
-            OurTokenType delimeters[] = { tt_end_statement };
+            OurTokenType delimeters[] = { tt_assign, tt_assign_add, tt_assign_sub, tt_assign_mul, tt_assign_div, tt_assign_mod, tt_assign_infer, tt_comma };
             assignee = AstExpressionParse(arena, &token, delimeters, 1);
             if (assignee.type == ast_invalid) {
                 SpanAst err = { 0 };
@@ -501,6 +502,10 @@ SpanAst AstGeneralIdParse(Arena arena, Token** tokens) {
         }
     }
 
+    if (ast.type == ast_invalid) {
+        SpanAst err = { 0 };
+        return err;
+    }
     *tokens = token;
     return ast;
 }
@@ -593,6 +598,43 @@ SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurT
     }
 }
 
+SpanAst AstCallParamerterListParse(Arena arena, Token** tokens) {
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.token = token;
+    massert(token->type == tt_lparen, "should be a left paren");
+    token++;
+    u64 paramsCapacity = 2;
+    ast.callParamerterList.params = allocArena(arena, sizeof(SpanAst) * paramsCapacity);
+    ast.callParamerterList.paramsCount = 0;
+    if (token->type != tt_rparen) {
+        while (true) {
+            OurTokenType delimeters[] = { tt_comma, tt_rparen };
+            SpanAst param = AstExpressionParse(arena, &token, delimeters, 2);
+            if (param.type == ast_invalid) {
+                SpanAst err = { 0 };
+                return err;
+            }
+            if (ast.callParamerterList.paramsCount >= paramsCapacity) {
+                ast.callParamerterList.params = reallocArena(arena, sizeof(SpanAst) * paramsCapacity * 2, ast.callParamerterList.params, sizeof(SpanAst) * paramsCapacity);
+                paramsCapacity *= 2;
+            }
+            ast.callParamerterList.params[ast.callParamerterList.paramsCount++] = param;
+            if (token->type == tt_rparen) break;
+            if (token->type == tt_comma) {
+                token++;
+                continue;
+            }
+        }
+    }
+    massert(token->type == tt_rparen, "should be a right paren");
+    token++;
+
+    ast.type = ast_call_paramerter_list;
+    ast.tokenLength = token - *tokens;
+    *tokens = token;
+    return ast;
+}
 
 SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
@@ -608,6 +650,21 @@ SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
             memcpy(word, buffer, nameLength + 1);
             token++;
 
+            if (token->type == tt_lparen) {
+                // function call
+                ast.type = ast_function_call;
+                ast.functionCall.name = word;
+                SpanAst callParamerterList = AstCallParamerterListParse(arena, &token);
+                if (callParamerterList.type == ast_invalid) {
+                    SpanAst err = { 0 };
+                    return err;
+                }
+                ast.functionCall.args = allocArena(arena, sizeof(SpanAst));
+                *ast.functionCall.args = callParamerterList;
+                break;
+            }
+
+            // variable
             ast.type = ast_expr_word;
             ast.exprWord.word = word;
             break;
@@ -673,6 +730,11 @@ SpanAst AstGeneralParse(Arena arena, Token** tokens) {
             massert(false, "Unexpected token");
             break;
         }
+    }
+
+    if (ast.type == ast_invalid) {
+        SpanAst err = { 0 };
+        return err;
     }
 
     *tokens = token;

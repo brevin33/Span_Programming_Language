@@ -17,6 +17,7 @@ typedef enum _SpanStatmentType {
     st_expression,
     st_return,
     st_assign,
+    st_scope,
 } SpanStatmentType;
 
 typedef struct _SpanStatmentExpression {
@@ -41,6 +42,10 @@ typedef struct _SpanAssignStatement {
     SpanExpression value;
 } SpanAssignStatement;
 
+typedef struct _SpanStatementScope {
+    SpanScope* scope;
+} SpanStatementScope;
+
 typedef struct _SpanStatement {
     SpanStatmentType type;
     SpanAst* ast;
@@ -48,13 +53,15 @@ typedef struct _SpanStatement {
         SpanStatmentExpression expression;
         SpanStatmentReturn return_;
         SpanAssignStatement assign;
+        SpanStatementScope scope;
     };
 } SpanStatement;
 
-SpanStatement createSpanStatement(SpanAst* ast, SpanScope* scope);
+SpanStatement createSpanStatement(SpanAst* ast, SpanScope* scope, SpanFunction* function);
 SpanStatement createSpanExpressionStatement(SpanAst* ast, SpanScope* scope);
-SpanStatement createSpanReturnStatement(SpanAst* ast, SpanScope* scope);
+SpanStatement createSpanReturnStatement(SpanAst* ast, SpanScope* scope, SpanFunction* function);
 SpanStatement createSpanAssignStatement(SpanAst* ast, SpanScope* scope);
+SpanStatement createSpanScopeStatement(SpanAst* ast, SpanScope* scope, SpanFunction* function);
 SpanVariable* declareVariable(SpanAst* ast, SpanScope* scope);
 
 

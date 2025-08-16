@@ -17,6 +17,7 @@ void initializeContext(Arena arena) {
     context.functionsCapacity = 8;
     context.functionsCount = 0;
     context.functions = allocArena(arena, sizeof(SpanFunction) * context.functionsCapacity);
+    context.numberOfErrors = 0;
 }
 
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
@@ -195,7 +196,12 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
         SpanFileImplementFunctions(&project.files[i]);
     }
 
-
+    if (context.numberOfErrors > 0) {
+        redprintf("failed to create span project!\n");
+        redprintf("number of errors: %u\n", context.numberOfErrors);
+    } else {
+        greenprintf("successfully created span project\n");
+    }
     return project;
 }
 
@@ -251,26 +257,83 @@ SpanFile* SpanFileFromTokenAndNamespace(Token token, u32 namespace_) {
 
 
 void compileSpanProject(SpanProject* project) {
+    if (context.numberOfErrors > 0) {
+        redprintf("can't compile project with errors\n");
+        redprintf("number of errors: %u\n", context.numberOfErrors);
+        return;
+    }
     LLVMInitializeAllAsmParsers();
     LLVMInitializeAllTargetInfos();
     LLVMInitializeAllTargets();
     LLVMInitializeAllTargetMCs();
     LLVMInitializeAllAsmPrinters();
     LLVMInitializeAllDisassemblers();
+    char* triple = LLVMGetDefaultTargetTriple();
 
     context.activeProject = project;
     context.llvmContext = LLVMContextCreate();
+    context.currentBlock = NULL;
+
     project->llvmModule = LLVMModuleCreateWithName(project->name);
     context.builder = LLVMCreateBuilder();
     createLLVMTypeBaseTypes();
-    compilePrototypeFunctions();
 
     for (u64 i = 0; i < context.functionsCount; i++) {
         SpanFunction* function = context.functions[i];
         char* name = context.functions[i]->name;
         if (strcmp(name, "main") == 0) {
             compileFunction(function);
+            compileRealMainFunction(function);
         }
+    }
+
+    char* error;
+    LLVMTargetRef target;
+    if (LLVMGetTargetFromTriple(triple, &target, &error) != 0) {
+        fprintf(stderr, "Failed to get target: %s\n", error);
+        LLVMDisposeMessage(error);
+        exit(1);
+    }
+
+    LLVMTargetMachineRef targetMachine;
+    targetMachine = LLVMCreateTargetMachine(target, triple, "", "", LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+
+    if (LLVMVerifyModule(project->llvmModule, LLVMAbortProcessAction, &error) != 0) {
+        redprintf("LLVMVerifyModule failed: %s\n", error);
+        LLVMDisposeMessage(error);
+        massert(false, "LLVMVerifyModule failed");
+    } else {
+        greenprintf("successfully verified module\n");
+    }
+
+    bool removed = rmdir("build");
+    bool success = mkdir("build");
+    if (!success) {
+        redprintf("failed to create build directory\n");
+        return;
+    } else {
+        greenprintf("successfully created build directory\n");
+    }
+
+    char* outputFileName = "build/output.obj";
+    if (LLVMTargetMachineEmitToFile(targetMachine, project->llvmModule, outputFileName, LLVMObjectFile, &error) != 0) {
+        redprintf("Failed to emit object file: %s\n", error);
+        LLVMDisposeMessage(error);
+        assert(false);
+    } else {
+        greenprintf("successfully emitted object file: %s\n", outputFileName);
+    }
+    char* objectFiles[BUFFER_SIZE];
+    u64 objectFilesCount = 1;
+    objectFiles[0] = outputFileName;
+
+    char* exeName = "build/output.exe";
+    success = linkExe(objectFiles, objectFilesCount, exeName);
+    if (!success) {
+        redprintf("failed to link exe: %s\n", exeName);
+        return;
+    } else {
+        greenprintf("successfully linked exe: %s\n", exeName);
     }
 
     LLVMDisposeBuilder(context.builder);

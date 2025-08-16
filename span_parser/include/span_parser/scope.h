@@ -28,7 +28,10 @@ typedef struct _SpanScope {
     u64 variablesCapacity;
 } SpanScope;
 
-SpanScope createSpanScope(SpanAst* ast, SpanScope* parent);
+
+SpanScope createSpanScope(SpanAst* ast, SpanScope* parent, SpanFunction* function);
+void addStatmentsToScope(SpanAst* ast, SpanScope* scope, SpanFunction* function);
+
 SpanVariable* addVariableToScope(SpanScope* scope, char* name, SpanType type, SpanAst* ast);
 SpanVariable* getVariableFromScope(SpanScope* scope, char* name);
 void compileScope(SpanScope* scope, SpanFunction* function);

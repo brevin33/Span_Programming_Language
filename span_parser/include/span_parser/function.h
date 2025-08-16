@@ -12,18 +12,19 @@ typedef struct _SpanFunction {
     SpanAst* ast;
     char* name;
     char* scrambledName;
+    char** paramNames;
     SpanScope scope;
     LLVMValueRef llvmFunc;
 } SpanFunction;
 
 SpanFunction* addFunction(SpanFunction* function);
 
-SpanFunction* findFunctions(char* name, u32 namespace_, SpanFunction* buffer, u32* functionsCountOut);
+SpanFunction** findFunctions(char* name, u32 namespace_, SpanFunction** buffer, u32* functionsCountOut);
 
 SpanFunction* prototypeFunction(SpanAst* ast);
 
 void implementFunction(SpanFunction* function);
 
-void compilePrototypeFunctions();
-
 void compileFunction(SpanFunction* function);
+
+void compileRealMainFunction(SpanFunction* mainToCall);
