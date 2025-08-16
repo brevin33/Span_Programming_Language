@@ -1,7 +1,4 @@
-#include <sal.h>
-#include <stdio.h>
 #include "span_parser.h"
-#include "span_parser/logging.h"
 
 int main(void) {
     const char* variableValue = getenv("Span_Language_Dir");

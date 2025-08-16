@@ -1,4 +1,5 @@
 #pragma once
+
 #include "default.h"
 #include "span_parser/tokens.h"
 #include "span_parser/ast.h"

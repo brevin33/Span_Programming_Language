@@ -1,5 +1,6 @@
 #pragma once
 
+
 #include "span_parser/default.h"
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
@@ -8,6 +9,8 @@
 
 
 typedef struct _SpanVariable SpanVariable;
+typedef struct _SpanScope SpanScope;
+typedef struct _SpanFunction SpanFunction;
 
 typedef enum _SpanStatmentType {
     st_invalid = 0,
@@ -53,3 +56,10 @@ SpanStatement createSpanExpressionStatement(SpanAst* ast, SpanScope* scope);
 SpanStatement createSpanReturnStatement(SpanAst* ast, SpanScope* scope);
 SpanStatement createSpanAssignStatement(SpanAst* ast, SpanScope* scope);
 SpanVariable* declareVariable(SpanAst* ast, SpanScope* scope);
+
+
+void compileStatementExpression(SpanStatement* statement, SpanScope* scope, SpanFunction* function);
+void compileReturn(SpanStatement* statement, SpanScope* scope, SpanFunction* function);
+void compileAssignStatement(SpanStatement* statement, SpanScope* scope, SpanFunction* function);
+
+bool compileStatement(SpanStatement* statement, SpanScope* scope, SpanFunction* function);

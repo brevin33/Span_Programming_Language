@@ -2,6 +2,8 @@
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
 #include "span_parser/type.h"
+#include "llvm-c/Core.h"
+#include "llvm-c/Target.h"
 
 
 void initializeContext(Arena arena) {
@@ -15,10 +17,6 @@ void initializeContext(Arena arena) {
     context.functionsCapacity = 8;
     context.functionsCount = 0;
     context.functions = allocArena(arena, sizeof(SpanFunction) * context.functionsCapacity);
-
-    LLVMInitializeNativeTarget();
-    LLVMInitializeNativeAsmPrinter();
-    LLVMInitializeNativeAsmParser();
 }
 
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
@@ -43,6 +41,7 @@ char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
 void SpanFilePrototypeFunctions(SpanFile* file) {
     u32 fileDefinitionStartsCapacity = 4;
     file->fileDefinedFunctions = allocArena(context.arena, sizeof(SpanFunction*) * fileDefinitionStartsCapacity);
+    file->fileDefinedFunctionsCount = 0;
     for (u64 i = 0; i < file->ast.file.globalStatementsCount; i++) {
         SpanAst* statement = &file->ast.file.globalStatements[i];
         if (statement->type == ast_function_declaration) {
@@ -119,10 +118,10 @@ char* getNameSpaceFromTokens(Token** tokens, char* buffer) {
     if (token->type != tt_id && token[1].type != tt_colon_colon) {
         return NULL;
     }
-    char* namespace = tokenGetString(*token, buffer);
+    char* namespace_ = tokenGetString(*token, buffer);
     token += 2;
     *tokens = token;
-    return namespace;
+    return namespace_;
 }
 
 void SpanFileGetTokensForFile(SpanFile* file, u64 fileIndex) {
@@ -146,7 +145,6 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     context.activeProject = &project;
     project.arena = arena;
     project.llvmModule = NULL;
-    project.mainFunction = NULL;
 
     char buffer[BUFFER_SIZE];
     char* dirName = getDirectoryNameFromPath(path, buffer);
@@ -156,7 +154,7 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     memcpy(project.name, dirName, dirNameLength + 1);
 
     project.parent = parent;
-    project.namespace = context.namespaceCounter++;
+    project.namespace_ = context.namespaceCounter++;
 
     u64 directoryCount;
     char** directories = getDirectoryNamesInDirectory(project.arena, path, &directoryCount);
@@ -205,31 +203,31 @@ SpanProject createSpanProject(Arena arena, char* path) {
     return createSpanProjectHelper(arena, NULL, path);
 }
 
-Namespace _getNamespace(char* name, SpanProject* project) {
+u32 _getNamespace(char* name, SpanProject* project) {
     if (strcmp(name, project->name) == 0) {
-        return project->namespace;
+        return project->namespace_;
     }
     for (u64 i = 0; i < project->childCount; i++) {
-        Namespace namespace = _getNamespace(name, &project->children[i]);
-        if (namespace != NO_NAMESPACE) {
-            return namespace;
+        u32 namespace_ = _getNamespace(name, &project->children[i]);
+        if (namespace_ != NO_NAMESPACE) {
+            return namespace_;
         }
     }
     return NO_NAMESPACE;
 }
 
-Namespace getNamespace(char* name) {
+u32 getNamespace(char* name) {
     SpanProject* project = context.activeProject;
     return _getNamespace(name, project);
 }
 
-SpanProject* _SpanProjectFromNamespace(Namespace namespace, SpanProject* project) {
-    if (project->namespace == namespace) {
+SpanProject* _SpanProjectFromNamespace(u32 namespace_, SpanProject* project) {
+    if (project->namespace_ == namespace_) {
         return project;
     }
     for (u64 i = 0; i < project->childCount; i++) {
         SpanProject* child = &project->children[i];
-        SpanProject* found = _SpanProjectFromNamespace(namespace, child);
+        SpanProject* found = _SpanProjectFromNamespace(namespace_, child);
         if (found != NULL) {
             return found;
         }
@@ -238,14 +236,14 @@ SpanProject* _SpanProjectFromNamespace(Namespace namespace, SpanProject* project
     return NULL;
 }
 
-SpanProject* SpanProjectFromNamespace(Namespace namespace) {
+SpanProject* SpanProjectFromNamespace(u32 namespace_) {
     SpanProject* project = context.activeProject;
-    return _SpanProjectFromNamespace(namespace, project);
+    return _SpanProjectFromNamespace(namespace_, project);
 }
 
-SpanFile* SpanFileFromTokenAndNamespace(Token token, Namespace namespace) {
-    massert(namespace != NO_NAMESPACE, "namespace must be valid");
-    SpanProject* project = SpanProjectFromNamespace(namespace);
+SpanFile* SpanFileFromTokenAndNamespace(Token token, u32 namespace_) {
+    massert(namespace_ != NO_NAMESPACE, "namespace must be valid");
+    SpanProject* project = SpanProjectFromNamespace(namespace_);
     u16 fileIndex = token.file;
     SpanFile* file = &project->files[fileIndex];
     return file;
@@ -253,13 +251,27 @@ SpanFile* SpanFileFromTokenAndNamespace(Token token, Namespace namespace) {
 
 
 void compileSpanProject(SpanProject* project) {
-    context.llvmContext = LLVMGetModuleContext(project->llvmModule);
+    LLVMInitializeAllAsmParsers();
+    LLVMInitializeAllTargetInfos();
+    LLVMInitializeAllTargets();
+    LLVMInitializeAllTargetMCs();
+    LLVMInitializeAllAsmPrinters();
+    LLVMInitializeAllDisassemblers();
+
+    context.activeProject = project;
+    context.llvmContext = LLVMContextCreate();
     project->llvmModule = LLVMModuleCreateWithName(project->name);
     context.builder = LLVMCreateBuilder();
     createLLVMTypeBaseTypes();
     compilePrototypeFunctions();
-    massert(project->mainFunction != NULL, "main function should not be null");
-    compileFunction(project->mainFunction);
+
+    for (u64 i = 0; i < context.functionsCount; i++) {
+        SpanFunction* function = context.functions[i];
+        char* name = context.functions[i]->name;
+        if (strcmp(name, "main") == 0) {
+            compileFunction(function);
+        }
+    }
 
     LLVMDisposeBuilder(context.builder);
     LLVMDisposeModule(project->llvmModule);

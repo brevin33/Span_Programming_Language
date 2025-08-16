@@ -25,6 +25,41 @@ SpanStatement createSpanExpressionStatement(SpanAst* ast, SpanScope* scope) {
     return statement;
 }
 
+bool compileStatement(SpanStatement* statement, SpanScope* scope, SpanFunction* function) {
+    switch (statement->type) {
+        case st_expression:
+            compileStatementExpression(statement, scope, function);
+            return false;
+        case st_return:
+            compileReturn(statement, scope, function);
+            return true;
+        case st_assign:
+            compileAssignStatement(statement, scope, function);
+            return false;
+        default:
+            massert(false, "not implemented");
+            break;
+    }
+}
+
+void compileStatementExpression(SpanStatement* statement, SpanScope* scope, SpanFunction* function) {
+    compileExpression(&statement->expression.expression, scope, function);
+}
+void compileReturn(SpanStatement* statement, SpanScope* scope, SpanFunction* function) {
+    compileExpression(&statement->return_.expression, scope, function);
+    LLVMBuildRet(context.builder, statement->return_.expression.llvmValue);
+}
+void compileAssignStatement(SpanStatement* statement, SpanScope* scope, SpanFunction* function) {
+    for (u64 i = 0; i < statement->assign.assigneesCount; i++) {
+        Assignee* assignee = &statement->assign.assignees[i];
+        if (!assignee->isVariableDeclaration) {
+            compileExpression(&assignee->expression, scope, function);
+        } else {
+            SpanVariable* variable = assignee->variable;
+        }
+    }
+}
+
 SpanStatement createSpanReturnStatement(SpanAst* ast, SpanScope* scope) {
     SpanStatement statement = { 0 };
     massert(ast->type == ast_return, "should be a return");

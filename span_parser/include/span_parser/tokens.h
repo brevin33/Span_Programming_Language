@@ -1,9 +1,10 @@
 #pragma once
+
 #include "span_parser/default.h"
 #include "span_parser/arena.h"
 
 
-typedef enum _TokenType : u8 {
+typedef enum _TokenType {
     tt_invalid = 0,
     tt_return,
     tt_if,

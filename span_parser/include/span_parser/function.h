@@ -1,4 +1,5 @@
 #pragma once
+
 #include "span_parser/default.h"
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
@@ -17,7 +18,7 @@ typedef struct _SpanFunction {
 
 SpanFunction* addFunction(SpanFunction* function);
 
-SpanFunction* findFunctions(char* name, u32 namespace, SpanFunction* buffer, u32* functionsCountOut);
+SpanFunction* findFunctions(char* name, u32 namespace_, SpanFunction* buffer, u32* functionsCountOut);
 
 SpanFunction* prototypeFunction(SpanAst* ast);
 

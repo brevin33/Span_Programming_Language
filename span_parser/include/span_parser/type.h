@@ -1,11 +1,11 @@
 #pragma once
 
+
 #include "span_parser/default.h"
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
 #include "span_parser/ast.h"
 #include "span_parser/llvm.h"
-
 
 typedef struct _SpanTypeBase SpanTypeBase;
 typedef struct _SpanType {
@@ -14,7 +14,7 @@ typedef struct _SpanType {
     u64 modsCount;
 } SpanType;
 
-typedef enum _SpanTypeType : u8 {
+typedef enum _SpanTypeType {
     t_invalid = 0,
     t_struct,
     t_int,
@@ -51,7 +51,7 @@ typedef struct _SpanTypeFunction {
 
 typedef struct _SpanTypeBase {
     SpanTypeType type;
-    u32 namespace;
+    u32 namespace_;
     LLVMTypeRef llvmType;
     char* name;
     SpanAst* ast;
@@ -67,7 +67,7 @@ typedef struct _SpanTypeBase {
 
 SpanTypeBase* getFunctionType(SpanAst* ast);
 SpanTypeBase* typeFromTypeAst(SpanAst* typeAst);
-SpanTypeBase* findBaseType(char* name, u32 namespace);
+SpanTypeBase* findBaseType(char* name, u32 namespace_);
 SpanTypeBase* addBaseType(SpanTypeBase* base);
 SpanTypeBase* prototypeType(SpanAst* ast);
 SpanTypeBase* prototypeStuctType(SpanAst* structAst);

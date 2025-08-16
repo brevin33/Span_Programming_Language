@@ -14,16 +14,16 @@ SpanTypeBase* addBaseType(SpanTypeBase* base) {
     u64 index = context.baseTypesCount++;
     context.baseTypes[index] = b;
 
-    SpanTypeBase* existing = findBaseType(base->name, base->namespace);
+    SpanTypeBase* existing = findBaseType(base->name, base->namespace_);
 
     return b;
 }
 
-SpanTypeBase* findBaseType(char* name, u32 namespace) {
+SpanTypeBase* findBaseType(char* name, u32 namespace_) {
     for (u64 i = 0; i < context.baseTypesCount; i++) {
         SpanTypeBase* base = context.baseTypes[i];
-        bool validNamespace = base->namespace == namespace;
-        validNamespace = validNamespace || base->namespace == NO_NAMESPACE;
+        bool validNamespace = base->namespace_ == namespace_;
+        validNamespace = validNamespace || base->namespace_ == NO_NAMESPACE;
         bool validName = strcmp(base->name, name) == 0;
         if (validNamespace && validName) {
             return base;
@@ -35,7 +35,7 @@ SpanTypeBase* findBaseType(char* name, u32 namespace) {
 SpanTypeBase* getInvalidTypeBase() {
     SpanTypeBase base;
     base.type = t_invalid;
-    base.namespace = NO_NAMESPACE;
+    base.namespace_ = NO_NAMESPACE;
     base.ast = NULL;
     base.name = "%invalid%";
 
@@ -242,7 +242,20 @@ void addLLVMTypeBaseType(SpanTypeBase* type) {
             type->llvmType = LLVMIntType(type->uint.size);
             break;
         case t_float:
-            type->llvmType = LLVMFloatType();
+            switch (type->float_.size) {
+                case 32:
+                    type->llvmType = LLVMFloatType();
+                    break;
+                case 64:
+                    type->llvmType = LLVMDoubleType();
+                    break;
+                case 16:
+                    type->llvmType = LLVMHalfType();
+                    break;
+                default:
+                    massert(false, "not implemented");
+                    break;
+            }
             break;
         case t_function: {
             SpanTypeFunction* functionType = &type->function;
@@ -286,7 +299,7 @@ SpanTypeBase* prototypeStuctType(SpanAst* structAst) {
     massert(structAst->type == ast_struct, "should be a struct");
     SpanTypeBase base;
     base.type = t_struct;
-    base.namespace = context.activeProject->namespace;
+    base.namespace_ = context.activeProject->namespace_;
     base.ast = structAst;
     base.name = structAst->struct_.name;
 
@@ -330,7 +343,7 @@ SpanType getNumbericLiteralType() {
 SpanTypeBase* getNumbericLiteralTypeBase() {
     SpanTypeBase base;
     base.type = t_numberic_literal;
-    base.namespace = NO_NAMESPACE;
+    base.namespace_ = NO_NAMESPACE;
     base.ast = NULL;
     base.name = "numberic_literal";
     SpanTypeBase* existing = findBaseType(base.name, NO_NAMESPACE);
@@ -411,7 +424,7 @@ void implementStuctType(SpanTypeBase* structType) {
 SpanTypeBase* getIntTypeBase(u64 size) {
     SpanTypeBase base;
     base.type = t_int;
-    base.namespace = NO_NAMESPACE;
+    base.namespace_ = NO_NAMESPACE;
     base.int_.size = size;
     base.ast = NULL;
 
@@ -470,7 +483,7 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
 
     SpanTypeBase base;
     base.type = t_function;
-    base.namespace = context.activeProject->namespace;
+    base.namespace_ = context.activeProject->namespace_;
     base.ast = ast;
     base.name = name;
     base.function.returnType = getType(functionDeclaration->returnType);
@@ -494,7 +507,7 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
 SpanTypeBase* getFloatTypeBase(u64 size) {
     SpanTypeBase base;
     base.type = t_float;
-    base.namespace = NO_NAMESPACE;
+    base.namespace_ = NO_NAMESPACE;
     base.int_.size = size;
     base.ast = NULL;
 
@@ -517,7 +530,7 @@ SpanTypeBase* getFloatTypeBase(u64 size) {
 SpanTypeBase* getUintTypeBase(u64 size) {
     SpanTypeBase base;
     base.type = t_uint;
-    base.namespace = NO_NAMESPACE;
+    base.namespace_ = NO_NAMESPACE;
     base.int_.size = size;
     base.ast = NULL;
 

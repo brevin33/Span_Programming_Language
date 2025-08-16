@@ -1,4 +1,5 @@
 #pragma once
+
 #include "span_parser/default.h"
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
@@ -11,7 +12,7 @@ typedef enum programAction {
     pa_continue,
 } ProgramAction;
 
-typedef enum _SpanASTType : u8 {
+typedef enum _SpanASTType {
     ast_invalid = 0,
     ast_file,
     ast_struct,
@@ -36,30 +37,10 @@ typedef enum _SpanASTType : u8 {
     ast_end_statement,
 } SpanASTType;
 
-typedef struct _SpanAstEndStatement {
-} SpanAstEndStatement;
-
-typedef struct _SpanAstTmodPtr {
-} SpanAstTmodPtr;
-
-typedef struct _SpanAstTmodRef {
-} SpanAstTmodRef;
-
-typedef struct _SpanAstTmodUptr {
-} SpanAstTmodUptr;
-
-typedef struct _SpanAstTmodSptr {
-} SpanAstTmodSptr;
 
 typedef struct _SpanAstTmodArray {
     u64 size;
 } SpanAstTmodArray;
-
-typedef struct _SpanAstTmodList {
-} SpanAstTmodList;
-
-typedef struct _SpanAstTmodSlice {
-} SpanAstTmodSlice;
 
 typedef struct _SpanAstFunctionParameterDeclaration {
     SpanAst* params;
@@ -133,13 +114,7 @@ typedef struct _SpanAst {
         SpanAstFile file;
         SpanAstStruct struct_;
         SpanAstType type_;
-        SpanAstTmodPtr tmodPtr;
-        SpanAstTmodRef tmodRef;
-        SpanAstTmodUptr tmodUptr;
-        SpanAstTmodSptr tmodSptr;
         SpanAstTmodArray tmodArray;
-        SpanAstTmodList tmodList;
-        SpanAstTmodSlice tmodSlice;
         SpanAstFunctionDeclaration functionDeclaration;
         SpanAstVariableDeclaration variableDeclaration;
         SpanAstFunctionParameterDeclaration funcParam;
@@ -149,7 +124,6 @@ typedef struct _SpanAst {
         SpanAstExprBiop exprBiop;
         SpanAstNumberLiteral numberLiteral;
         SpanAstReturn return_;
-        SpanAstEndStatement endStatement;
     };
 } SpanAst;
 

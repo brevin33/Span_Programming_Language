@@ -1,3 +1,5 @@
+#pragma once
+
 #include <llvm-c/Core.h>
 #include <llvm-c/Analysis.h>
 #include <llvm-c/BitReader.h>

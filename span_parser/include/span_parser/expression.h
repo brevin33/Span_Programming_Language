@@ -1,4 +1,5 @@
 #pragma once
+
 #include "span_parser/default.h"
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
@@ -8,6 +9,7 @@
 typedef struct _SpanVariable SpanVariable;
 typedef struct _SpanExpression SpanExpression;
 typedef struct _SpanScope SpanScope;
+typedef struct _SpanFunction SpanFunction;
 
 typedef enum _SpanExpressionType {
     et_invalid = 0,
@@ -38,6 +40,7 @@ typedef struct _SpanExpression {
         SpanExpressionVariable variable;
         SpanExpressionCast cast;
     };
+    LLVMValueRef llvmValue;
 } SpanExpression;
 
 SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope);
@@ -45,3 +48,9 @@ SpanExpression createSpanNumberLiteralExpression(SpanAst* ast, SpanScope* scope)
 SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createCastExpression(SpanExpression* expr, SpanType* type);
 void implicitlyCast(SpanExpression* expression, SpanType* type);
+
+void compileExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+
+void compileNumberLiteralExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileVariableExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);

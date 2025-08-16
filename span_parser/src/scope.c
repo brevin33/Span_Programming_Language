@@ -20,10 +20,13 @@ SpanScope createSpanScope(SpanAst* ast, SpanScope* parent) {
     return scope;
 }
 
-void compileScope(SpanScope* scope) {
+void compileScope(SpanScope* scope, SpanFunction* function) {
     for (u64 i = 0; i < scope->statmentsCount; i++) {
         SpanStatement* statement = &scope->statments[i];
-        compileStatement(statement);
+        bool exitedScope = compileStatement(statement, scope, function);
+        if (exitedScope) {
+            break;
+        }
     }
 }
 

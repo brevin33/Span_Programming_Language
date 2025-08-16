@@ -1,4 +1,5 @@
 #pragma once
+
 #include "span_parser/default.h"
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
@@ -7,8 +8,6 @@
 #include "span_parser/function.h"
 
 #define NO_NAMESPACE 0
-
-typedef u32 Namespace;
 
 typedef struct _SpanFile {
     char* fileName;
@@ -61,17 +60,16 @@ typedef struct _SpanProject {
     SpanProject* children;
     u64 childCount;
     u64 childCapacity;
-    u32 namespace;
+    u32 namespace_;
     LLVMModuleRef llvmModule;
-    SpanFunction* mainFunction;
 } SpanProject;
 
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount);
 
 SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path);
 
-Namespace getNamespace(char* name);
+u32 getNamespace(char* name);
 
-SpanFile* SpanFileFromTokenAndNamespace(Token token, Namespace namespace);
+SpanFile* SpanFileFromTokenAndNamespace(Token token, u32 namespace_);
 
-SpanProject* SpanProjectFromNamespace(Namespace namespace);
+SpanProject* SpanProjectFromNamespace(u32 namespace_);
