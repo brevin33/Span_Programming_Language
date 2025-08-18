@@ -38,7 +38,7 @@ SpanTypeBase* getInvalidTypeBase() {
     base.type = t_invalid;
     base.namespace_ = NO_NAMESPACE;
     base.ast = NULL;
-    base.name = "%invalid%";
+    base.name = "$invalid$";
 
     SpanTypeBase* existing = findBaseType(base.name, NO_NAMESPACE);
     if (existing != NULL) {
@@ -106,7 +106,6 @@ SpanType getType(SpanAst* ast) {
     massert(ast->type == ast_type, "should be a type");
     SpanTypeBase* base = typeFromTypeAst(ast);
     if (base == NULL) {
-        logErrorAst(ast, "type not found");
         return getInvalidTypeAst(ast);
     }
     SpanType type;
@@ -127,8 +126,17 @@ LLVMTypeRef getLLVMType(SpanType* type) {
     }
     massert(type->base->type != t_invalid, "type is invalid");
     massert(type->base->type != t_numberic_literal, "type is numberic literal");
-    for (u64 i = 0; i < type->modsCount; i++) {
-        massert(false, "not implemented");
+    if (type->modsCount != 0) {
+        SpanTypeModifier* mod = &type->mods[type->modsCount - 1];
+        switch (mod->type) {
+            case tm_ptr:
+            case tm_ref:
+            case tm_uptr:
+            case tm_sptr:
+                return LLVMPointerType(LLVMIntType(32), 0);
+            default:
+                massert(false, "not implemented");
+        }
     }
     return llvmType;
 }
@@ -385,7 +393,7 @@ SpanTypeBase* getNumbericLiteralTypeBase() {
     base.type = t_numberic_literal;
     base.namespace_ = NO_NAMESPACE;
     base.ast = NULL;
-    base.name = "numberic_literal";
+    base.name = "$numberic_literal$";
     SpanTypeBase* existing = findBaseType(base.name, NO_NAMESPACE);
     if (existing != NULL) {
         return existing;
@@ -407,7 +415,7 @@ SpanTypeBase* typeFromTypeAst(SpanAst* typeAst) {
         if (firstChar == 'f') return getFloatTypeBase(size);
     }
 
-    SpanTypeBase* existing = findBaseType(typeName, NO_NAMESPACE);
+    SpanTypeBase* existing = findBaseType(typeName, context.activeProject->namespace_);
     if (existing != NULL) {
         return existing;
     }
@@ -448,8 +456,9 @@ void implementStuctType(SpanTypeBase* structType) {
         massert(type->type == ast_type, "should be a type");
         char* name = field->variableDeclaration.name;
         SpanType base = getType(type);
-        if (base.base->type == t_invalid) {
-            logErrorTokens(type->token, 1, "type not found");
+        if (isTypeReference(&base)) {
+            logErrorAst(type, "can't have reference type as a field");
+            base = getInvalidType();
         }
         if (structType->struct_.fieldsCount >= fieldsCapacity) {
             structType->struct_.fields = reallocArena(context.arena, sizeof(SpanTypeBase*) * fieldsCapacity * 2, structType->struct_.fields, sizeof(SpanTypeBase*) * fieldsCapacity);
@@ -514,7 +523,7 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
     buffer[bufferIndex++] = ')';
     buffer[bufferIndex++] = 0;
 
-    SpanTypeBase* existing = findBaseType(buffer, NO_NAMESPACE);
+    SpanTypeBase* existing = findBaseType(buffer, context.activeProject->namespace_);
     if (existing != NULL) {
         return existing;
     }
@@ -555,7 +564,7 @@ SpanTypeBase* getFloatTypeBase(u64 size) {
     buffer[0] = 'f';
     uintToString(size, buffer + 1);
 
-    SpanTypeBase* existing = findBaseType(buffer, NO_NAMESPACE);
+    SpanTypeBase* existing = findBaseType(buffer, context.activeProject->namespace_);
     if (existing != NULL) {
         return existing;
     }
@@ -614,7 +623,7 @@ SpanTypeBase* getUintTypeBase(u64 size) {
     buffer[0] = 'u';
     uintToString(size, buffer + 1);
 
-    SpanTypeBase* existing = findBaseType(buffer, NO_NAMESPACE);
+    SpanTypeBase* existing = findBaseType(buffer, context.activeProject->namespace_);
     if (existing != NULL) {
         return existing;
     }

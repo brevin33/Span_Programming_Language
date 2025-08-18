@@ -28,6 +28,7 @@ int main(void) {
         double parse_start = getTimeSeconds();
         SpanProject project = createSpanProject(arena, directoryPath);
         double parse_end = getTimeSeconds();
+        if (true) { }
 
         printf("\n\n");
         printf("Parsing time: %.6f seconds\n", parse_end - parse_start);
@@ -71,6 +72,5 @@ int main(void) {
     }
 
     freeArena(arena);
-    debugbreak();
     return 0;
 }

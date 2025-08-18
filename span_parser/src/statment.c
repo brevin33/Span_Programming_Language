@@ -10,6 +10,8 @@ SpanStatement createSpanStatement(SpanAst* ast, SpanScope* scope, SpanFunction* 
             return createSpanAssignStatement(ast, scope);
         case ast_scope:
             return createSpanScopeStatement(ast, scope, function);
+        case ast_end_statement:
+            return createSpanEndStatement(ast, scope, function);
         default:
             massert(false, "not implemented");
             break;
@@ -18,6 +20,14 @@ SpanStatement createSpanStatement(SpanAst* ast, SpanScope* scope, SpanFunction* 
     SpanStatement err = { 0 };
     return err;
 }
+
+SpanStatement createSpanEndStatement(SpanAst* ast, SpanScope* scope, SpanFunction* function) {
+    SpanStatement statement = { 0 };
+    statement.type = st_end_statement;
+    statement.ast = ast;
+    return statement;
+}
+
 SpanStatement createSpanExpressionStatement(SpanAst* ast, SpanScope* scope) {
     SpanStatement statement = { 0 };
     massert(AstIsExpression(ast), "should be an expression");
@@ -49,6 +59,8 @@ bool compileStatement(SpanStatement* statement, SpanScope* scope, SpanFunction* 
         case st_assign:
             compileAssignStatement(statement, scope, function);
             return false;
+        case st_end_statement:
+            return false;
         default:
             massert(false, "not implemented");
             break;
@@ -77,11 +89,18 @@ void compileAssignStatement(SpanStatement* statement, SpanScope* scope, SpanFunc
         }
     }
 
+    if (statement->assign.value.exprType == et_none) return;
     compileExpression(&statement->assign.value, scope, function);
     LLVMValueRef value = statement->assign.value.llvmValue;
     // set assignes to value
     if (statement->assign.assigneesCount == 1) {
-        LLVMBuildStore(context.builder, value, assigneesLLVMValue[0]);
+        Assignee* assignee = &statement->assign.assignees[0];
+        if (assignee->isVariableDeclaration && assignee->variable->isReference) {
+            SpanVariable* variable = assignee->variable;
+            variable->llvmValue = value;
+        } else {
+            LLVMBuildStore(context.builder, value, assigneesLLVMValue[0]);
+        }
     } else
         massert(false, "not implemented");
 }
@@ -118,9 +137,17 @@ SpanStatement createSpanAssignStatement(SpanAst* ast, SpanScope* scope) {
         if (assignee->type == ast_variable_declaration) {
             a.isVariableDeclaration = true;
             a.variable = declareVariable(assignee, scope);
+            if (isTypeInvalid(&a.variable->type)) {
+                SpanStatement err = { 0 };
+                return err;
+            }
         } else {
             a.isVariableDeclaration = false;
             a.expression = createSpanExpression(assignee, scope);
+            if (a.expression.exprType == et_invalid) {
+                SpanStatement err = { 0 };
+                return err;
+            }
             SpanType* type = &a.expression.type;
             if (!isTypeReference(type)) {
                 logErrorAst(assignee, "can't assign to a non-reference");
@@ -129,12 +156,25 @@ SpanStatement createSpanAssignStatement(SpanAst* ast, SpanScope* scope) {
         statement.assign.assignees[i] = a;
     }
     SpanAst* value = ast->assignment.value;
+    if (value == NULL) {
+        statement.assign.value = createSpanNoneExpression();
+        return statement;
+    }
     statement.assign.value = createSpanExpression(value, scope);
+    if (statement.assign.value.exprType == et_invalid) {
+        SpanStatement err = { 0 };
+        return err;
+    }
     if (statement.assign.assigneesCount == 1) {
         Assignee* assignee = &statement.assign.assignees[0];
         SpanType assigneeType;
         if (assignee->isVariableDeclaration) {
-            assigneeType = assignee->variable->type;
+            SpanVariable* variable = assignee->variable;
+            if (variable->isReference) {
+                assigneeType = getReferenceType(&variable->type);
+            } else {
+                assigneeType = variable->type;
+            }
         } else {
             assigneeType = assignee->expression.type;
             assigneeType = dereferenceType(&assigneeType);

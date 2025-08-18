@@ -28,15 +28,20 @@ void completeAddExpression(SpanExpression* expression, SpanScope* scope) {
         makeCastExpression(lhs, &derefTypelhs);
         makeCastExpression(rhs, &derefTyperhs);
         completeAddExpression(expression, scope);
+        return;
     } else if (isTypeReference(rhsType)) {
         SpanType derefType = dereferenceType(rhsType);
         makeCastExpression(rhs, &derefType);
         completeAddExpression(expression, scope);
+        return;
     } else if (isTypeReference(lhsType)) {
         SpanType derefType = dereferenceType(lhsType);
         makeCastExpression(lhs, &derefType);
         completeAddExpression(expression, scope);
+        return;
     }
+
+    massert(false, "not implemented");
 }
 
 SpanExpression createSpanBinaryExpression(SpanAst* ast, SpanScope* scope) {
@@ -102,6 +107,8 @@ SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope) 
     SpanFunction* match = NULL;
 
     // perfect match
+    SpanFunction* matchFunctions[BUFFER_SIZE];
+    u64 matchFunctionsCount = 0;
     for (u64 i = 0; i < matchingFunctionsCount; i++) {
         SpanFunction* function = matchingFunctions[i];
         if (function->functionType->function.paramTypesCount != expression.functionCall.argsCount) {
@@ -117,21 +124,54 @@ SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope) 
             }
         }
         if (paramTypesMatch) {
-            match = function;
-            break;
+            matchFunctions[matchFunctionsCount++] = function;
         }
     }
 
-    if (match != NULL) {
-        expression.functionCall.function = match;
-        expression.type = match->functionType->function.returnType;
-        return expression;
+    if (matchFunctionsCount != 0) {
+        if (matchFunctionsCount == 1) {
+            match = matchFunctions[0];
+            if (matchFunctionsCount != 0) {
+                if (matchFunctionsCount == 1) {
+                    match = matchFunctions[0];
+                    expression.functionCall.function = match;
+                    expression.type = match->functionType->function.returnType;
+                    // add dereference for all type doing that
+                    SpanFunction* function = match;
+                    for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
+                        SpanType paramType1 = function->functionType->function.paramTypes[j];
+                        SpanType paramType2 = expression.functionCall.args[j].type;
+                        if (isTypeEqual(&paramType1, &paramType2) == false) {
+                            // dereference
+                            makeCastExpression(&expression.functionCall.args[j], &paramType1);
+                        }
+                    }
+                    return expression;
+                }
+                logErrorAst(ast, "ambiguous function call");
+                for (u64 i = 0; i < matchFunctionsCount; i++) {
+                    SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
+                    logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
+                }
+                SpanExpression err = { 0 };
+                return err;
+            }
+            expression.functionCall.function = match;
+            expression.type = match->functionType->function.returnType;
+            return expression;
+        }
+        logErrorAst(ast, "ambiguous function call");
+        for (u64 i = 0; i < matchFunctionsCount; i++) {
+            SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
+            logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
+        }
+        SpanExpression err = { 0 };
+        return err;
     }
 
-    SpanFunction* matchFunctions[BUFFER_SIZE];
-    u64 matchFunctionsCount = 0;
 
     // dereference match
+    matchFunctionsCount = 0;
     for (u64 i = 0; i < matchingFunctionsCount; i++) {
         SpanFunction* function = matchingFunctions[i];
         if (function->functionType->function.paramTypesCount != expression.functionCall.argsCount) {
@@ -142,6 +182,10 @@ SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope) 
             SpanType paramType1 = function->functionType->function.paramTypes[j];
             SpanType paramType2 = expression.functionCall.args[j].type;
             if (isTypeEqual(&paramType1, &paramType2) == false) {
+                if (!isTypeReference(&paramType2)) {
+                    paramTypesMatch = false;
+                    break;
+                }
                 // dereference
                 SpanType derefType = dereferenceType(&paramType2);
                 if (isTypeEqual(&paramType1, &derefType) == false) {
@@ -173,13 +217,221 @@ SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope) 
             return expression;
         }
         logErrorAst(ast, "ambiguous function call");
+        for (u64 i = 0; i < matchFunctionsCount; i++) {
+            SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
+            logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
+        }
         SpanExpression err = { 0 };
         return err;
     }
 
+
+
+    // make a copy of args so we can undo implicit casts
+    SpanExpression argsCopyBuffer[BUFFER_SIZE];
+    memcpy(argsCopyBuffer, expression.functionCall.args, sizeof(SpanExpression) * expression.functionCall.argsCount);
+
     // implicit cast match
-    // TODO: implicit cast match
-    massert(false, "not implemented");
+    matchFunctionsCount = 0;
+    for (u64 i = 0; i < matchingFunctionsCount; i++) {
+        SpanFunction* function = matchingFunctions[i];
+        if (function->functionType->function.paramTypesCount != expression.functionCall.argsCount) {
+            continue;
+        }
+        bool paramTypesMatch = true;
+        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
+            SpanType paramType1 = function->functionType->function.paramTypes[j];
+            SpanType paramType2 = expression.functionCall.args[j].type;
+            if (isTypeEqual(&paramType1, &paramType2) == false) {
+                // implicit cast
+                bool worked = implicitlyCast(&expression.functionCall.args[j], &paramType1, false);
+                if (!worked) {
+                    paramTypesMatch = false;
+                    break;
+                }
+            }
+        }
+        if (paramTypesMatch) {
+            matchFunctions[matchFunctionsCount++] = function;
+        }
+        //undo implicit casts
+        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
+            SpanExpression* arg = &expression.functionCall.args[j];
+            *arg = argsCopyBuffer[j];
+        }
+    }
+
+    if (matchFunctionsCount != 0) {
+        if (matchFunctionsCount == 1) {
+            match = matchFunctions[0];
+            expression.functionCall.function = match;
+            expression.type = match->functionType->function.returnType;
+            SpanFunction* function = match;
+            for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
+                implicitlyCast(&expression.functionCall.args[j], &function->functionType->function.paramTypes[j], false);
+            }
+            return expression;
+        }
+        logErrorAst(ast, "ambiguous function call");
+        for (u64 i = 0; i < matchFunctionsCount; i++) {
+            SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
+            logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
+        }
+        SpanExpression err = { 0 };
+        return err;
+    }
+
+    char errorMessage[BUFFER_SIZE];
+    sprintf(errorMessage, "could not find function called %s that works with arguments of:", ast->functionCall.name);
+    for (u64 i = 0; i < expression.functionCall.argsCount; i++) {
+        char typeNameBuffer[BUFFER_SIZE];
+        char* argTypeName = getTypeName(&expression.functionCall.args[i].type, typeNameBuffer);
+        if (i == 0) {
+            sprintf(errorMessage, "%s %s", errorMessage, argTypeName);
+        } else {
+            sprintf(errorMessage, "%s, %s", errorMessage, argTypeName);
+        }
+    }
+    logErrorAst(ast, errorMessage);
+    SpanExpression err = { 0 };
+    return err;
+}
+
+SpanExpression createSpanStructAccessExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value) {
+    massert(ast->type == ast_member_access, "should be a member access");
+    SpanExpression expr = { 0 };
+    expr.ast = ast;
+    expr.exprType = et_struct_access;
+    expr.structAccess.value = allocArena(context.arena, sizeof(SpanExpression));
+    *expr.structAccess.value = *value;
+
+    char* memberName = ast->memberAccess.memberName;
+    bool isNumber = stringIsUint(memberName);
+    SpanType* type = &value->type;
+    SpanTypeBase* baseType = type->base;
+    SpanTypeStruct* structType = &baseType->struct_;
+    massert(baseType->type == t_struct, "should be a struct");
+    massert(isTypeReference(type) || isTypePointer(type) || isTypeStruct(type), "should be a reference or pointer or struct");
+    if (isNumber) {
+        u64 i = stringToUint(memberName);
+        if (i >= structType->fieldsCount) {
+            logErrorAst(ast, "struct does not have member at index %u", i);
+            SpanExpression err = { 0 };
+            return err;
+        }
+        expr.structAccess.memberIndex = i;
+        if (isTypeReference(type) || isTypePointer(type)) {
+            // get reference since we are ptr or ref
+            expr.type = getReferenceType(&structType->fields[i]);
+        } else {
+            // can't get reference as we have no pointer
+            expr.type = structType->fields[i];
+        }
+        return expr;
+    } else {
+        for (u64 i = 0; i < structType->fieldsCount; i++) {
+            char* fieldName = structType->fieldsNames[i];
+            SpanType* fieldType = &structType->fields[i];
+            if (strcmp(fieldName, memberName) == 0) {
+                expr.structAccess.memberIndex = i;
+                if (isTypeReference(&value->type) || isTypePointer(&value->type)) {
+                    // get reference since we are ptr or ref
+                    expr.type = getReferenceType(fieldType);
+                } else {
+                    // can't get reference as we have no pointer
+                    expr.type = *fieldType;
+                }
+                return expr;
+            }
+        }
+        logErrorAst(ast, "struct does not have member named %s", memberName);
+        SpanExpression err = { 0 };
+        return err;
+    }
+}
+
+SpanExpression createSpanNoneExpression() {
+    SpanExpression expression = { 0 };
+    expression.exprType = et_none;
+    expression.type = getInvalidType();
+    expression.llvmValue = NULL;
+    expression.ast = NULL;
+    return expression;
+}
+
+SpanExpression createMemberAccessExpression(SpanAst* ast, SpanScope* scope) {
+    massert(ast->type == ast_member_access, "should be a member access");
+    SpanExpression value = createSpanExpression(ast->memberAccess.value, scope);
+    if (value.exprType == et_invalid) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    char* accessedMemberName = ast->memberAccess.memberName;
+    // intrinsic
+    if (isTypeReference(&value.type) && strcmp(accessedMemberName, "ptr") == 0) {
+        return createSpanGetPtrExpression(ast, scope, &value);
+    }
+    bool wordIsVal = strcmp(accessedMemberName, "val") == 0;
+    if (wordIsVal) {
+        if (isTypePointer(&value.type)) {
+            return createSpanGetValExpression(ast, scope, &value);
+        }
+        if (isTypeReference(&value.type)) {
+            SpanType derefType = dereferenceType(&value.type);
+            if (isTypePointer(&derefType)) {
+                return createSpanGetValExpression(ast, scope, &value);
+            }
+        }
+    }
+
+
+    // struct
+    SpanTypeBase* baseType = value.type.base;
+    if (baseType->type == t_struct) {
+        return createSpanStructAccessExpression(ast, scope, &value);
+    }
+    char buffer[BUFFER_SIZE];
+    char* typeName = getTypeName(&value.type, buffer);
+    logErrorAst(ast, "can't access member %s of type: %s", accessedMemberName, typeName);
+    SpanExpression err = { 0 };
+    return err;
+}
+
+SpanExpression createSpanGetPtrExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value) {
+    massert(isTypeReference(&value->type), "should be a reference");
+    SpanExpression expression = { 0 };
+    expression.ast = ast;
+    expression.exprType = et_get_ptr;
+    expression.getPtr.value = allocArena(context.arena, sizeof(SpanExpression));
+    *expression.getPtr.value = *value;
+    SpanType derefType = dereferenceType(&value->type);
+    expression.type = getPointerType(&derefType);
+    return expression;
+}
+
+SpanExpression createSpanGetValExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value) {
+    if (isTypePointer(&value->type)) {
+        massert(isTypePointer(&value->type), "should be a pointer");
+        SpanExpression expression = { 0 };
+        expression.ast = ast;
+        expression.exprType = et_get_val;
+        expression.getVal.value = allocArena(context.arena, sizeof(SpanExpression));
+        *expression.getVal.value = *value;
+        expression.type = dereferenceType(&value->type);
+        return expression;
+    } else if (isTypeReference(&value->type)) {
+        SpanType derefType = dereferenceType(&value->type);
+        massert(isTypePointer(&derefType), "should be a pointer");
+        makeCastExpression(value, &derefType);
+        SpanExpression expression = { 0 };
+        expression.ast = ast;
+        expression.exprType = et_get_val;
+        expression.getVal.value = allocArena(context.arena, sizeof(SpanExpression));
+        *expression.getVal.value = *value;
+        expression.type = dereferenceType(&value->type);
+        return expression;
+    }
+    massert(false, "should be a pointer or reference to ptr");
 }
 
 SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
@@ -192,6 +444,8 @@ SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
             return createSpanNumberLiteralExpression(ast, scope);
         case ast_function_call:
             return createSpanFunctionCallExpression(ast, scope);
+        case ast_member_access:
+            return createMemberAccessExpression(ast, scope);
         default:
             massert(false, "not implemented");
             break;
@@ -228,10 +482,33 @@ void compileExpression(SpanExpression* expression, SpanScope* scope, SpanFunctio
         case et_functionCall:
             compileFunctionCallExpression(expression, scope, function);
             break;
+        case et_struct_access:
+            compileStructAccessExpression(expression, scope, function);
+            break;
+        case et_none:
+            break;
+        case et_get_ptr:
+            compileGetPtrExpression(expression, scope, function);
+            break;
+        case et_get_val:
+            compileGetValExpression(expression, scope, function);
+            break;
         default:
             massert(false, "not implemented");
             break;
     }
+}
+
+void compileGetPtrExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
+    massert(expression->exprType == et_get_ptr, "should be a get ptr");
+    compileExpression(expression->getPtr.value, scope, function);
+    expression->llvmValue = expression->getPtr.value->llvmValue;
+}
+
+void compileGetValExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
+    massert(expression->exprType == et_get_val, "should be a get val");
+    compileExpression(expression->getPtr.value, scope, function);
+    expression->llvmValue = expression->getPtr.value->llvmValue;
 }
 
 void compileFunctionCallExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
@@ -307,6 +584,24 @@ void compileBinaryExpression(SpanExpression* expression, SpanScope* scope, SpanF
     }
 }
 
+void compileStructAccessExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
+    compileExpression(expression->structAccess.value, scope, function);
+    u64 memberIndex = expression->structAccess.memberIndex;
+    LLVMValueRef structValue = expression->structAccess.value->llvmValue;
+    SpanType* structType = &expression->structAccess.value->type;
+    LLVMTypeRef structTypeLLVM = structType->base->llvmType;
+    if (isTypeReference(structType)) {
+        expression->llvmValue = LLVMBuildStructGEP2(context.builder, structTypeLLVM, structValue, memberIndex, "structaccess");
+    } else if (isTypePointer(structType)) {
+        // dereference
+        structValue = LLVMBuildLoad2(context.builder, structTypeLLVM, structValue, "deref");
+        // we can now access the struct
+        expression->llvmValue = LLVMBuildStructGEP2(context.builder, structTypeLLVM, structValue, memberIndex, "structaccess");
+    } else {
+        expression->llvmValue = LLVMBuildExtractValue(context.builder, structValue, memberIndex, "structaccess");
+    }
+}
+
 void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
     massert(expression->exprType == et_cast, "should be a cast");
     compileExpression(expression->cast.expression, scope, function);
@@ -335,6 +630,61 @@ void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFun
             return;
         }
         massert(false, "not implemented");
+    }
+
+    if ((isIntType(fromType) || isUintType(fromType)) && isIntType(currentType)) {
+        u64 fromSize = fromType->base->int_.size;
+        u64 currentSize = currentType->base->int_.size;
+        if (fromSize < currentSize) {
+            expression->llvmValue = LLVMBuildSExt(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "sexttmp");
+        } else if (fromSize > currentSize) {
+            expression->llvmValue = LLVMBuildTrunc(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "trunctmp");
+        } else {
+            expression->llvmValue = fromExpr->llvmValue;
+        }
+        return;
+    }
+
+    if ((isUintType(fromType) || isIntType(fromType)) && isUintType(currentType)) {
+        u64 fromSize = fromType->base->uint.size;
+        u64 currentSize = currentType->base->uint.size;
+        if (fromSize < currentSize) {
+            expression->llvmValue = LLVMBuildZExt(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "zexttmp");
+        } else if (fromSize > currentSize) {
+            expression->llvmValue = LLVMBuildTrunc(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "trunctmp");
+        } else {
+            expression->llvmValue = fromExpr->llvmValue;
+        }
+        return;
+    }
+
+    if (isFloatType(fromType) && isFloatType(currentType)) {
+        u64 fromSize = fromType->base->float_.size;
+        u64 currentSize = currentType->base->float_.size;
+        if (fromSize < currentSize) {
+            expression->llvmValue = LLVMBuildFPExt(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "fpexttmp");
+        } else if (fromSize > currentSize) {
+            expression->llvmValue = LLVMBuildFPTrunc(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "fptrunctmp");
+        } else {
+            expression->llvmValue = fromExpr->llvmValue;
+        }
+        return;
+    }
+    if (isUintType(fromType) && isFloatType(currentType)) {
+        expression->llvmValue = LLVMBuildUIToFP(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "uitofptmp");
+        return;
+    }
+    if (isIntType(fromType) && isFloatType(currentType)) {
+        expression->llvmValue = LLVMBuildSIToFP(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "sitofptmp");
+        return;
+    }
+    if (isFloatType(fromType) && isUintType(currentType)) {
+        expression->llvmValue = LLVMBuildFPToUI(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "fptouitmp");
+        return;
+    }
+    if (isFloatType(fromType) && isIntType(currentType)) {
+        expression->llvmValue = LLVMBuildFPToSI(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "fptositmp");
+        return;
     }
 
     if (typeIsReferenceOf(fromType, currentType)) {
@@ -393,11 +743,36 @@ bool implicitlyCast(SpanExpression* expression, SpanType* type, bool logError) {
         }
     }
 
-    if (isTypeReference(currentType)) {
+    if (isIntType(currentType) && isIntType(type)) {
+        u64 currentSize = currentType->base->int_.size;
+        u64 typeSize = type->base->int_.size;
+        if (currentSize < typeSize) {
+            makeCastExpression(expression, type);
+            return true;
+        }
+    }
+    if (isUintType(currentType) && isUintType(type)) {
+        u64 currentSize = currentType->base->uint.size;
+        u64 typeSize = type->base->uint.size;
+        if (currentSize < typeSize) {
+            makeCastExpression(expression, type);
+            return true;
+        }
+    }
+    if (isFloatType(currentType) && isFloatType(type)) {
         makeCastExpression(expression, type);
-        implicitlyCast(expression, type, logError);
+        return true;
+    }
+
+    if (isTypeReference(currentType)) {
+        SpanType derefType = dereferenceType(currentType);
+        makeCastExpression(expression, &derefType);
+        implicitlyCast(expression, type, false);
         currentType = &expression->type;
         if (isTypeEqual(currentType, type)) return true;
+        // undo the dereference if it failed to implicitly cast
+        SpanExpression* oldExpr = expression->cast.expression;
+        *expression = *oldExpr;
     }
     if (logError) {
         char buffer[BUFFER_SIZE];

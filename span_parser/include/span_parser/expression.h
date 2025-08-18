@@ -13,16 +13,33 @@ typedef struct _SpanFunction SpanFunction;
 
 typedef enum _SpanExpressionType {
     et_invalid = 0,
+    et_none,
     et_number_literal,
     et_variable,
     et_biop,
     et_cast,
     et_functionCall,
+    et_struct_access,
+    et_get_ptr,
+    et_get_val,
 } SpanExpressionType;
 
 typedef struct _SpanExpressionNumberLiteral {
     char* number;
 } SpanExpressionNumberLiteral;
+
+typedef struct _SpanExpressionGetPtr {
+    SpanExpression* value;
+} SpanExpressionGetPtr;
+
+typedef struct _SpanExpressionGetVal {
+    SpanExpression* value;
+} SpanExpressionGetVal;
+
+typedef struct _SpanExpressionStructAccess {
+    SpanExpression* value;
+    u64 memberIndex;
+} SpanExpressionStructAccess;
 
 typedef struct _SpanExpressionVariable {
     SpanVariable* variable;
@@ -54,6 +71,9 @@ typedef struct _SpanExpression {
         SpanExpressionCast cast;
         SpanExpressionBiop biop;
         SpanExpressionFunctionCall functionCall;
+        SpanExpressionStructAccess structAccess;
+        SpanExpressionGetPtr getPtr;
+        SpanExpressionGetVal getVal;
     };
     LLVMValueRef llvmValue;
 } SpanExpression;
@@ -63,6 +83,13 @@ SpanExpression createSpanNumberLiteralExpression(SpanAst* ast, SpanScope* scope)
 SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanBinaryExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope);
+SpanExpression createSpanStructAccessExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
+SpanExpression createMemberAccessExpression(SpanAst* ast, SpanScope* scope);
+SpanExpression createSpanNoneExpression();
+SpanExpression createSpanGetPtrExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
+SpanExpression createSpanGetValExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
+
+
 void makeCastExpression(SpanExpression* expr, SpanType* type);
 
 bool implicitlyCast(SpanExpression* expression, SpanType* type, bool logError);
@@ -76,5 +103,10 @@ void compileVariableExpression(SpanExpression* expression, SpanScope* scope, Spa
 void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 void compileBinaryExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 void compileFunctionCallExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileStructAccessExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileGetPtrExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileGetValExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+
+
 
 void compileAddExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);

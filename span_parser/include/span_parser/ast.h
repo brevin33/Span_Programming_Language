@@ -37,6 +37,7 @@ typedef enum _SpanASTType {
     ast_end_statement,
     ast_function_call,
     ast_call_paramerter_list,
+    ast_member_access,
 } SpanASTType;
 
 
@@ -48,6 +49,11 @@ typedef struct _SpanAstFunctionParameterDeclaration {
     SpanAst* params;
     u64 paramsCount;
 } SpanAstFunctionParameterDeclaration;
+
+typedef struct _SpanAstMemberAccess {
+    SpanAst* value;
+    char* memberName;
+} SpanAstMemberAccess;
 
 typedef struct _SpanAstExprWord {
     char* word;
@@ -108,7 +114,6 @@ typedef struct _SpanAstExprBiop {
     OurTokenType op;
 } SpanAstExprBiop;
 
-
 typedef struct _SpanAstFunctionCall {
     char* name;
     SpanAst* args;
@@ -139,6 +144,7 @@ typedef struct _SpanAst {
         SpanAstReturn return_;
         SpanAstFunctionCall functionCall;
         SpanAstCallParamerterList callParamerterList;
+        SpanAstMemberAccess memberAccess;
     };
 } SpanAst;
 
@@ -165,13 +171,16 @@ SpanAst AstAssignmentParse(Arena arena, Token** tokens);
 SpanAst AstExpressionValueParse(Arena arena, Token** tokens);
 SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurTokenType* delimeters, u64 delimetersCount);
 SpanAst AstCallParamerterListParse(Arena arena, Token** tokens);
-SpanAst AstFunctionCallParse(Arena arena, Token** tokens);
+SpanAst AstExpressionDotParse(Arena arena, Token** tokens, SpanAst* value);
+SpanAst AstMemberAccessParse(Arena arena, Token** tokens, SpanAst* value);
 
 bool AstIsExpression(SpanAst* ast);
 #define CASE_AST_EXPR                                                                                                                                                                                                                \
     case ast_expr_biop:                                                                                                                                                                                                              \
     case ast_expr_word:                                                                                                                                                                                                              \
-    case ast_expr_number_literal
+    case ast_expr_number_literal:                                                                                                                                                                                                    \
+    case ast_member_access:                                                                                                                                                                                                          \
+    case ast_function_call
 
 
 

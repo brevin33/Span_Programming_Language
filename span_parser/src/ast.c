@@ -1,3 +1,4 @@
+#include "span_parser/ast.h"
 #include "span_parser.h"
 #include "span_parser/tokens.h"
 
@@ -431,7 +432,7 @@ SpanAst AstAssignmentParse(Arena arena, Token** tokens) {
     while (true) {
         SpanAst assignee = AstVariableDeclarationParse(arena, &token, false);
         if (assignee.type == ast_invalid) {
-            OurTokenType delimeters[] = { tt_assign, tt_assign_add, tt_assign_sub, tt_assign_mul, tt_assign_div, tt_assign_mod, tt_assign_infer, tt_comma };
+            OurTokenType delimeters[] = { tt_assign, tt_assign_add, tt_assign_sub, tt_assign_mul, tt_assign_div, tt_assign_mod, tt_assign_infer, tt_comma, tt_end_statement };
             assignee = AstExpressionParse(arena, &token, delimeters, 1);
             if (assignee.type == ast_invalid) {
                 SpanAst err = { 0 };
@@ -450,28 +451,46 @@ SpanAst AstAssignmentParse(Arena arena, Token** tokens) {
         if (isAssignmentToken(*token)) {
             break;
         }
+        if (token->type == tt_end_statement) break;
         logErrorTokens(token, 1, "Expected , or the assignment type (=, +=, -=, etc)");
         SpanAst err = { 0 };
         return err;
     }
 
-    massert(isAssignmentToken(*token), "should be an assignment token");
-    OurTokenType assignmentType = token->type;
-    ast.assignment.assignmentType = assignmentType;
-    token++;
+    if (token->type == tt_end_statement) {
+        ast.assignment.value = NULL;
+        ast.assignment.assignmentType = tt_invalid;
+    } else {
+        massert(isAssignmentToken(*token), "should be an assignment token");
+        OurTokenType assignmentType = token->type;
+        ast.assignment.assignmentType = assignmentType;
+        token++;
 
-    OurTokenType delimeters[] = { tt_end_statement };
-    SpanAst value = AstExpressionParse(arena, &token, delimeters, 1);
-    if (value.type == ast_invalid) {
-        SpanAst err = { 0 };
-        return err;
+        OurTokenType delimeters[] = { tt_end_statement };
+        SpanAst value = AstExpressionParse(arena, &token, delimeters, 1);
+        if (value.type == ast_invalid) {
+            SpanAst err = { 0 };
+            return err;
+        }
+        ast.assignment.value = allocArena(arena, sizeof(SpanAst));
+        *ast.assignment.value = value;
     }
-    ast.assignment.value = allocArena(arena, sizeof(SpanAst));
-    *ast.assignment.value = value;
 
     ast.tokenLength = token - *tokens;
     *tokens = token;
     return ast;
+}
+
+static bool looksLikeVariableDeclarations(Token* token) {
+    while (true) {
+        if (token->type == tt_end_statement) return true;
+        if (token->type == tt_lparen) return false;
+        if (token->type == tt_add) return false;
+        if (token->type == tt_sub) return false;
+        if (token->type == tt_div) return false;
+        if (token->type == tt_mod) return false;
+        token++;
+    }
 }
 
 SpanAst AstGeneralIdParse(Arena arena, Token** tokens) {
@@ -497,8 +516,13 @@ SpanAst AstGeneralIdParse(Arena arena, Token** tokens) {
         if (isAssignment) {
             ast = AstAssignmentParse(arena, &token);
         } else {
-            OurTokenType delimeters[] = { tt_end_statement };
-            ast = AstExpressionParse(arena, &token, delimeters, 1);
+            bool isVariableDeclaration = looksLikeVariableDeclarations(token);
+            if (isVariableDeclaration) {
+                ast = AstAssignmentParse(arena, &token);
+            } else {
+                OurTokenType delimeters[] = { tt_end_statement };
+                ast = AstExpressionParse(arena, &token, delimeters, 1);
+            }
         }
     }
 
@@ -545,6 +569,46 @@ i64 getBiopPrecedence(OurTokenType tokenType) {
     }
 }
 
+SpanAst AstExpressionDotParse(Arena arena, Token** tokens, SpanAst* value) {
+    Token* token = *tokens;
+    massert(token->type == tt_dot, "should be a dot");
+    token++;
+    if (token->type != tt_id && token->type != tt_int) {
+        logErrorTokens(token, 1, "expected member or method name");
+        SpanAst err = { 0 };
+        return err;
+    }
+    token++;
+    if (token->type == tt_lparen) {
+        massert(false, "not implemented method call");
+    } else {
+        return AstMemberAccessParse(arena, tokens, value);
+    }
+}
+
+SpanAst AstMemberAccessParse(Arena arena, Token** tokens, SpanAst* value) {
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.type = ast_member_access;
+    ast.token = value->token;
+    ast.memberAccess.value = value;
+
+    massert(token->type == tt_dot, "should be a dot");
+    token++;
+
+    massert(token->type == tt_id || token->type == tt_int, "expected member or method name");
+    char buffer[BUFFER_SIZE];
+    tokenGetString(*token, buffer);
+    u64 nameLength = strlen(buffer);
+    ast.memberAccess.memberName = allocArena(arena, nameLength + 1);
+    memcpy(ast.memberAccess.memberName, buffer, nameLength + 1);
+    token++;
+
+    ast.tokenLength = token - ast.token;
+    *tokens = token;
+    return ast;
+}
+
 SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurTokenType* delimeters, u64 delimetersCount) {
     Token* token = *tokens;
     Token* startToken = token;
@@ -564,6 +628,17 @@ SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurT
             logErrorTokens(token, 1, "Unexpected end of file");
             return err;
         }
+        if (token->type == tt_dot) {
+            SpanAst* lhsCopy = allocArena(arena, sizeof(SpanAst));
+            *lhsCopy = lhs;
+            lhs = AstExpressionDotParse(arena, &token, lhsCopy);
+            if (lhs.type == ast_invalid) {
+                SpanAst err = { 0 };
+                return err;
+            }
+            continue;
+        }
+
 
         i64 biopPrecedence = getBiopPrecedence(token->type);
         OurTokenType op = token->type;
@@ -597,6 +672,7 @@ SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurT
         startToken = token;
     }
 }
+
 
 SpanAst AstCallParamerterListParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
@@ -649,6 +725,7 @@ SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
             char* word = allocArena(arena, nameLength + 1);
             memcpy(word, buffer, nameLength + 1);
             token++;
+
 
             if (token->type == tt_lparen) {
                 // function call

@@ -197,7 +197,7 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     }
 
     if (context.numberOfErrors > 0) {
-        redprintf("failed to create span project!\n");
+        redprintf("\nfailed to create span project!\n");
         redprintf("number of errors: %u\n", context.numberOfErrors);
     } else {
         greenprintf("successfully created span project\n");
@@ -297,6 +297,10 @@ void compileSpanProject(SpanProject* project) {
 
     LLVMTargetMachineRef targetMachine;
     targetMachine = LLVMCreateTargetMachine(target, triple, "", "", LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+
+    char* ir = LLVMPrintModuleToString(project->llvmModule);
+    printf("\n%s\n\n", ir);
+    LLVMDisposeMessage(ir);
 
     if (LLVMVerifyModule(project->llvmModule, LLVMAbortProcessAction, &error) != 0) {
         redprintf("LLVMVerifyModule failed: %s\n", error);

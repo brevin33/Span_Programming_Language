@@ -1,11 +1,11 @@
 
-i32 foo(i32 x){
-	return x + x
-}
-
-
-i32 main(){
-	i32 y = 3
-	i32 x = foo(y) 
+i32 foo(i32& x){
+	x = 20
 	return x
 }
+
+i32 main(){
+	i32 x = 10;
+	foo(x)
+	return x
+ }

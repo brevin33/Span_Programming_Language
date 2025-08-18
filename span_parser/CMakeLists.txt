@@ -3,8 +3,6 @@ project(Span_Parser CXX)
 
 set(CMAKE_C_STANDARD 11)
 
-
-
 add_library(span_parser
 	src/span_parser.c
 	src/arena.c

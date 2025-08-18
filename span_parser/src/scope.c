@@ -34,9 +34,11 @@ void compileScope(SpanScope* scope, SpanFunction* function) {
     // compile variables
     for (u64 i = 0; i < scope->variablesCount; i++) {
         SpanVariable* variable = &scope->variables[i];
-        SpanType type = variable->type;
-        LLVMTypeRef llvmType = getLLVMType(&type);
-        variable->llvmValue = LLVMBuildAlloca(context.builder, llvmType, variable->name);
+        if (!variable->isReference) {
+            SpanType type = variable->type;
+            LLVMTypeRef llvmType = getLLVMType(&type);
+            variable->llvmValue = LLVMBuildAlloca(context.builder, llvmType, variable->name);
+        }
     }
 
     // compile statements
@@ -68,7 +70,14 @@ SpanVariable* addVariableToScope(SpanScope* scope, char* name, SpanType type, Sp
     u64 nameLength = strlen(name);
     variable.name = allocArena(context.arena, nameLength + 1);
     memcpy(variable.name, name, nameLength + 1);
-    variable.type = type;
+    if (!isTypeReference(&type)) {
+        variable.type = type;
+        variable.isReference = false;
+    } else {
+        SpanType derefType = dereferenceType(&type);
+        variable.type = derefType;
+        variable.isReference = true;
+    }
     variable.ast = ast;
     if (scope->variablesCount >= scope->variablesCapacity) {
         scope->variables = reallocArena(context.arena, sizeof(SpanVariable) * scope->variablesCapacity * 2, scope->variables, sizeof(SpanVariable) * scope->variablesCapacity);

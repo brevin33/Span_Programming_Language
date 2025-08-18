@@ -51,10 +51,13 @@ void compileFunction(SpanFunction* function) {
         SpanType paramType = function->functionType->function.paramTypes[i];
         SpanVariable* variable = getVariableFromScope(&function->scope, paramName);
         LLVMTypeRef paramTypeLLVM = getLLVMType(&paramType);
-        variable->llvmValue = LLVMBuildAlloca(context.builder, paramTypeLLVM, variable->name);
-
-        LLVMValueRef paramValue = LLVMGetParam(function->llvmFunc, i);
-        LLVMBuildStore(context.builder, paramValue, variable->llvmValue);
+        if (!variable->isReference) {
+            variable->llvmValue = LLVMBuildAlloca(context.builder, paramTypeLLVM, variable->name);
+            LLVMValueRef paramValue = LLVMGetParam(function->llvmFunc, i);
+            LLVMBuildStore(context.builder, paramValue, variable->llvmValue);
+        } else {
+            variable->llvmValue = LLVMGetParam(function->llvmFunc, i);
+        }
     }
 
     SpanStatement* statement = function->scope.statments;

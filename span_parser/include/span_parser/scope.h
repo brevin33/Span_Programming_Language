@@ -15,6 +15,7 @@ typedef struct _SpanVariable {
     SpanType type;
     SpanAst* ast;
     LLVMValueRef llvmValue;
+    bool isReference;
 } SpanVariable;
 
 typedef struct _SpanScope SpanScope;
