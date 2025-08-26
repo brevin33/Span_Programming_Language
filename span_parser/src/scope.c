@@ -8,7 +8,7 @@ SpanScope createSpanScope(SpanAst* ast, SpanScope* parent, SpanFunction* functio
     scope.parent = parent;
     scope.variablesCount = 0;
     scope.variablesCapacity = 2;
-    scope.variables = allocArena(context.arena, sizeof(SpanVariable) * scope.variablesCapacity);
+    scope.variables = allocArena(context.arena, sizeof(SpanVariable*) * scope.variablesCapacity);
     return scope;
 }
 
@@ -33,7 +33,7 @@ void compileScope(SpanScope* scope, SpanFunction* function) {
 
     // compile variables
     for (u64 i = 0; i < scope->variablesCount; i++) {
-        SpanVariable* variable = &scope->variables[i];
+        SpanVariable* variable = scope->variables[i];
         if (!variable->isReference) {
             SpanType type = variable->type;
             LLVMTypeRef llvmType = getLLVMType(&type);
@@ -60,7 +60,7 @@ void compileScope(SpanScope* scope, SpanFunction* function) {
 
 SpanVariable* addVariableToScope(SpanScope* scope, char* name, SpanType type, SpanAst* ast) {
     for (u64 i = 0; i < scope->variablesCount; i++) {
-        SpanVariable* variable = &scope->variables[i];
+        SpanVariable* variable = scope->variables[i];
         if (strcmp(variable->name, name) == 0) {
             logErrorAst(ast, "variable already exists in scope with same name");
             //TODO: figure out we shuold do anything than log error
@@ -80,16 +80,17 @@ SpanVariable* addVariableToScope(SpanScope* scope, char* name, SpanType type, Sp
     }
     variable.ast = ast;
     if (scope->variablesCount >= scope->variablesCapacity) {
-        scope->variables = reallocArena(context.arena, sizeof(SpanVariable) * scope->variablesCapacity * 2, scope->variables, sizeof(SpanVariable) * scope->variablesCapacity);
+        scope->variables = reallocArena(context.arena, sizeof(SpanVariable*) * scope->variablesCapacity * 2, scope->variables, sizeof(SpanVariable*) * scope->variablesCapacity);
         scope->variablesCapacity *= 2;
     }
-    scope->variables[scope->variablesCount++] = variable;
-    return &scope->variables[scope->variablesCount - 1];
+    scope->variables[scope->variablesCount] = allocArena(context.arena, sizeof(SpanVariable));
+    *scope->variables[scope->variablesCount] = variable;
+    return scope->variables[scope->variablesCount++];
 }
 
 SpanVariable* getVariableFromScope(SpanScope* scope, char* name) {
     for (u64 i = 0; i < scope->variablesCount; i++) {
-        SpanVariable* variable = &scope->variables[i];
+        SpanVariable* variable = scope->variables[i];
         if (strcmp(variable->name, name) == 0) {
             return variable;
         }

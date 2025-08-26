@@ -1,4 +1,5 @@
 #include "span_parser.h"
+#include "span_parser/expression.h"
 #include "span_parser/type.h"
 #include <llvm-c/Types.h>
 
@@ -91,6 +92,149 @@ SpanFunction** findFunctions(char* name, u32 namespace_, SpanFunction** buffer, 
     return buffer;
 }
 
+SpanFunction* findFunction(char* name, u32 namespace_, SpanType* types, u32 typesCount, SpanAst* ast, bool logError) {
+    // finding function
+    u32 matchingFunctionsCount = 0;
+    SpanFunction* buffer[BUFFER_SIZE];
+    SpanFunction** matchingFunctions = findFunctions(name, namespace_, buffer, &matchingFunctionsCount);
+
+    // perfect match
+    SpanFunction* matchFunctions[BUFFER_SIZE];
+    u64 matchFunctionsCount = 0;
+    for (u64 i = 0; i < matchingFunctionsCount; i++) {
+        SpanFunction* function = matchingFunctions[i];
+        if (function->functionType->function.paramTypesCount != typesCount) {
+            continue;
+        }
+        bool paramTypesMatch = true;
+        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
+            SpanType paramType1 = function->functionType->function.paramTypes[j];
+            SpanType paramType2 = types[j];
+            if (isTypeEqual(&paramType1, &paramType2) == false) {
+                paramTypesMatch = false;
+                break;
+            }
+        }
+        if (paramTypesMatch) {
+            matchFunctions[matchFunctionsCount++] = function;
+        }
+    }
+
+    if (matchFunctionsCount != 0) {
+        if (matchFunctionsCount == 1) {
+            return matchFunctions[0];
+        }
+        if (logError) {
+            logErrorAst(ast, "ambiguous function call");
+            for (u64 i = 0; i < matchFunctionsCount; i++) {
+                SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
+                logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
+            }
+        }
+        return NULL;
+    }
+
+
+    // dereference match
+    matchFunctionsCount = 0;
+    for (u64 i = 0; i < matchingFunctionsCount; i++) {
+        SpanFunction* function = matchingFunctions[i];
+        if (function->functionType->function.paramTypesCount != typesCount) {
+            continue;
+        }
+        bool paramTypesMatch = true;
+        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
+            SpanType paramType1 = function->functionType->function.paramTypes[j];
+            SpanType paramType2 = types[j];
+            if (isTypeEqual(&paramType1, &paramType2) == false) {
+                if (!isTypeReference(&paramType2)) {
+                    paramTypesMatch = false;
+                    break;
+                }
+                // dereference
+                SpanType derefType = dereferenceType(&paramType2);
+                if (isTypeEqual(&paramType1, &derefType) == false) {
+                    paramTypesMatch = false;
+                    break;
+                }
+            }
+        }
+        if (paramTypesMatch) {
+            matchFunctions[matchFunctionsCount++] = function;
+        }
+    }
+
+    if (matchFunctionsCount != 0) {
+        if (matchFunctionsCount == 1) {
+            return matchFunctions[0];
+        }
+        if (logError) {
+            logErrorAst(ast, "ambiguous function call");
+            for (u64 i = 0; i < matchFunctionsCount; i++) {
+                SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
+                logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
+            }
+        }
+        return NULL;
+    }
+
+    // implicit cast match
+    matchFunctionsCount = 0;
+    for (u64 i = 0; i < matchingFunctionsCount; i++) {
+        SpanFunction* function = matchingFunctions[i];
+        if (function->functionType->function.paramTypesCount != typesCount) {
+            continue;
+        }
+        bool paramTypesMatch = true;
+        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
+            SpanType paramType1 = types[j];
+            SpanType paramType2 = function->functionType->function.paramTypes[j];
+            if (isTypeEqual(&paramType1, &paramType2) == false) {
+                // implicit cast
+                bool worked = canImplicitlyCast(&paramType1, &paramType2, false, ast) >= 0;
+                if (!worked) {
+                    paramTypesMatch = false;
+                    break;
+                }
+            }
+        }
+        if (paramTypesMatch) {
+            matchFunctions[matchFunctionsCount++] = function;
+        }
+    }
+
+    if (matchFunctionsCount != 0) {
+        if (matchFunctionsCount == 1) {
+            return matchFunctions[0];
+        }
+        if (logError) {
+            logErrorAst(ast, "ambiguous function call");
+            for (u64 i = 0; i < matchFunctionsCount; i++) {
+                SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
+                logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
+            }
+        }
+        return NULL;
+    }
+
+    char errorMessage[BUFFER_SIZE];
+    sprintf(errorMessage, "could not find function called %s that works with arguments of:", ast->functionCall.name);
+    for (u64 i = 0; i < typesCount; i++) {
+        char typeNameBuffer[BUFFER_SIZE];
+        SpanType argType = types[i];
+        char* argTypeName = getTypeName(&argType, typeNameBuffer);
+        if (i == 0) {
+            sprintf(errorMessage, "%s %s", errorMessage, argTypeName);
+        } else {
+            sprintf(errorMessage, "%s, %s", errorMessage, argTypeName);
+        }
+    }
+    if (logError) {
+        logErrorAst(ast, errorMessage);
+    }
+    return NULL;
+}
+
 char** getParamNames(SpanAstFunctionDeclaration* decl, u64* paramNamesCountOut) {
     SpanAst* paramList = decl->paramList;
     massert(paramList->type == ast_func_param, "should be a scope");
@@ -123,6 +267,12 @@ char* getScrambledName(SpanAstFunctionDeclaration* decl, char* buffer) {
     bufferIndex += returnTypeNameSize;
     buffer[bufferIndex++] = '$';
 
+    char* functionName = decl->name;
+    u32 functionNameSize = strlen(functionName);
+    memcpy(buffer + bufferIndex, functionName, functionNameSize);
+    bufferIndex += functionNameSize;
+    buffer[bufferIndex++] = '$';
+
 
 
     SpanAst* paramList = decl->paramList;
@@ -133,10 +283,13 @@ char* getScrambledName(SpanAstFunctionDeclaration* decl, char* buffer) {
             SpanAst* param = &paramList->funcParam.params[i];
             massert(param->type == ast_variable_declaration, "should be a variable declaration");
             SpanAstVariableDeclaration* variableDeclaration = &param->variableDeclaration;
-            char* paramName = variableDeclaration->name;
-            u32 paramNameSize = strlen(paramName);
-            memcpy(buffer + bufferIndex, paramName, paramNameSize);
-            bufferIndex += paramNameSize;
+            SpanAst* type = variableDeclaration->type;
+            massert(type->type == ast_type, "should be a type");
+            SpanAstType* typeType = &type->type_;
+            char* paramTypeName = typeType->name;
+            u32 paramTypeNameSize = strlen(paramTypeName);
+            memcpy(buffer + bufferIndex, paramTypeName, paramTypeNameSize);
+            bufferIndex += paramTypeNameSize;
             if (i != paramList->funcParam.paramsCount - 1) buffer[bufferIndex++] = ',';
         }
     }

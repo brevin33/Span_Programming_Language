@@ -514,9 +514,13 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
         for (u64 i = 0; i < params->paramsCount; i++) {
             SpanAst* param = &params->params[i];
             char* paramName = param->variableDeclaration.name;
-            u32 paramNameSize = strlen(paramName);
-            memcpy(buffer + bufferIndex, paramName, paramNameSize);
-            bufferIndex += paramNameSize;
+            SpanAst* type = param->variableDeclaration.type;
+            massert(type->type == ast_type, "should be a type");
+            SpanAstType* typeType = &type->type_;
+            char* paramTypeName = typeType->name;
+            u32 paramTypeNameSize = strlen(paramTypeName);
+            memcpy(buffer + bufferIndex, paramTypeName, paramTypeNameSize);
+            bufferIndex += paramTypeNameSize;
             if (i != params->paramsCount - 1) buffer[bufferIndex++] = ',';
         }
     }

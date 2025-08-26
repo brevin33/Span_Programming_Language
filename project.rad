@@ -1,0 +1,34 @@
+// raddbg 0.9.21 project file
+
+recent_file: path: "span_parser/src/expression.c"
+recent_file: path: "tests/src/main.c"
+recent_file: path: "span_parser/src/statment.c"
+recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/lib/IR/Core.cpp"
+recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/include/llvm/IR/IRBuilder.h"
+recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/lib/IR/Instructions.cpp"
+recent_file: path: "span_parser/src/type.c"
+recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/include/llvm/IR/Instructions.h"
+recent_file: path: "span_parser/src/function.c"
+recent_file: path: "span_parser/src/tokens.c"
+recent_file: path: "span_parser/src/ast.c"
+recent_file: path: "span_parser/src/project.c"
+recent_file: path: "span_parser/src/utils.c"
+recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/include/llvm/IR/Use.h"
+recent_file: path: "span_parser/src/scope.c"
+recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/include/llvm/IR/Value.h"
+recent_file: path: "D:/a/_work/1/s/src/vctools/crt/vcstartup/src/startup/exe_common.inl"
+recent_file: path: "span_parser/src/logging.c"
+recent_file: path: "out/Debug/out/tests/src/ma"
+recent_file: path: "out/Debug/out/span_parser/src/proje"
+recent_file: path: "out/Debug/out/span_parser/src/uti"
+target:
+{
+  executable: "out/Debug/tests/span_tests.exe"
+  working_directory: "out/Debug/tests"
+  enabled: 1
+}
+breakpoint:
+{
+  source_location: "tests/src/main.c:75:1"
+  hit_count: 0
+}

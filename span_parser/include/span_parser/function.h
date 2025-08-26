@@ -21,6 +21,8 @@ SpanFunction* addFunction(SpanFunction* function);
 
 SpanFunction** findFunctions(char* name, u32 namespace_, SpanFunction** buffer, u32* functionsCountOut);
 
+SpanFunction* findFunction(char* name, u32 namespace_, SpanType* types, u32 typesCount, SpanAst* ast, bool logError);
+
 SpanFunction* prototypeFunction(SpanAst* ast);
 
 void implementFunction(SpanFunction* function);

@@ -3,6 +3,8 @@
 #include "span_parser/ast.h"
 #include "span_parser/type.h"
 
+
+
 void completeAddExpression(SpanExpression* expression, SpanScope* scope) {
     SpanExpression* lhs = expression->biop.lhs;
     SpanExpression* rhs = expression->biop.rhs;
@@ -20,6 +22,23 @@ void completeAddExpression(SpanExpression* expression, SpanScope* scope) {
             return;
         }
         massert(false, "cast should work here");
+    }
+
+    // not intrinsic see if overloaded
+    SpanType addTypes[2] = { lhs->type, rhs->type };
+    SpanFunction* addFunction = findFunction("add", context.activeProject->namespace_, addTypes, 2, expression->ast, false);
+    if (addFunction != NULL) {
+        expression->exprType = et_functionCall;
+        expression->type = addFunction->functionType->function.returnType;
+        SpanExpressionFunctionCall* functionCall = &expression->functionCall;
+        functionCall->args = allocArena(context.arena, sizeof(SpanExpression) * 2);
+        functionCall->argsCount = 2;
+        functionCall->function = addFunction;
+        implicitlyCast(lhs, &functionCall->function->functionType->function.paramTypes[0], true);
+        implicitlyCast(rhs, &functionCall->function->functionType->function.paramTypes[1], true);
+        functionCall->args[0] = *lhs;
+        functionCall->args[1] = *rhs;
+        return;
     }
 
     if (isTypeReference(lhsType) && isTypeReference(rhsType)) {
@@ -40,8 +59,6 @@ void completeAddExpression(SpanExpression* expression, SpanScope* scope) {
         completeAddExpression(expression, scope);
         return;
     }
-
-    massert(false, "not implemented");
 }
 
 SpanExpression createSpanBinaryExpression(SpanAst* ast, SpanScope* scope) {
@@ -89,212 +106,39 @@ SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope) 
     expression.functionCall.args = allocArena(context.arena, sizeof(SpanExpression) * args->callParamerterList.paramsCount);
     expression.functionCall.argsCount = args->callParamerterList.paramsCount;
 
+    bool expressionError = false;
     for (u64 i = 0; i < args->callParamerterList.paramsCount; i++) {
         SpanAst* arg = &args->callParamerterList.params[i];
         SpanExpression argExpr = createSpanExpression(arg, scope);
         if (argExpr.exprType == et_invalid) {
-            SpanExpression err = { 0 };
-            return err;
+            expressionError = true;
         }
         expression.functionCall.args[i] = argExpr;
     }
-
-    // finding function
-    u32 matchingFunctionsCount = 0;
-    SpanFunction* buffer[BUFFER_SIZE];
-    SpanFunction** matchingFunctions = findFunctions(ast->functionCall.name, context.activeProject->namespace_, buffer, &matchingFunctionsCount);
-
-    SpanFunction* match = NULL;
-
-    // perfect match
-    SpanFunction* matchFunctions[BUFFER_SIZE];
-    u64 matchFunctionsCount = 0;
-    for (u64 i = 0; i < matchingFunctionsCount; i++) {
-        SpanFunction* function = matchingFunctions[i];
-        if (function->functionType->function.paramTypesCount != expression.functionCall.argsCount) {
-            continue;
-        }
-        bool paramTypesMatch = true;
-        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
-            SpanType paramType1 = function->functionType->function.paramTypes[j];
-            SpanType paramType2 = expression.functionCall.args[j].type;
-            if (isTypeEqual(&paramType1, &paramType2) == false) {
-                paramTypesMatch = false;
-                break;
-            }
-        }
-        if (paramTypesMatch) {
-            matchFunctions[matchFunctionsCount++] = function;
-        }
-    }
-
-    if (matchFunctionsCount != 0) {
-        if (matchFunctionsCount == 1) {
-            match = matchFunctions[0];
-            if (matchFunctionsCount != 0) {
-                if (matchFunctionsCount == 1) {
-                    match = matchFunctions[0];
-                    expression.functionCall.function = match;
-                    expression.type = match->functionType->function.returnType;
-                    // add dereference for all type doing that
-                    SpanFunction* function = match;
-                    for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
-                        SpanType paramType1 = function->functionType->function.paramTypes[j];
-                        SpanType paramType2 = expression.functionCall.args[j].type;
-                        if (isTypeEqual(&paramType1, &paramType2) == false) {
-                            // dereference
-                            makeCastExpression(&expression.functionCall.args[j], &paramType1);
-                        }
-                    }
-                    return expression;
-                }
-                logErrorAst(ast, "ambiguous function call");
-                for (u64 i = 0; i < matchFunctionsCount; i++) {
-                    SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
-                    logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
-                }
-                SpanExpression err = { 0 };
-                return err;
-            }
-            expression.functionCall.function = match;
-            expression.type = match->functionType->function.returnType;
-            return expression;
-        }
-        logErrorAst(ast, "ambiguous function call");
-        for (u64 i = 0; i < matchFunctionsCount; i++) {
-            SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
-            logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
-        }
+    if (expressionError) {
         SpanExpression err = { 0 };
         return err;
     }
 
-
-    // dereference match
-    matchFunctionsCount = 0;
-    for (u64 i = 0; i < matchingFunctionsCount; i++) {
-        SpanFunction* function = matchingFunctions[i];
-        if (function->functionType->function.paramTypesCount != expression.functionCall.argsCount) {
-            continue;
-        }
-        bool paramTypesMatch = true;
-        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
-            SpanType paramType1 = function->functionType->function.paramTypes[j];
-            SpanType paramType2 = expression.functionCall.args[j].type;
-            if (isTypeEqual(&paramType1, &paramType2) == false) {
-                if (!isTypeReference(&paramType2)) {
-                    paramTypesMatch = false;
-                    break;
-                }
-                // dereference
-                SpanType derefType = dereferenceType(&paramType2);
-                if (isTypeEqual(&paramType1, &derefType) == false) {
-                    paramTypesMatch = false;
-                    break;
-                }
-            }
-        }
-        if (paramTypesMatch) {
-            matchFunctions[matchFunctionsCount++] = function;
-        }
-    }
-
-    if (matchFunctionsCount != 0) {
-        if (matchFunctionsCount == 1) {
-            match = matchFunctions[0];
-            expression.functionCall.function = match;
-            expression.type = match->functionType->function.returnType;
-            // add dereference for all type doing that
-            SpanFunction* function = match;
-            for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
-                SpanType paramType1 = function->functionType->function.paramTypes[j];
-                SpanType paramType2 = expression.functionCall.args[j].type;
-                if (isTypeEqual(&paramType1, &paramType2) == false) {
-                    // dereference
-                    makeCastExpression(&expression.functionCall.args[j], &paramType1);
-                }
-            }
-            return expression;
-        }
-        logErrorAst(ast, "ambiguous function call");
-        for (u64 i = 0; i < matchFunctionsCount; i++) {
-            SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
-            logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
-        }
-        SpanExpression err = { 0 };
-        return err;
-    }
-
-
-
-    // make a copy of args so we can undo implicit casts
-    SpanExpression argsCopyBuffer[BUFFER_SIZE];
-    memcpy(argsCopyBuffer, expression.functionCall.args, sizeof(SpanExpression) * expression.functionCall.argsCount);
-
-    // implicit cast match
-    matchFunctionsCount = 0;
-    for (u64 i = 0; i < matchingFunctionsCount; i++) {
-        SpanFunction* function = matchingFunctions[i];
-        if (function->functionType->function.paramTypesCount != expression.functionCall.argsCount) {
-            continue;
-        }
-        bool paramTypesMatch = true;
-        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
-            SpanType paramType1 = function->functionType->function.paramTypes[j];
-            SpanType paramType2 = expression.functionCall.args[j].type;
-            if (isTypeEqual(&paramType1, &paramType2) == false) {
-                // implicit cast
-                bool worked = implicitlyCast(&expression.functionCall.args[j], &paramType1, false);
-                if (!worked) {
-                    paramTypesMatch = false;
-                    break;
-                }
-            }
-        }
-        if (paramTypesMatch) {
-            matchFunctions[matchFunctionsCount++] = function;
-        }
-        //undo implicit casts
-        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
-            SpanExpression* arg = &expression.functionCall.args[j];
-            *arg = argsCopyBuffer[j];
-        }
-    }
-
-    if (matchFunctionsCount != 0) {
-        if (matchFunctionsCount == 1) {
-            match = matchFunctions[0];
-            expression.functionCall.function = match;
-            expression.type = match->functionType->function.returnType;
-            SpanFunction* function = match;
-            for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
-                implicitlyCast(&expression.functionCall.args[j], &function->functionType->function.paramTypes[j], false);
-            }
-            return expression;
-        }
-        logErrorAst(ast, "ambiguous function call");
-        for (u64 i = 0; i < matchFunctionsCount; i++) {
-            SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
-            logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
-        }
-        SpanExpression err = { 0 };
-        return err;
-    }
-
-    char errorMessage[BUFFER_SIZE];
-    sprintf(errorMessage, "could not find function called %s that works with arguments of:", ast->functionCall.name);
+    SpanType types[BUFFER_SIZE];
+    u64 typesCount = 0;
     for (u64 i = 0; i < expression.functionCall.argsCount; i++) {
-        char typeNameBuffer[BUFFER_SIZE];
-        char* argTypeName = getTypeName(&expression.functionCall.args[i].type, typeNameBuffer);
-        if (i == 0) {
-            sprintf(errorMessage, "%s %s", errorMessage, argTypeName);
-        } else {
-            sprintf(errorMessage, "%s, %s", errorMessage, argTypeName);
-        }
+        SpanExpression* arg = &expression.functionCall.args[i];
+        SpanType* argType = &arg->type;
+        types[typesCount++] = *argType;
     }
-    logErrorAst(ast, errorMessage);
-    SpanExpression err = { 0 };
-    return err;
+    SpanFunction* function = findFunction(ast->functionCall.name, context.activeProject->namespace_, types, typesCount, ast, true);
+    if (function == NULL) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    // implicitly cast function args
+    for (u64 i = 0; i < expression.functionCall.argsCount; i++) {
+        implicitlyCast(&expression.functionCall.args[i], &function->functionType->function.paramTypes[i], true);
+    }
+    expression.functionCall.function = function;
+    expression.type = function->functionType->function.returnType;
+    return expression;
 }
 
 SpanExpression createSpanStructAccessExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value) {
@@ -302,16 +146,26 @@ SpanExpression createSpanStructAccessExpression(SpanAst* ast, SpanScope* scope, 
     SpanExpression expr = { 0 };
     expr.ast = ast;
     expr.exprType = et_struct_access;
-    expr.structAccess.value = allocArena(context.arena, sizeof(SpanExpression));
-    *expr.structAccess.value = *value;
 
     char* memberName = ast->memberAccess.memberName;
     bool isNumber = stringIsUint(memberName);
     SpanType* type = &value->type;
     SpanTypeBase* baseType = type->base;
     SpanTypeStruct* structType = &baseType->struct_;
+    if (isTypeReference(type) && type->modsCount == 2) {
+        SpanType derefType = dereferenceType(type);
+        makeCastExpression(value, &derefType);
+        type = &value->type;
+    }
+    expr.structAccess.value = allocArena(context.arena, sizeof(SpanExpression));
+    *expr.structAccess.value = *value;
     massert(baseType->type == t_struct, "should be a struct");
-    massert(isTypeReference(type) || isTypePointer(type) || isTypeStruct(type), "should be a reference or pointer or struct");
+    if (isTypeReference(type) || isTypePointer(type) || isTypeStruct(type) || type->modsCount <= 1) {
+    } else {
+        logErrorAst(ast, "should be a reference, pointer, value of struct");
+        SpanExpression err = { 0 };
+        return err;
+    }
     if (isNumber) {
         u64 i = stringToUint(memberName);
         if (i >= structType->fieldsCount) {
@@ -590,12 +444,10 @@ void compileStructAccessExpression(SpanExpression* expression, SpanScope* scope,
     LLVMValueRef structValue = expression->structAccess.value->llvmValue;
     SpanType* structType = &expression->structAccess.value->type;
     LLVMTypeRef structTypeLLVM = structType->base->llvmType;
+    massert(structType->modsCount >= 1, "should be a reference or pointer");
     if (isTypeReference(structType)) {
         expression->llvmValue = LLVMBuildStructGEP2(context.builder, structTypeLLVM, structValue, memberIndex, "structaccess");
     } else if (isTypePointer(structType)) {
-        // dereference
-        structValue = LLVMBuildLoad2(context.builder, structTypeLLVM, structValue, "deref");
-        // we can now access the struct
         expression->llvmValue = LLVMBuildStructGEP2(context.builder, structTypeLLVM, structValue, memberIndex, "structaccess");
     } else {
         expression->llvmValue = LLVMBuildExtractValue(context.builder, structValue, memberIndex, "structaccess");
@@ -724,62 +576,65 @@ void makeCastExpression(SpanExpression* expr, SpanType* type) {
     expr->cast.expression = oldExpr;
 }
 
-bool implicitlyCast(SpanExpression* expression, SpanType* type, bool logError) {
-    SpanType* currentType = &expression->type;
-    if (isTypeEqual(currentType, type)) return true;
 
-    if (isTypeNumbericLiteral(currentType)) {
-        if (isIntType(type)) {
-            makeCastExpression(expression, type);
-            return true;
+int canImplicitlyCast(SpanType* fromType, SpanType* toType, bool logError, SpanAst* ast) {
+    if (isTypeEqual(fromType, toType)) return 0;
+
+    if (isTypeNumbericLiteral(fromType)) {
+        if (isIntType(toType)) {
+            return 1;
         }
-        if (isUintType(type)) {
-            makeCastExpression(expression, type);
-            return true;
+        if (isUintType(toType)) {
+            return 1;
         }
-        if (isFloatType(type)) {
-            makeCastExpression(expression, type);
-            return true;
+        if (isFloatType(toType)) {
+            return 1;
         }
     }
 
-    if (isIntType(currentType) && isIntType(type)) {
-        u64 currentSize = currentType->base->int_.size;
-        u64 typeSize = type->base->int_.size;
+    if (isIntType(fromType) && isIntType(toType)) {
+        u64 currentSize = fromType->base->int_.size;
+        u64 typeSize = toType->base->int_.size;
         if (currentSize < typeSize) {
-            makeCastExpression(expression, type);
-            return true;
+            return 1;
         }
     }
-    if (isUintType(currentType) && isUintType(type)) {
-        u64 currentSize = currentType->base->uint.size;
-        u64 typeSize = type->base->uint.size;
+    if (isUintType(fromType) && isUintType(toType)) {
+        u64 currentSize = fromType->base->uint.size;
+        u64 typeSize = toType->base->uint.size;
         if (currentSize < typeSize) {
-            makeCastExpression(expression, type);
-            return true;
+            return 1;
         }
     }
-    if (isFloatType(currentType) && isFloatType(type)) {
-        makeCastExpression(expression, type);
-        return true;
+    if (isFloatType(fromType) && isFloatType(toType)) {
+        return 1;
     }
 
-    if (isTypeReference(currentType)) {
-        SpanType derefType = dereferenceType(currentType);
-        makeCastExpression(expression, &derefType);
-        implicitlyCast(expression, type, false);
-        currentType = &expression->type;
-        if (isTypeEqual(currentType, type)) return true;
-        // undo the dereference if it failed to implicitly cast
-        SpanExpression* oldExpr = expression->cast.expression;
-        *expression = *oldExpr;
+    if (isTypeReference(fromType)) {
+        SpanType derefType = dereferenceType(fromType);
+        int depth = canImplicitlyCast(&derefType, toType, false, ast);
+        if (depth >= 0) return depth + 1;
     }
     if (logError) {
         char buffer[BUFFER_SIZE];
-        char* currentTypeName = getTypeName(currentType, buffer);
+        char* currentTypeName = getTypeName(fromType, buffer);
         char buffer2[BUFFER_SIZE];
-        char* typeName = getTypeName(type, buffer2);
-        logErrorAst(expression->ast, "cannot implicitly cast %s to %s", currentTypeName, typeName);
+        char* typeName = getTypeName(toType, buffer2);
+        logErrorAst(ast, "cannot implicitly cast %s to %s", currentTypeName, typeName);
     }
-    return false;
+    return -1;
+}
+
+bool implicitlyCast(SpanExpression* expression, SpanType* type, bool logError) {
+    SpanType* currentType = &expression->type;
+    if (isTypeEqual(currentType, type)) return true;
+    int depth = canImplicitlyCast(&expression->type, type, logError, expression->ast);
+    if (depth == -1) return false;
+    if (depth == 0) return true;
+    for (u64 i = 1; i < depth; i++) {
+        SpanType derefType = dereferenceType(&expression->type);
+        makeCastExpression(expression, &derefType);
+    }
+    makeCastExpression(expression, type);
+    return true;
 }

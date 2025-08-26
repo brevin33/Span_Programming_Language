@@ -1,11 +1,18 @@
 
-i32 foo(i32& x){
-	x = 20
-	return x
+struct Foo{
+	i32 x
+	i32 y
+}
+
+i32 test(Foo* a){
+	a.x = 10
+	return a.x
 }
 
 i32 main(){
-	i32 x = 10;
-	foo(x)
-	return x
- }
+	Foo a
+	a.x = 10
+	Foo* b = a.ptr
+	b.x = 20
+	return a.x
+}

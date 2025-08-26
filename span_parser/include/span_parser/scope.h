@@ -24,7 +24,7 @@ typedef struct _SpanScope {
     SpanStatement* statments;
     u64 statmentsCount;
     SpanScope* parent;
-    SpanVariable* variables;
+    SpanVariable** variables;
     u64 variablesCount;
     u64 variablesCapacity;
 } SpanScope;

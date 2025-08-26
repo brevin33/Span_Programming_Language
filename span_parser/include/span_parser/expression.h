@@ -92,6 +92,14 @@ SpanExpression createSpanGetValExpression(SpanAst* ast, SpanScope* scope, SpanEx
 
 void makeCastExpression(SpanExpression* expr, SpanType* type);
 
+// return value is number of dereferences to do the cast
+// -1 can't be cast
+// 0 is no need to do a cast
+// 1 is cast
+// 2 is one dereference
+// 3 is two dereferences
+// ... etc
+int canImplicitlyCast(SpanType* fromType, SpanType* toType, bool logError, SpanAst* ast);
 bool implicitlyCast(SpanExpression* expression, SpanType* type, bool logError);
 
 void completeAddExpression(SpanExpression* expression, SpanScope* scope);
