@@ -1,0 +1,13 @@
+
+
+
+i32 foo(i32& a){
+	a = 1
+	return a
+}
+
+i32 main(){
+	i32 a = 0
+	i32 b = foo(a)
+	return a
+}

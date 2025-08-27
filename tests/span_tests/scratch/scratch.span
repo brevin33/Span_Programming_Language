@@ -1,0 +1,17 @@
+
+struct Foo{
+	i32 x
+	i32 y
+}
+
+Foo test(){
+	Foo c
+	c.x = 2
+	c.y = 3
+	return c
+}
+
+i32 main(){
+	Foo c = test()
+	return c.x
+}

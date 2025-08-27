@@ -1,18 +1,4 @@
 
-struct Foo{
-	i32 x
-	i32 y
-}
-
-i32 test(Foo* a){
-	a.x = 10
-	return a.x
-}
-
 i32 main(){
-	Foo a
-	a.x = 10
-	Foo* b = a.ptr
-	b.x = 20
-	return a.x
+	return 0
 }

@@ -4,7 +4,6 @@
 #include "span_parser/type.h"
 
 
-
 void completeAddExpression(SpanExpression* expression, SpanScope* scope) {
     SpanExpression* lhs = expression->biop.lhs;
     SpanExpression* rhs = expression->biop.rhs;
@@ -103,8 +102,12 @@ SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope) 
     // parsing args
     SpanAst* args = ast->functionCall.args;
     massert(args->type == ast_call_paramerter_list, "should be a call paramerter list");
-    expression.functionCall.args = allocArena(context.arena, sizeof(SpanExpression) * args->callParamerterList.paramsCount);
     expression.functionCall.argsCount = args->callParamerterList.paramsCount;
+    if (expression.functionCall.argsCount > 0) {
+        expression.functionCall.args = allocArena(context.arena, sizeof(SpanExpression) * args->callParamerterList.paramsCount);
+    } else {
+        expression.functionCall.args = NULL;
+    }
 
     bool expressionError = false;
     for (u64 i = 0; i < args->callParamerterList.paramsCount; i++) {

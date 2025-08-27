@@ -23,6 +23,8 @@ SpanProject createSpanProject(Arena arena, char* path);
 
 void compileSpanProject(SpanProject* project);
 
+void cleanupSpanContext();
+
 typedef struct _SpanContext {
     Arena arena;
     SpanProject* activeProject;

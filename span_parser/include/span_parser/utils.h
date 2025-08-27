@@ -21,6 +21,6 @@ bool rmdir(const char* path);
 
 bool linkExe(char** objFiles, u64 objFilesCount, char* exeName);
 
-int runExe(char* exeName);
+int runExe(char* exeName, char* programTextOutputBuffer);
 
 double getTimeSeconds();

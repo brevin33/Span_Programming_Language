@@ -1,4 +1,8 @@
 #include "span_parser.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #if defined(_WIN32) || defined(_WIN64)
     #include <windows.h>
 #endif
@@ -44,13 +48,22 @@ void swapSlashes(char* path) {
     }
 }
 
-int runExe(char* exeName) {
+int runExe(char* exeName, char* programTextOutputBuffer) {
     char buffer[BUFFER_SIZE];
 #if defined(_WIN32) || defined(_WIN64)
     char name[BUFFER_SIZE];
     sprintf(name, "%s", exeName);
     swapSlashes(name);
-    return system(name);
+    FILE* file = _popen(name, "r");
+    if (file == NULL) {
+        return -1;
+    }
+    char buffer2[BUFFER_SIZE];
+    while (fgets(buffer2, BUFFER_SIZE, file) != NULL) {
+        strcat(programTextOutputBuffer, buffer2);
+    }
+    int status = _pclose(file);
+    return status;
 #else
     sprintf(buffer, "./%s", exeName);
     return system(exeName);

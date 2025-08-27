@@ -2,6 +2,7 @@
 #include "span_parser.h"
 #include "span_parser/ast.h"
 #include "span_parser/utils.h"
+#include <llvm-c/Core.h>
 
 
 SpanTypeBase* addBaseType(SpanTypeBase* base) {
@@ -130,10 +131,15 @@ LLVMTypeRef getLLVMType(SpanType* type) {
         SpanTypeModifier* mod = &type->mods[type->modsCount - 1];
         switch (mod->type) {
             case tm_ptr:
-            case tm_ref:
             case tm_uptr:
             case tm_sptr:
-                return LLVMPointerType(LLVMIntType(32), 0);
+                SpanType deref = *type;
+                deref.modsCount--;
+                return LLVMPointerType(getLLVMType(&deref), 0);
+            case tm_ref: {
+                SpanType derefType = dereferenceType(type);
+                return LLVMPointerType(getLLVMType(&derefType), 0);
+            }
             default:
                 massert(false, "not implemented");
         }
@@ -329,17 +335,17 @@ void addLLVMTypeBaseType(SpanTypeBase* type) {
                 LLVMTypeRef fieldLLVMType = getLLVMType(fieldType);
                 structTypes[i] = fieldLLVMType;
             }
-            type->llvmType = LLVMStructTypeInContext(context.llvmContext, structTypes, structType->fieldsCount, 0);
+            type->llvmType = LLVMStructType(structTypes, structType->fieldsCount, 0);
             break;
         }
         case t_numberic_literal: {
             // should never instantiate this
-            type->llvmType = LLVMVoidType();
+            type->llvmType = NULL;
             break;
         }
         case t_invalid:
             // should never instantiate this
-            type->llvmType = LLVMVoidType();
+            type->llvmType = NULL;
             break;
         default:
             massert(false, "unknown type type");

@@ -9,4 +9,6 @@ char** getFileNamesInDirectory(Arena arena, char* path, u64* outFileCount);
 
 char** getDirectoryNamesInDirectory(Arena arena, char* path, u64* outDirectoryCount);
 
+char* getFileType(char* path, char* buffer);
+
 bool deleteDirectory(const char* directory);

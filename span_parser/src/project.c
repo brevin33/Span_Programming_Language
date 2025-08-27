@@ -20,6 +20,10 @@ void initializeContext(Arena arena) {
     context.numberOfErrors = 0;
 }
 
+void cleanupSpanContext() {
+    context.initialized = false;
+}
+
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount) {
     u64 lineStartsCount = 0;
     u64 lineStartsCapacity = 8;
@@ -173,11 +177,19 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
     }
 
     char** fileNames = getFileNamesInDirectory(project.arena, path, &project.fileCount);
-    project.files = allocArena(project.arena, sizeof(SpanFile) * project.fileCount);
-    for (u64 i = 0; i < project.fileCount; i++) {
+    u64 fileCount = project.fileCount;
+    project.files = allocArena(project.arena, sizeof(SpanFile) * fileCount);
+    project.fileCount = 0;
+    for (u64 i = 0; i < fileCount; i++) {
+        char fileExtBuffer[BUFFER_SIZE];
+        char* fileType = getFileType(fileNames[i], fileExtBuffer);
+        if (strcmp(fileType, ".span") != 0) {
+            continue;
+        }
         project.files[i] = createSpanFile(project.arena, fileNames[i], path, i);
         SpanFileGetTokensForFile(&project.files[i], i);
         SpanFileGetAstForFile(&project.files[i]);
+        project.fileCount++;
     }
 
     for (u64 i = 0; i < project.fileCount; i++) {

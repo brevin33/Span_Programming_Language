@@ -21,6 +21,16 @@ char* readFile(Arena arena, char* path) {
     return fileContents;
 }
 
+char* getFileType(char* path, char* buffer) {
+    char* extension = strrchr(path, '.');
+    if (extension == NULL) {
+        return NULL;
+    }
+    u64 extensionLength = strlen(extension);
+    memcpy(buffer, extension, extensionLength + 1);
+    return buffer;
+}
+
 bool deleteDirectory(const char* directory) {
 #if defined(_WIN32) || defined(_WIN64)
     WIN32_FIND_DATA findFileData;
