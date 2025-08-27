@@ -88,6 +88,7 @@ SpanExpression createMemberAccessExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanNoneExpression();
 SpanExpression createSpanGetPtrExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
 SpanExpression createSpanGetValExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
+SpanExpression createSpanMethodCallExpression(SpanAst* ast, SpanScope* scope);
 
 
 void makeCastExpression(SpanExpression* expr, SpanType* type);

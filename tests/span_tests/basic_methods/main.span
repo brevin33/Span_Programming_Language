@@ -1,0 +1,21 @@
+
+
+struct Foo{
+	i32 x
+	i32 y
+}
+
+i32 Foo.getX(){
+	return this.x
+}
+
+i32 getY(Foo& foo){
+	return foo.y
+}
+
+i32 main(){
+	Foo c 
+	c.x = 3
+	c.y = 4
+	return c.getX() + c.getY()
+}

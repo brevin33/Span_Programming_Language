@@ -299,6 +299,9 @@ void addLLVMTypeBaseType(SpanTypeBase* type) {
         case t_uint:
             type->llvmType = LLVMIntType(type->uint.size);
             break;
+        case t_void:
+            type->llvmType = LLVMVoidType();
+            break;
         case t_float:
             switch (type->float_.size) {
                 case 32:
@@ -407,9 +410,33 @@ SpanTypeBase* getNumbericLiteralTypeBase() {
     return addBaseType(&base);
 }
 
+SpanTypeBase* getVoidTypeBase() {
+    SpanTypeBase base;
+    base.type = t_void;
+    base.namespace_ = NO_NAMESPACE;
+    base.ast = NULL;
+    base.name = "void";
+    SpanTypeBase* existing = findBaseType(base.name, NO_NAMESPACE);
+    if (existing != NULL) {
+        return existing;
+    }
+    return addBaseType(&base);
+}
+SpanType getVoidType() {
+    SpanTypeBase* base = getVoidTypeBase();
+    SpanType type;
+    type.base = base;
+    type.modsCount = 0;
+    return type;
+}
+
 SpanTypeBase* typeFromTypeAst(SpanAst* typeAst) {
     massert(typeAst->type == ast_type, "should be a type");
     char* typeName = typeAst->type_.name;
+
+    if (strcmp(typeName, "void") == 0) {
+        return getVoidTypeBase();
+    }
 
     char firstChar = typeName[0];
     bool isNumber = firstChar == 'i' || firstChar == 'u' || firstChar == 'f';

@@ -58,6 +58,7 @@ int main(void) {
     } else {
         char buffer[BUFFER_SIZE * 8];
         res = runExe(exeName, buffer);
+        printf("%s", buffer);
     }
     double run_end = getTimeSeconds();
 

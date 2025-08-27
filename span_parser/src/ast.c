@@ -1,5 +1,6 @@
 #include "span_parser/ast.h"
 #include "span_parser.h"
+#include "span_parser/arena.h"
 #include "span_parser/tokens.h"
 
 SpanAst createAst(Arena arena, Token** tokens) {
@@ -207,10 +208,6 @@ bool looksLikeFunctionDeclaration(Token** tokens) {
     }
     token++;
 
-    if (token->type != tt_lbrace) {
-        return false;
-    }
-
     *tokens = token;
     return true;
 }
@@ -407,6 +404,13 @@ SpanAst AstFunctionDeclarationParse(Arena arena, Token** tokens) {
     ast.functionDeclaration.paramList = allocArena(arena, sizeof(SpanAst));
     *ast.functionDeclaration.paramList = paramList;
 
+    if (token->type != tt_lbrace) {
+        ast.functionDeclaration.body = NULL;
+        ast.tokenLength = token - *tokens;
+        *tokens = token;
+        return ast;
+    }
+
     SpanAst scope = AstScopeParse(arena, &token);
     if (scope.type == ast_invalid) {
         // TODO: figure out what to do here if anything
@@ -493,6 +497,147 @@ static bool looksLikeVariableDeclarations(Token* token) {
     }
 }
 
+SpanAst AstMethodCallParse(Arena arena, Token** tokens, SpanAst* value) {
+    // TODO: implement
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.type = ast_method_call;
+    ast.token = value->token;
+    ast.methodCall.expr = value;
+    massert(token->type == tt_dot, "should be a dot");
+    token++;
+    if (token->type != tt_id) {
+        logErrorTokens(token, 1, "expected method name");
+        SpanAst err = { 0 };
+        return err;
+    }
+    char buffer[BUFFER_SIZE];
+    tokenGetString(*token, buffer);
+    u64 nameLength = strlen(buffer);
+    ast.memberAccess.memberName = allocArena(arena, nameLength + 1);
+    memcpy(ast.memberAccess.memberName, buffer, nameLength + 1);
+    token++;
+
+    if (token->type != tt_lparen) {
+        logErrorTokens(token, 1, "expected left paren");
+        SpanAst err = { 0 };
+        return err;
+    }
+
+    ast.methodCall.args = allocArena(arena, sizeof(SpanAst));
+    *ast.methodCall.args = AstCallParamerterListParse(arena, &token);
+
+    ast.tokenLength = token - ast.token;
+    *tokens = token;
+    return ast;
+}
+
+SpanAst AstMethodDefinitionParse(Arena arena, Token** tokens) {
+    Token* token = *tokens;
+    SpanAst ast = { 0 };
+    ast.type = ast_function_declaration;  // this method is just syntactic sugar for a function declaration
+    ast.token = token;
+    ast.functionDeclaration.returnType = allocArena(arena, sizeof(SpanAst));
+    *ast.functionDeclaration.returnType = AstTypeParse(arena, &token, true);
+    if (ast.functionDeclaration.returnType->type == ast_invalid) {
+        SpanAst err = { 0 };
+        return err;
+    }
+
+    SpanAst* methodType = allocArena(arena, sizeof(SpanAst));
+    *methodType = AstTypeParse(arena, &token, true);
+    SpanAst* methodVariableDeclaration = allocArena(arena, sizeof(SpanAst));
+    methodVariableDeclaration->type = ast_variable_declaration;
+    methodVariableDeclaration->variableDeclaration.type = methodType;
+    methodVariableDeclaration->variableDeclaration.name = "this";
+
+    if (methodType->type == ast_invalid) {
+        SpanAst err = { 0 };
+        return err;
+    }
+
+    if (token->type != tt_dot) {
+        logErrorTokens(token, 1, "Expected dot");
+        SpanAst err = { 0 };
+        return err;
+    }
+    token++;
+
+    if (token->type != tt_id) {
+        logErrorTokens(token, 1, "Expected method name");
+        SpanAst err = { 0 };
+        return err;
+    }
+    char buffer[BUFFER_SIZE];
+    tokenGetString(*token, buffer);
+    u64 nameLength = strlen(buffer);
+    ast.functionDeclaration.name = allocArena(arena, nameLength + 1);
+    memcpy(ast.functionDeclaration.name, buffer, nameLength + 1);
+    token++;
+
+    SpanAst paramList = AstFunctionParameterDeclarationParse(arena, &token);
+    if (paramList.type == ast_invalid) {
+        while (token->type == tt_lbrace)
+            token++;
+    }
+    // add method to the param list
+    SpanAstFunctionParameterDeclaration* params = &paramList.funcParam;
+    params->paramsCount++;
+    SpanAst* ogParams = params->params;
+    params->params = allocArena(arena, sizeof(SpanAst) * params->paramsCount);
+    params->params[0] = *methodVariableDeclaration;
+    for (u64 i = 1; i < params->paramsCount; i++) {
+        params->params[i] = ogParams[i - 1];
+    }
+
+    ast.functionDeclaration.paramList = allocArena(arena, sizeof(SpanAst));
+    *ast.functionDeclaration.paramList = paramList;
+
+    SpanAst scope = AstScopeParse(arena, &token);
+    if (scope.type == ast_invalid) {
+        // TODO: figure out what to do here if anything
+    }
+    ast.functionDeclaration.body = allocArena(arena, sizeof(SpanAst));
+    *ast.functionDeclaration.body = scope;
+    ast.tokenLength = token - *tokens;
+    *tokens = token;
+    return ast;
+}
+
+static bool looksLikeMethodDeclaration(Token** tokens) {
+    Token* token = *tokens;
+    if (!looksLikeType(&token)) return false;
+    if (!looksLikeType(&token)) return false;
+    if (token->type != tt_dot) return false;
+    token++;
+    if (token->type != tt_id) return false;
+    token++;
+    if (token->type != tt_lparen) return false;
+    token++;
+    u32 parenStack = 1;
+    while (true) {
+        if (token->type == tt_lparen) {
+            parenStack++;
+        }
+        if (token->type == tt_rparen) {
+            parenStack--;
+            if (parenStack == 0) {
+                break;
+            }
+        }
+        if (token->type == tt_eof) return false;
+        token++;
+    }
+    token++;
+
+    if (token->type != tt_lbrace) {
+        return false;
+    }
+
+    *tokens = token;
+    return true;
+}
+
 SpanAst AstGeneralIdParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
     Token* t = token;
@@ -502,6 +647,8 @@ SpanAst AstGeneralIdParse(Arena arena, Token** tokens) {
 
     if (looksLikeFunctionDeclaration(&t)) {  // use t because we don't want to move forward our tokens
         ast = AstFunctionDeclarationParse(arena, &token);
+    } else if (looksLikeMethodDeclaration(&t)) {
+        ast = AstMethodDefinitionParse(arena, &token);
     } else {
         bool isAssignment = false;
         while (token->type != tt_end_statement) {
@@ -580,6 +727,7 @@ SpanAst AstExpressionDotParse(Arena arena, Token** tokens, SpanAst* value) {
     }
     token++;
     if (token->type == tt_lparen) {
+        return AstMethodCallParse(arena, tokens, value);
         massert(false, "not implemented method call");
     } else {
         return AstMemberAccessParse(arena, tokens, value);
@@ -712,6 +860,21 @@ SpanAst AstCallParamerterListParse(Arena arena, Token** tokens) {
     return ast;
 }
 
+static bool interpretAsType(Arena arena, Token* token) {
+    int i = 0;
+    while (true) {
+        SpanAst tmod = AstTmodParse(context.arena, &token);
+        if (tmod.type == ast_invalid) {
+            break;
+        }
+        i++;
+    }
+    if (i == 0) return false;
+    i32 biopPrecedence = getBiopPrecedence(token->type);
+    if (biopPrecedence == -1) return true;
+    return false;
+}
+
 SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
     SpanAst ast = { 0 };
@@ -741,6 +904,10 @@ SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
                 break;
             }
 
+            if (interpretAsType(arena, token)) {
+                // type
+                // TODO:
+            }
             // variable
             ast.type = ast_expr_word;
             ast.exprWord.word = word;

@@ -38,6 +38,7 @@ typedef enum _SpanASTType {
     ast_function_call,
     ast_call_paramerter_list,
     ast_member_access,
+    ast_method_call,
 } SpanASTType;
 
 
@@ -49,6 +50,12 @@ typedef struct _SpanAstFunctionParameterDeclaration {
     SpanAst* params;
     u64 paramsCount;
 } SpanAstFunctionParameterDeclaration;
+
+typedef struct _SpanAstMethodCall {
+    SpanAst* expr;
+    char* methodName;
+    SpanAst* args;
+} SpanAstMethodCall;
 
 typedef struct _SpanAstMemberAccess {
     SpanAst* value;
@@ -145,6 +152,7 @@ typedef struct _SpanAst {
         SpanAstFunctionCall functionCall;
         SpanAstCallParamerterList callParamerterList;
         SpanAstMemberAccess memberAccess;
+        SpanAstMethodCall methodCall;
     };
 } SpanAst;
 
@@ -173,6 +181,9 @@ SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurT
 SpanAst AstCallParamerterListParse(Arena arena, Token** tokens);
 SpanAst AstExpressionDotParse(Arena arena, Token** tokens, SpanAst* value);
 SpanAst AstMemberAccessParse(Arena arena, Token** tokens, SpanAst* value);
+SpanAst AstMethodCallParse(Arena arena, Token** tokens, SpanAst* value);
+SpanAst AstMethodDefinitionParse(Arena arena, Token** tokens);
+
 
 bool AstIsExpression(SpanAst* ast);
 #define CASE_AST_EXPR                                                                                                                                                                                                                \
@@ -180,7 +191,8 @@ bool AstIsExpression(SpanAst* ast);
     case ast_expr_word:                                                                                                                                                                                                              \
     case ast_expr_number_literal:                                                                                                                                                                                                    \
     case ast_member_access:                                                                                                                                                                                                          \
-    case ast_function_call
+    case ast_function_call:                                                                                                                                                                                                          \
+    case ast_method_call
 
 
 

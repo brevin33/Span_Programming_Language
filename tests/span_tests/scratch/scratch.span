@@ -1,17 +1,14 @@
+i32 puts(u8* str)
 
-struct Foo{
-	i32 x
-	i32 y
-}
+void* malloc(u64 size)
 
-Foo test(){
-	Foo c
-	c.x = 2
-	c.y = 3
-	return c
-}
+(u8*)
 
 i32 main(){
-	Foo c = test()
-	return c.x
+	u8* test = malloc(10).cast(u8*)
+	u8* 
+
+	u8 test = 63
+	puts(test.ptr)
+	return 3
 }

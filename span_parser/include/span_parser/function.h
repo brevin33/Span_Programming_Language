@@ -14,6 +14,7 @@ typedef struct _SpanFunction {
     char* scrambledName;
     char** paramNames;
     SpanScope scope;
+    bool isExtern;
     LLVMValueRef llvmFunc;
 } SpanFunction;
 

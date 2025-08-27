@@ -1,5 +1,6 @@
 #include "span_parser.h"
 #include "span_parser/arena.h"
+#include "span_parser/ast.h"
 #include "span_parser/tokens.h"
 #include "span_parser/type.h"
 #include "llvm-c/Core.h"

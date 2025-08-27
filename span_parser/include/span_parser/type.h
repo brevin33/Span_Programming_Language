@@ -38,6 +38,7 @@ typedef enum _SpanTypeType {
     t_struct,
     t_int,
     t_uint,
+    t_void,
     t_float,
     t_function,
     t_numberic_literal,
@@ -97,6 +98,8 @@ SpanTypeBase* getFloatTypeBase(u64 size);
 SpanTypeBase* getUintTypeBase(u64 size);
 SpanTypeBase* getNumbericLiteralTypeBase();
 SpanTypeBase* getInvalidTypeBase();
+SpanTypeBase* getVoidTypeBase();
+SpanType getVoidType();
 SpanType getIntType(u64 size);
 SpanType getFloatType(u64 size);
 SpanType getUintType(u64 size);

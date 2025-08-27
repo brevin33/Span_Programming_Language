@@ -33,6 +33,14 @@ void compileRealMainFunction(SpanFunction* mainToCall) {
 }
 
 void compileFunction(SpanFunction* function) {
+    if (function->isExtern) {
+        SpanTypeBase* functionType = function->functionType;
+        LLVMTypeRef llvmFuncType = functionType->llvmType;
+        massert(llvmFuncType != NULL, "llvm type should not be null");
+        LLVMValueRef llvmFunc = LLVMAddFunction(context.activeProject->llvmModule, function->name, llvmFuncType);
+        function->llvmFunc = llvmFunc;
+        return;
+    }
     // save the current block
     LLVMBasicBlockRef lastBlock = context.currentBlock;
 
@@ -41,6 +49,7 @@ void compileFunction(SpanFunction* function) {
     massert(llvmFuncType != NULL, "llvm type should not be null");
     LLVMValueRef llvmFunc = LLVMAddFunction(context.activeProject->llvmModule, function->scrambledName, llvmFuncType);
     function->llvmFunc = llvmFunc;
+
 
     LLVMBasicBlockRef entry = LLVMAppendBasicBlock(function->llvmFunc, "entry");
     context.currentBlock = entry;
@@ -218,7 +227,7 @@ SpanFunction* findFunction(char* name, u32 namespace_, SpanType* types, u32 type
     }
 
     char errorMessage[BUFFER_SIZE];
-    sprintf(errorMessage, "could not find function called %s that works with arguments of:", ast->functionCall.name);
+    sprintf(errorMessage, "could not find function called %s that works with arguments of:", name);
     for (u64 i = 0; i < typesCount; i++) {
         char typeNameBuffer[BUFFER_SIZE];
         SpanType argType = types[i];
@@ -299,9 +308,14 @@ char* getScrambledName(SpanAstFunctionDeclaration* decl, char* buffer) {
 
 void implementFunction(SpanFunction* function) {
     SpanAst* body = function->ast->functionDeclaration.body;
+    if (body == NULL) {
+        function->isExtern = true;
+        return;
+    }
     massert(body->type == ast_scope, "should be a scope");
     // TODO: implement global scope
     function->scope = createSpanScope(body, NULL, function);
+    function->isExtern = false;
     for (u64 i = 0; i < function->functionType->function.paramTypesCount; i++) {
         char* paramName = function->paramNames[i];
         SpanType paramType = function->functionType->function.paramTypes[i];

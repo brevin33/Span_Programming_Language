@@ -303,6 +303,8 @@ SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
             return createSpanFunctionCallExpression(ast, scope);
         case ast_member_access:
             return createMemberAccessExpression(ast, scope);
+        case ast_method_call:
+            return createSpanMethodCallExpression(ast, scope);
         default:
             massert(false, "not implemented");
             break;
@@ -310,6 +312,66 @@ SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
     massert(false, "not implemented");
     SpanExpression err = { 0 };
     return err;
+}
+
+SpanExpression createSpanMethodCallExpression(SpanAst* ast, SpanScope* scope) {
+    massert(ast->type == ast_method_call, "should be a method call");
+    SpanExpression expression = { 0 };
+    expression.ast = ast;
+    expression.exprType = et_functionCall;
+    // parsing args
+    SpanAst* args = ast->methodCall.args;
+    massert(args->type == ast_call_paramerter_list, "should be a call paramerter list");
+    expression.functionCall.argsCount = args->callParamerterList.paramsCount + 1;  // +1 for the this pointer
+    if (expression.functionCall.argsCount > 0) {
+        expression.functionCall.args = allocArena(context.arena, sizeof(SpanExpression) * expression.functionCall.argsCount);
+    } else {
+        expression.functionCall.args = NULL;
+    }
+
+    bool expressionError = false;
+    SpanAst* value = ast->methodCall.expr;
+    SpanExpression thisExpr = createSpanExpression(value, scope);
+    if (thisExpr.exprType == et_invalid) {
+        expressionError = true;
+    }
+    expression.functionCall.args[0] = thisExpr;
+
+    for (u64 i = 1; i < expression.functionCall.argsCount; i++) {
+        SpanAst* arg = &args->callParamerterList.params[i - 1];
+        SpanExpression argExpr = createSpanExpression(arg, scope);
+        if (argExpr.exprType == et_invalid) {
+            expressionError = true;
+        }
+        expression.functionCall.args[i] = argExpr;
+    }
+    if (expressionError) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+
+    SpanType types[BUFFER_SIZE];
+    types[0] = thisExpr.type;
+    u64 typesCount = 1;
+    for (u64 i = 1; i < expression.functionCall.argsCount; i++) {
+        SpanExpression* arg = &expression.functionCall.args[i - 1];
+        SpanType* argType = &arg->type;
+        types[typesCount++] = *argType;
+    }
+    char* methodName = ast->methodCall.methodName;
+
+    SpanFunction* function = findFunction(ast->methodCall.methodName, context.activeProject->namespace_, types, typesCount, ast, true);
+    if (function == NULL) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    // implicitly cast function args
+    for (u64 i = 0; i < expression.functionCall.argsCount; i++) {
+        implicitlyCast(&expression.functionCall.args[i], &function->functionType->function.paramTypes[i], true);
+    }
+    expression.functionCall.function = function;
+    expression.type = function->functionType->function.returnType;
+    return expression;
 }
 
 SpanExpression createSpanNumberLiteralExpression(SpanAst* ast, SpanScope* scope) {

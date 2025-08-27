@@ -1,19 +1,20 @@
 // raddbg 0.9.21 project file
 
+recent_file: path: "tests/src/main_scratch.c"
 recent_file: path: "tests/src/main.c"
+recent_file: path: ".cache/clangd/index/arena.c.F5B12CCE3B341B10.idx"
+recent_file: path: "span_parser/src/expression.c"
+recent_file: path: "span_parser/src/function.c"
+recent_file: path: "span_parser/src/arena.c"
+recent_file: path: "span_parser/src/ast.c"
 recent_file: path: "span_parser/src/project.c"
 recent_file: path: "span_parser/src/tokens.c"
-recent_file: path: "tests/src/main_scratch.c"
-recent_file: path: "span_parser/src/expression.c"
-recent_file: path: "span_parser/src/arena.c"
 recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/lib/Analysis/Analysis.cpp"
 recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/lib/Support/ErrorHandling.cpp"
-recent_file: path: "span_parser/src/ast.c"
 recent_file: path: "span_parser/src/logging.c"
 recent_file: path: "span_parser/src/type.c"
 recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/lib/IR/Type.cpp"
 recent_file: path: "span_parser/src/scope.c"
-recent_file: path: "span_parser/src/function.c"
 recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/lib/IR/Core.cpp"
 recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/lib/IR/Instructions.cpp"
 recent_file: path: "../vcpkg/buildtrees/llvm/src/org-18.1.6-9cd29eccee.clean/llvm/include/llvm/IR/Instructions.h"
@@ -30,10 +31,10 @@ target:
 {
   executable: "out/Debug/tests/span_tests.exe"
   working_directory: "out/Debug/tests"
-  enabled: 1
 }
 target:
 {
   executable: "out/Debug/tests/span_test_scratch.exe"
-  working_directory: "out/Debug/tests/"
+  working_directory: "out/Debug/tests"
+  enabled: 1
 }
