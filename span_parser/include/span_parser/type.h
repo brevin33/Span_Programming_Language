@@ -42,6 +42,7 @@ typedef enum _SpanTypeType {
     t_float,
     t_function,
     t_numberic_literal,
+    t_type,
 } SpanTypeType;
 
 
@@ -69,6 +70,7 @@ typedef struct _SpanTypeFunction {
     u64 paramTypesCount;
 } SpanTypeFunction;
 
+
 typedef struct _SpanTypeBase {
     SpanTypeType type;
     u32 namespace_;
@@ -85,8 +87,9 @@ typedef struct _SpanTypeBase {
 } SpanTypeBase;
 
 
+SpanTypeBase* getBaseTypeType();
 SpanTypeBase* getFunctionType(SpanAst* ast);
-SpanTypeBase* typeFromTypeAst(SpanAst* typeAst);
+SpanTypeBase* typeFromTypeAst(SpanAst* typeAst, bool logError);
 SpanTypeBase* findBaseType(char* name, u32 namespace_);
 SpanTypeBase* addBaseType(SpanTypeBase* base);
 SpanTypeBase* prototypeType(SpanAst* ast);
@@ -99,6 +102,7 @@ SpanTypeBase* getUintTypeBase(u64 size);
 SpanTypeBase* getNumbericLiteralTypeBase();
 SpanTypeBase* getInvalidTypeBase();
 SpanTypeBase* getVoidTypeBase();
+SpanType getTypeType();
 SpanType getVoidType();
 SpanType getIntType(u64 size);
 SpanType getFloatType(u64 size);
@@ -106,7 +110,7 @@ SpanType getUintType(u64 size);
 SpanType getNumbericLiteralType();
 SpanType getInvalidType();
 SpanType getInvalidTypeAst(SpanAst* ast);
-SpanType getType(SpanAst* ast);
+SpanType getType(SpanAst* ast, bool logError);
 bool isTypeEqual(SpanType* type1, SpanType* type2);
 bool isTypeModifierEqual(SpanTypeModifier* mod1, SpanTypeModifier* mod2);
 

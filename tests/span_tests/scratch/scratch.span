@@ -1,14 +1,7 @@
-i32 puts(u8* str)
 
-void* malloc(u64 size)
 
-(u8*)
 
 i32 main(){
-	u8* test = malloc(10).cast(u8*)
-	u8* 
-
-	u8 test = 63
-	puts(test.ptr)
-	return 3
+	i32 a = i32.size
+	return a
 }

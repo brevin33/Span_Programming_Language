@@ -289,16 +289,6 @@ void compileSpanProject(SpanProject* project) {
 
     project->llvmModule = LLVMModuleCreateWithName(project->name);
     context.builder = LLVMCreateBuilder();
-    createLLVMTypeBaseTypes();
-
-    for (u64 i = 0; i < context.functionsCount; i++) {
-        SpanFunction* function = context.functions[i];
-        char* name = context.functions[i]->name;
-        if (strcmp(name, "main") == 0) {
-            compileFunction(function);
-            compileRealMainFunction(function);
-        }
-    }
 
     char* error;
     LLVMTargetRef target;
@@ -310,6 +300,19 @@ void compileSpanProject(SpanProject* project) {
 
     LLVMTargetMachineRef targetMachine;
     targetMachine = LLVMCreateTargetMachine(target, triple, "", "", LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+
+    project->dataLayout = LLVMCreateTargetDataLayout(targetMachine);
+
+    createLLVMTypeBaseTypes();
+
+    for (u64 i = 0; i < context.functionsCount; i++) {
+        SpanFunction* function = context.functions[i];
+        char* name = context.functions[i]->name;
+        if (strcmp(name, "main") == 0) {
+            compileFunction(function);
+            compileRealMainFunction(function);
+        }
+    }
 
     char* ir = LLVMPrintModuleToString(project->llvmModule);
     printf("\n%s\n\n", ir);

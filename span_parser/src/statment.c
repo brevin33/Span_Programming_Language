@@ -189,6 +189,6 @@ SpanStatement createSpanAssignStatement(SpanAst* ast, SpanScope* scope) {
 SpanVariable* declareVariable(SpanAst* ast, SpanScope* scope) {
     massert(ast->type == ast_variable_declaration, "should be a variable declaration");
     char* name = ast->variableDeclaration.name;
-    SpanType type = getType(ast->variableDeclaration.type);
+    SpanType type = getType(ast->variableDeclaration.type, true);
     return addVariableToScope(scope, name, type, ast);
 }
