@@ -1,7 +1,9 @@
 #include "span_parser/expression.h"
 #include "span_parser.h"
 #include "span_parser/ast.h"
+#include "span_parser/logging.h"
 #include "span_parser/type.h"
+#include <llvm-c/Target.h>
 
 
 void completeAddExpression(SpanExpression* expression, SpanScope* scope) {
@@ -130,6 +132,7 @@ SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope) 
         SpanType* argType = &arg->type;
         types[typesCount++] = *argType;
     }
+
     SpanFunction* function = findFunction(ast->functionCall.name, context.activeProject->namespace_, types, typesCount, ast, true);
     if (function == NULL) {
         SpanExpression err = { 0 };
@@ -225,6 +228,11 @@ SpanExpression createMemberAccessExpression(SpanAst* ast, SpanScope* scope) {
     }
     char* accessedMemberName = ast->memberAccess.memberName;
     // intrinsic
+    if (value.exprType == et_type) {
+        if (strcmp(accessedMemberName, "size") == 0) {
+            return createSpanTypeSizeExpression(ast, scope, &value);
+        }
+    }
     if (isTypeReference(&value.type) && strcmp(accessedMemberName, "ptr") == 0) {
         return createSpanGetPtrExpression(ast, scope, &value);
     }
@@ -295,8 +303,20 @@ SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
     switch (ast->type) {
         case ast_expr_biop:
             return createSpanBinaryExpression(ast, scope);
-        case ast_expr_word:
-            return createSpanVariableExpression(ast, scope);
+        case ast_expr_word: {
+            SpanExpression expression = createSpanVariableExpression(ast, scope, false);
+            if (expression.exprType != et_invalid) return expression;
+            // seeing if this could have been a type
+            ast->type = ast_type;
+            ast->type_.name = ast->exprWord.word;
+            ast->type_.modsCount = 0;
+            ast->type_.mods = NULL;
+            expression = createSpanTypeExpression(ast, scope, false);
+            if (expression.exprType != et_invalid) return expression;
+            logErrorAst(ast, "Is not a variable or type");
+            SpanExpression err = { 0 };
+            return err;
+        }
         case ast_expr_number_literal:
             return createSpanNumberLiteralExpression(ast, scope);
         case ast_function_call:
@@ -305,6 +325,8 @@ SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
             return createMemberAccessExpression(ast, scope);
         case ast_method_call:
             return createSpanMethodCallExpression(ast, scope);
+        case ast_type:
+            return createSpanTypeExpression(ast, scope, true);
         default:
             massert(false, "not implemented");
             break;
@@ -314,8 +336,34 @@ SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
     return err;
 }
 
+
+SpanExpression createSpanTypeExpression(SpanAst* ast, SpanScope* scope, bool logError) {
+    SpanExpression expression = { 0 };
+    massert(ast->type == ast_type, "should be a type");
+    expression.ast = ast;
+    expression.exprType = et_type;
+    expression.typeType.type = getType(ast, logError);
+    if (expression.typeType.type.base->type == t_invalid) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    expression.type = getTypeType();
+    return expression;
+}
+
+SpanExpression createSpanTypeSizeExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value) {
+    SpanExpression expression = { 0 };
+    expression.ast = ast;
+    expression.exprType = et_type_size;
+    massert(value->exprType == et_type, "should be a type");
+    expression.typeSize.type = value->typeType.type;
+    expression.type = getNumbericLiteralType();
+    return expression;
+}
+
 SpanExpression createSpanMethodCallExpression(SpanAst* ast, SpanScope* scope) {
     massert(ast->type == ast_method_call, "should be a method call");
+    // normal cases
     SpanExpression expression = { 0 };
     expression.ast = ast;
     expression.exprType = et_functionCall;
@@ -412,10 +460,25 @@ void compileExpression(SpanExpression* expression, SpanScope* scope, SpanFunctio
         case et_get_val:
             compileGetValExpression(expression, scope, function);
             break;
+        case et_type_size:
+            compileTypeSizeExpression(expression, scope, function);
+            break;
+        case et_type:
+            compileTypeExpression(expression, scope, function);
+            break;
         default:
             massert(false, "not implemented");
             break;
     }
+}
+
+void compileTypeSizeExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
+    massert(expression->exprType == et_type_size, "should be a type size");
+    // do nothing
+}
+void compileTypeExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
+    massert(expression->exprType == et_type, "should be a type");
+    // do nothing
 }
 
 void compileGetPtrExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
@@ -519,6 +582,55 @@ void compileStructAccessExpression(SpanExpression* expression, SpanScope* scope,
     }
 }
 
+char* getNumberLiteralNumber(SpanExpression* expression) {
+    return expression->numberLiteral.number;
+}
+char* getTypeSizeNumber(SpanExpression* expression) {
+    massert(expression->exprType == et_type_size, "should be a type size");
+    LLVMTargetDataRef dataLayout = context.activeProject->dataLayout;
+    LLVMTypeRef type = getLLVMType(&expression->typeSize.type);
+    if (type == NULL) {
+        return "0";
+    }
+    i64 size = LLVMABISizeOfType(dataLayout, type);
+    char buffer[BUFFER_SIZE];
+    uintToString(size, buffer);
+    char* number = allocArena(context.arena, strlen(buffer) + 1);
+    memcpy(number, buffer, strlen(buffer) + 1);
+    return number;
+}
+
+char* getBiopNumber(SpanExpression* expression) {
+    SpanExpression* lhs = expression->biop.lhs;
+    SpanExpression* rhs = expression->biop.rhs;
+    char* lhsNumber = getNumbericLiteralNumber(lhs);
+    char* rhsNumber = getNumbericLiteralNumber(rhs);
+    switch (expression->biop.op) {
+        case tt_add:
+            return addNumbers(lhsNumber, rhsNumber);
+        default:
+            massert(false, "not implemented");
+            break;
+    }
+    return NULL;
+}
+
+char* getNumbericLiteralNumber(SpanExpression* expression) {
+    massert(expression->type.base->type == t_numberic_literal, "should be a number literal");
+
+    switch (expression->exprType) {
+        case et_number_literal:
+            return getNumberLiteralNumber(expression);
+        case et_biop:
+            return getBiopNumber(expression);
+        case et_type_size:
+            return getTypeSizeNumber(expression);
+        default:
+            massert(false, "not implemented");
+            return "0";
+    }
+}
+
 void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
     massert(expression->exprType == et_cast, "should be a cast");
     compileExpression(expression->cast.expression, scope, function);
@@ -530,19 +642,19 @@ void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFun
     if (isTypeNumbericLiteral(fromType)) {
         if (isIntType(&expression->type)) {
             LLVMTypeRef intType = getLLVMType(&expression->type);
-            char* number = fromExpr->numberLiteral.number;
+            char* number = getNumbericLiteralNumber(fromExpr);
             expression->llvmValue = LLVMConstIntOfString(intType, number, 10);
             return;
         }
         if (isUintType(&expression->type)) {
             LLVMTypeRef uintType = getLLVMType(&expression->type);
-            char* number = fromExpr->numberLiteral.number;
+            char* number = getNumbericLiteralNumber(fromExpr);
             expression->llvmValue = LLVMConstIntOfString(uintType, number, 10);
             return;
         }
         if (isFloatType(&expression->type)) {
             LLVMTypeRef floatType = getLLVMType(&expression->type);
-            char* number = fromExpr->numberLiteral.number;
+            char* number = getNumbericLiteralNumber(fromExpr);
             expression->llvmValue = LLVMConstRealOfString(floatType, number);
             return;
         }
@@ -617,14 +729,16 @@ void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFun
     massert(false, "not implemented");
 }
 
-SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope) {
+SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope, bool logError) {
     massert(ast->type == ast_expr_word, "should be a variable");
     SpanExpression expression = { 0 };
     expression.ast = ast;
     expression.exprType = et_variable;
     SpanVariable* variable = getVariableFromScope(scope, ast->exprWord.word);
     if (variable == NULL) {
-        logErrorAst(ast, "variable does not exist");
+        if (logError) {
+            logErrorAst(ast, "variable does not exist");
+        }
         SpanExpression err = { 0 };
         return err;
     }

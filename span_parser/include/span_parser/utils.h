@@ -24,3 +24,5 @@ bool linkExe(char** objFiles, u64 objFilesCount, char* exeName);
 int runExe(char* exeName, char* programTextOutputBuffer);
 
 double getTimeSeconds();
+
+char* addNumbers(char* lhs, char* rhs);

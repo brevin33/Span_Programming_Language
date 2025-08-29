@@ -103,10 +103,11 @@ SpanType getInvalidTypeAst(SpanAst* ast) {
     return type;
 }
 
-SpanType getType(SpanAst* ast) {
+SpanType getType(SpanAst* ast, bool logError) {
     massert(ast->type == ast_type, "should be a type");
-    SpanTypeBase* base = typeFromTypeAst(ast);
+    SpanTypeBase* base = typeFromTypeAst(ast, logError);
     if (base == NULL) {
+        char* typeName = ast->type_.name;
         return getInvalidTypeAst(ast);
     }
     SpanType type;
@@ -318,6 +319,9 @@ void addLLVMTypeBaseType(SpanTypeBase* type) {
                     break;
             }
             break;
+        case t_type:
+            type->llvmType = NULL;
+            break;
         case t_function: {
             SpanTypeFunction* functionType = &type->function;
             SpanType* returnType = &functionType->returnType;
@@ -430,7 +434,7 @@ SpanType getVoidType() {
     return type;
 }
 
-SpanTypeBase* typeFromTypeAst(SpanAst* typeAst) {
+SpanTypeBase* typeFromTypeAst(SpanAst* typeAst, bool logError) {
     massert(typeAst->type == ast_type, "should be a type");
     char* typeName = typeAst->type_.name;
 
@@ -452,7 +456,9 @@ SpanTypeBase* typeFromTypeAst(SpanAst* typeAst) {
     if (existing != NULL) {
         return existing;
     }
-    logErrorTokens(typeAst->token, 1, "type not found");
+    if (logError) {
+        logErrorTokens(typeAst->token, 1, "type not found");
+    }
     return NULL;
 }
 
@@ -488,7 +494,7 @@ void implementStuctType(SpanTypeBase* structType) {
         SpanAst* type = field->variableDeclaration.type;
         massert(type->type == ast_type, "should be a type");
         char* name = field->variableDeclaration.name;
-        SpanType base = getType(type);
+        SpanType base = getType(type, true);
         if (isTypeReference(&base)) {
             logErrorAst(type, "can't have reference type as a field");
             base = getInvalidType();
@@ -572,7 +578,7 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
     base.namespace_ = context.activeProject->namespace_;
     base.ast = ast;
     base.name = name;
-    base.function.returnType = getType(functionDeclaration->returnType);
+    base.function.returnType = getType(functionDeclaration->returnType, true);
     if (params == NULL) {
         base.function.paramTypes = NULL;
         base.function.paramTypesCount = 0;
@@ -584,7 +590,7 @@ SpanTypeBase* getFunctionType(SpanAst* ast) {
         for (u64 i = 0; i < params->paramsCount; i++) {
             SpanAst* param = &params->params[i];
             massert(param->type == ast_variable_declaration, "should be a variable declaration");
-            base.function.paramTypes[i] = getType(param->variableDeclaration.type);
+            base.function.paramTypes[i] = getType(param->variableDeclaration.type, true);
         }
     }
     return addBaseType(&base);
@@ -626,6 +632,27 @@ SpanType getReferenceType(SpanType* type) {
     newType.mods[backIndex + 1].type = tm_ref;
     newType.modsCount++;
     return newType;
+}
+
+SpanTypeBase* getBaseTypeType() {
+    SpanTypeBase base;
+    base.type = t_type;
+    base.namespace_ = NO_NAMESPACE;
+    base.ast = NULL;
+    base.name = "$type$";
+    SpanTypeBase* existing = findBaseType(base.name, NO_NAMESPACE);
+    if (existing != NULL) {
+        return existing;
+    }
+    return addBaseType(&base);
+}
+
+SpanType getTypeType() {
+    SpanTypeBase* base = getBaseTypeType();
+    SpanType type;
+    type.base = base;
+    type.modsCount = 0;
+    return type;
 }
 
 SpanType dereferenceType(SpanType* type) {

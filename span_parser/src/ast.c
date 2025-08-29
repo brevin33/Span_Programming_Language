@@ -863,21 +863,23 @@ SpanAst AstCallParamerterListParse(Arena arena, Token** tokens) {
 static bool interpretAsType(Arena arena, Token* token) {
     int i = 0;
     while (true) {
-        SpanAst tmod = AstTmodParse(context.arena, &token);
+        SpanAst tmod = AstTmodParse(arena, &token);
         if (tmod.type == ast_invalid) {
             break;
         }
         i++;
     }
     if (i == 0) return false;
-    i32 biopPrecedence = getBiopPrecedence(token->type);
-    if (biopPrecedence == -1) return true;
+    if (token->type == tt_dot) {
+        return true;
+    }
     return false;
 }
 
 SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
     SpanAst ast = { 0 };
+    Token* startToken = token;
     ast.token = token;
 
     switch (token->type) {
@@ -906,7 +908,10 @@ SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
 
             if (interpretAsType(arena, token)) {
                 // type
-                // TODO:
+                token = startToken;
+                ast = AstTypeParse(arena, &token, true);
+                if (ast.type == ast_invalid) break;
+                break;
             }
             // variable
             ast.type = ast_expr_word;
@@ -937,6 +942,7 @@ SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
     *tokens = token;
     return ast;
 }
+
 
 SpanAst AstExpressionParse(Arena arena, Token** tokens, OurTokenType* delimeters, u64 delimetersCount) {
     return AstExpressionBiopParse(arena, tokens, INT64_MAX, delimeters, delimetersCount);

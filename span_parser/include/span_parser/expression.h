@@ -22,6 +22,8 @@ typedef enum _SpanExpressionType {
     et_struct_access,
     et_get_ptr,
     et_get_val,
+    et_type,
+    et_type_size,
 } SpanExpressionType;
 
 typedef struct _SpanExpressionNumberLiteral {
@@ -61,6 +63,14 @@ typedef struct _SpanExpressionBiop {
     OurTokenType op;
 } SpanExpressionBiop;
 
+typedef struct _SpanExpressionTypeType {
+    SpanType type;
+} SpanExpressionTypeType;
+
+typedef struct _SpanExpressionTypeSize {
+    SpanType type;
+} SpanExpressionTypeSize;
+
 typedef struct _SpanExpression {
     SpanAst* ast;
     SpanExpressionType exprType;
@@ -74,13 +84,15 @@ typedef struct _SpanExpression {
         SpanExpressionStructAccess structAccess;
         SpanExpressionGetPtr getPtr;
         SpanExpressionGetVal getVal;
+        SpanExpressionTypeType typeType;
+        SpanExpressionTypeSize typeSize;
     };
     LLVMValueRef llvmValue;
 } SpanExpression;
 
 SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanNumberLiteralExpression(SpanAst* ast, SpanScope* scope);
-SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope);
+SpanExpression createSpanVariableExpression(SpanAst* ast, SpanScope* scope, bool logError);
 SpanExpression createSpanBinaryExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanStructAccessExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
@@ -89,6 +101,13 @@ SpanExpression createSpanNoneExpression();
 SpanExpression createSpanGetPtrExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
 SpanExpression createSpanGetValExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
 SpanExpression createSpanMethodCallExpression(SpanAst* ast, SpanScope* scope);
+SpanExpression createSpanTypeExpression(SpanAst* ast, SpanScope* scope, bool logError);
+SpanExpression createSpanTypeSizeExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
+
+char* getNumbericLiteralNumber(SpanExpression* expression);
+char* getNumberLiteralNumber(SpanExpression* expression);
+char* getTypeSizeNumber(SpanExpression* expression);
+char* getBiopNumber(SpanExpression* expression);
 
 
 void makeCastExpression(SpanExpression* expr, SpanType* type);
@@ -115,6 +134,8 @@ void compileFunctionCallExpression(SpanExpression* expression, SpanScope* scope,
 void compileStructAccessExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 void compileGetPtrExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 void compileGetValExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileTypeSizeExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileTypeExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 
 
 

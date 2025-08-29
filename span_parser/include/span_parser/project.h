@@ -62,6 +62,7 @@ typedef struct _SpanProject {
     u64 childCapacity;
     u32 namespace_;
     LLVMModuleRef llvmModule;
+    LLVMTargetDataRef dataLayout;
 } SpanProject;
 
 char** getLineStarts(Arena arena, char* fileContents, u64* outLineStartsCount);

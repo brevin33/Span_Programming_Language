@@ -158,3 +158,32 @@ char* getDirectoryNameFromPath(char* path, char* buffer) {
     buffer[pathLength - directoryNameStart] = '\0';
     return buffer;
 }
+
+char* addNumbers(char* lhs, char* rhs) {
+    char buffer[BUFFER_SIZE * 4];
+    u64 lhsLength = strlen(lhs);
+    u64 rhsLength = strlen(rhs);
+
+    u64 i = lhsLength - 1;
+    u64 j = rhsLength - 1;
+    u64 k = 0;
+    int carry = 0;
+
+    while (i < lhsLength || j < rhsLength || carry) {
+        int digitL = (i < lhsLength) ? lhs[i] - '0' : 0;
+        int digitR = (j < rhsLength) ? rhs[j] - '0' : 0;
+        int sum = digitL + digitR + carry;
+        buffer[k++] = (sum % 10) + '0';
+        carry = sum / 10;
+        if (i < lhsLength) i--;
+        if (j < rhsLength) j--;
+    }
+
+    // Reverse buffer
+    char* result = allocArena(context.arena, k + 1);
+    for (u64 m = 0; m < k; m++) {
+        result[m] = buffer[k - m - 1];
+    }
+    result[k] = '\0';
+    return result;
+}

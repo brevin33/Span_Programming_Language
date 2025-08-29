@@ -131,6 +131,11 @@ typedef struct _SpanAstCallParamerterList {
     u64 paramsCount;
 } SpanAstCallParamerterList;
 
+typedef struct _SpanAstCastCall {
+    SpanAst* type;
+    SpanAst* value;
+} SpanAstCastCall;
+
 typedef struct _SpanAst {
     SpanASTType type;
     u32 tokenLength;
@@ -153,6 +158,7 @@ typedef struct _SpanAst {
         SpanAstCallParamerterList callParamerterList;
         SpanAstMemberAccess memberAccess;
         SpanAstMethodCall methodCall;
+        SpanAstCastCall castCall;
     };
 } SpanAst;
 
@@ -183,6 +189,7 @@ SpanAst AstExpressionDotParse(Arena arena, Token** tokens, SpanAst* value);
 SpanAst AstMemberAccessParse(Arena arena, Token** tokens, SpanAst* value);
 SpanAst AstMethodCallParse(Arena arena, Token** tokens, SpanAst* value);
 SpanAst AstMethodDefinitionParse(Arena arena, Token** tokens);
+SpanAst AstCastCallParse(Arena arena, Token** tokens, SpanAst* type);
 
 
 bool AstIsExpression(SpanAst* ast);
@@ -192,7 +199,8 @@ bool AstIsExpression(SpanAst* ast);
     case ast_expr_number_literal:                                                                                                                                                                                                    \
     case ast_member_access:                                                                                                                                                                                                          \
     case ast_function_call:                                                                                                                                                                                                          \
-    case ast_method_call
+    case ast_method_call:                                                                                                                                                                                                            \
+    case ast_type
 
 
 
