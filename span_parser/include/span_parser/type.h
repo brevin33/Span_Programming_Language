@@ -8,6 +8,8 @@
 #include "span_parser/llvm.h"
 
 typedef struct _SpanTypeBase SpanTypeBase;
+typedef struct _SpanType SpanType;
+
 
 typedef enum _SpanTypeModifierType {
     tm_invalid = 0,
@@ -33,6 +35,11 @@ typedef struct _SpanType {
     u64 modsCount;
 } SpanType;
 
+typedef struct _SpanTypeSubstitution {
+    SpanTypeBase* type;
+    SpanType replacement;
+} SpanTypeSubstitution;
+
 typedef enum _SpanTypeType {
     t_invalid = 0,
     t_struct,
@@ -43,6 +50,7 @@ typedef enum _SpanTypeType {
     t_function,
     t_numberic_literal,
     t_type,
+    t_interface,
 } SpanTypeType;
 
 
@@ -102,6 +110,8 @@ SpanTypeBase* getUintTypeBase(u64 size);
 SpanTypeBase* getNumbericLiteralTypeBase();
 SpanTypeBase* getInvalidTypeBase();
 SpanTypeBase* getVoidTypeBase();
+SpanTypeBase* getAnyTypeBase();
+SpanType getAnyType();
 SpanType getTypeType();
 SpanType getVoidType();
 SpanType getIntType(u64 size);
@@ -111,8 +121,11 @@ SpanType getNumbericLiteralType();
 SpanType getInvalidType();
 SpanType getInvalidTypeAst(SpanAst* ast);
 SpanType getType(SpanAst* ast, bool logError);
+bool isTypeBaseEqual(SpanTypeBase* type1, SpanTypeBase* type2);
 bool isTypeEqual(SpanType* type1, SpanType* type2);
 bool isTypeModifierEqual(SpanTypeModifier* mod1, SpanTypeModifier* mod2);
+
+bool isSpanTypeSubtitutionTheSame(SpanTypeSubstitution* substitution1, SpanTypeSubstitution* substitution2);
 
 char* getTypeName(SpanType* type, char* buffer);
 
@@ -129,8 +142,10 @@ bool isIntType(SpanType* type);
 bool isUintType(SpanType* type);
 bool isFloatType(SpanType* type);
 bool isNumbericType(SpanType* type);
+bool isInterfaceType(SpanType* type);
 
 bool typeIsReferenceOf(SpanType* type, SpanType* otherType);
+bool typeFufillsInterface(SpanType* type, SpanType* interfaceType);
 
 SpanType dereferenceType(SpanType* type);
 SpanType getPointerType(SpanType* type);

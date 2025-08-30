@@ -1,65 +1,116 @@
 #include "span_parser/expression.h"
 #include "span_parser.h"
 #include "span_parser/ast.h"
+#include "span_parser/function.h"
 #include "span_parser/logging.h"
 #include "span_parser/type.h"
+#include "span_parser/utils.h"
+#include <llvm-c/Core.h>
 #include <llvm-c/Target.h>
+#include <math.h>
 
-
-void completeAddExpression(SpanExpression* expression, SpanScope* scope) {
-    SpanExpression* lhs = expression->biop.lhs;
-    SpanExpression* rhs = expression->biop.rhs;
+SpanExpression intrisicCompleteAddExpression(SpanExpression* expression, SpanScope* scope) {
+    SpanExpression expr = *expression;
+    SpanExpression* lhs = allocArena(context.arena, sizeof(SpanExpression));
+    *lhs = *expression->biop.lhs;
+    SpanExpression* rhs = allocArena(context.arena, sizeof(SpanExpression));
+    *rhs = *expression->biop.rhs;
+    expr.biop.lhs = lhs;
+    expr.biop.rhs = rhs;
+    SpanExpression ogLhs = *lhs;
+    SpanExpression ogRhs = *rhs;
     SpanType* lhsType = &lhs->type;
     SpanType* rhsType = &rhs->type;
+
     if (isNumbericType(lhsType) && isNumbericType(rhsType)) {
         bool worked = implicitlyCast(lhs, &rhs->type, false);
         if (worked) {
-            expression->type = lhs->type;
-            return;
+            expr.type = lhs->type;
+            return expr;
         }
         worked = implicitlyCast(rhs, &lhs->type, false);
         if (worked) {
-            expression->type = lhs->type;
-            return;
+            expr.type = lhs->type;
+            return expr;
         }
         massert(false, "cast should work here");
+        SpanExpression err = { 0 };
+        return err;
     }
 
+    SpanExpression err = { 0 };
+    return err;
+}
+
+bool completeAddExpression(SpanExpression* expression, SpanScope* scope) {
+    SpanExpression* lhs = expression->biop.lhs;
+    SpanExpression* rhs = expression->biop.rhs;
+    SpanExpression ogLhs = *lhs;
+    SpanExpression ogRhs = *rhs;
+    SpanType* lhsType = &lhs->type;
+    SpanType* rhsType = &rhs->type;
+
+    SpanExpression res = intrisicCompleteAddExpression(expression, scope);
+    if (res.exprType != et_invalid) {
+        *expression = res;
+        return true;
+    }
+
+    if (isTypeReference(lhsType)) {
+        SpanType derefType = dereferenceType(lhsType);
+        SpanExpression ogLhs = *lhs;
+        makeCastExpression(lhs, &derefType);
+        res = intrisicCompleteAddExpression(expression, scope);
+        if (res.exprType != et_invalid) {
+            *expression = res;
+            return true;
+        }
+        *lhs = ogLhs;
+    }
+    if (isTypeReference(rhsType)) {
+        SpanType derefType = dereferenceType(rhsType);
+        SpanExpression ogRhs = *rhs;
+        makeCastExpression(rhs, &derefType);
+        res = intrisicCompleteAddExpression(expression, scope);
+        if (res.exprType != et_invalid) {
+            *expression = res;
+            return true;
+        }
+        *rhs = ogRhs;
+    }
+    if (isTypeReference(lhsType) && isTypeReference(rhsType)) {
+        SpanType derefTypelhs = dereferenceType(lhsType);
+        SpanType derefTyperhs = dereferenceType(rhsType);
+        SpanExpression ogLhs = *lhs;
+        SpanExpression ogRhs = *rhs;
+        makeCastExpression(lhs, &derefTypelhs);
+        makeCastExpression(rhs, &derefTyperhs);
+        res = intrisicCompleteAddExpression(expression, scope);
+        if (res.exprType != et_invalid) {
+            *expression = res;
+            return true;
+        }
+        *lhs = ogLhs;
+        *rhs = ogRhs;
+    }
     // not intrinsic see if overloaded
     SpanType addTypes[2] = { lhs->type, rhs->type };
-    SpanFunction* addFunction = findFunction("add", context.activeProject->namespace_, addTypes, 2, expression->ast, false);
+    SpanFunctionInstance* addFunction = findFunction("add", context.activeProject->namespace_, addTypes, 2, expression->ast, false);
     if (addFunction != NULL) {
         expression->exprType = et_functionCall;
-        expression->type = addFunction->functionType->function.returnType;
+        expression->type = addFunction->function->functionType->function.returnType;
         SpanExpressionFunctionCall* functionCall = &expression->functionCall;
         functionCall->args = allocArena(context.arena, sizeof(SpanExpression) * 2);
         functionCall->argsCount = 2;
         functionCall->function = addFunction;
-        implicitlyCast(lhs, &functionCall->function->functionType->function.paramTypes[0], true);
-        implicitlyCast(rhs, &functionCall->function->functionType->function.paramTypes[1], true);
+        implicitlyCast(lhs, &functionCall->function->function->functionType->function.paramTypes[0], true);
+        implicitlyCast(rhs, &functionCall->function->function->functionType->function.paramTypes[1], true);
         functionCall->args[0] = *lhs;
         functionCall->args[1] = *rhs;
-        return;
+        return true;
     }
-
-    if (isTypeReference(lhsType) && isTypeReference(rhsType)) {
-        SpanType derefTypelhs = dereferenceType(lhsType);
-        SpanType derefTyperhs = dereferenceType(rhsType);
-        makeCastExpression(lhs, &derefTypelhs);
-        makeCastExpression(rhs, &derefTyperhs);
-        completeAddExpression(expression, scope);
-        return;
-    } else if (isTypeReference(rhsType)) {
-        SpanType derefType = dereferenceType(rhsType);
-        makeCastExpression(rhs, &derefType);
-        completeAddExpression(expression, scope);
-        return;
-    } else if (isTypeReference(lhsType)) {
-        SpanType derefType = dereferenceType(lhsType);
-        makeCastExpression(lhs, &derefType);
-        completeAddExpression(expression, scope);
-        return;
-    }
+    logErrorAst(expression->ast, "can't add types %s and %s", lhsType->base->name, rhsType->base->name);
+    return false;
 }
 
 SpanExpression createSpanBinaryExpression(SpanAst* ast, SpanScope* scope) {
@@ -84,9 +135,14 @@ SpanExpression createSpanBinaryExpression(SpanAst* ast, SpanScope* scope) {
     expression.biop.op = biop->op;
 
     switch (biop->op) {
-        case tt_add:
-            completeAddExpression(&expression, scope);
+        case tt_add: {
+            bool worked = completeAddExpression(&expression, scope);
+            if (!worked) {
+                SpanExpression err = { 0 };
+                return err;
+            }
             break;
+        }
         default:
             massert(false, "not a biop compiler error");
             break;
@@ -133,17 +189,17 @@ SpanExpression createSpanFunctionCallExpression(SpanAst* ast, SpanScope* scope) 
         types[typesCount++] = *argType;
     }
 
-    SpanFunction* function = findFunction(ast->functionCall.name, context.activeProject->namespace_, types, typesCount, ast, true);
-    if (function == NULL) {
+    SpanFunctionInstance* function = findFunction(ast->functionCall.name, context.activeProject->namespace_, types, typesCount, ast, true);
+    if (function->function == NULL) {
         SpanExpression err = { 0 };
         return err;
     }
     // implicitly cast function args
     for (u64 i = 0; i < expression.functionCall.argsCount; i++) {
-        implicitlyCast(&expression.functionCall.args[i], &function->functionType->function.paramTypes[i], true);
+        implicitlyCast(&expression.functionCall.args[i], &function->function->functionType->function.paramTypes[i], true);
     }
     expression.functionCall.function = function;
-    expression.type = function->functionType->function.returnType;
+    expression.type = function->function->functionType->function.returnType;
     return expression;
 }
 
@@ -327,6 +383,10 @@ SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
             return createSpanMethodCallExpression(ast, scope);
         case ast_type:
             return createSpanTypeExpression(ast, scope, true);
+        case ast_cast_call:
+            return createSpanCastCallExpression(ast, scope);
+        case ast_index:
+            return createSpanIndexExpression(ast, scope, NULL);
         default:
             massert(false, "not implemented");
             break;
@@ -334,6 +394,211 @@ SpanExpression createSpanExpression(SpanAst* ast, SpanScope* scope) {
     massert(false, "not implemented");
     SpanExpression err = { 0 };
     return err;
+}
+
+SpanExpression intrinsicCompleteIndexExpression(SpanExpression* expression, SpanScope* scope) {
+    SpanExpression expr = *expression;
+    SpanExpression* index = expression->index.index;
+    SpanExpression* value = expression->index.value;
+    SpanType* indexType = &index->type;
+    SpanType* valueType = &value->type;
+
+    if (isTypePointer(valueType)) {
+        if (isIntType(indexType)) {
+            SpanType derefType = dereferenceType(valueType);
+            expr.type = derefType;
+            return expr;
+        }
+        if (isUintType(indexType)) {
+            SpanType derefType = dereferenceType(valueType);
+            expr.type = derefType;
+            return expr;
+        }
+        if (isTypeNumbericLiteral(indexType)) {
+            SpanType i64Type = getIntType(64);
+            makeCastExpression(index, &i64Type);
+            SpanType derefType = dereferenceType(valueType);
+            expr.type = derefType;
+            return expr;
+        }
+    }
+    SpanExpression err = { 0 };
+    return err;
+}
+
+bool completeIndexExpression(SpanExpression* expression, SpanScope* scope) {
+    massert(expression->exprType == et_index, "should be an index");
+    SpanExpression* index = expression->index.index;
+    SpanExpression* value = expression->index.value;
+    SpanType* indexType = &index->type;
+    SpanType* valueType = &value->type;
+
+    SpanExpression res = intrinsicCompleteIndexExpression(expression, scope);
+    if (res.exprType != et_invalid) {
+        *expression = res;
+        return true;
+    }
+
+    if (isTypeReference(valueType)) {
+        SpanType derefType = dereferenceType(valueType);
+        SpanExpression ogLhs = *value;
+        makeCastExpression(value, &derefType);
+        res = intrinsicCompleteIndexExpression(expression, scope);
+        if (res.exprType != et_invalid) {
+            *expression = res;
+            return true;
+        }
+        *value = ogLhs;
+    }
+    if (isTypeReference(indexType)) {
+        SpanType derefType = dereferenceType(indexType);
+        SpanExpression ogLhs = *index;
+        makeCastExpression(index, &derefType);
+        res = intrinsicCompleteIndexExpression(expression, scope);
+        if (res.exprType != et_invalid) {
+            *expression = res;
+            return true;
+        }
+        *index = ogLhs;
+    }
+    if (isTypeReference(valueType) && isTypeReference(indexType)) {
+        SpanType derefTypelhs = dereferenceType(valueType);
+        SpanType derefTyperhs = dereferenceType(indexType);
+        SpanExpression ogLhs = *value;
+        SpanExpression ogRhs = *index;
+        makeCastExpression(value, &derefTypelhs);
+        makeCastExpression(index, &derefTyperhs);
+        res = intrinsicCompleteIndexExpression(expression, scope);
+        if (res.exprType != et_invalid) {
+            *expression = res;
+            return true;
+        }
+        *value = ogLhs;
+        *index = ogRhs;
+    }
+    // not intrinsic see if overloaded
+    SpanType indexTypes[2] = { value->type, index->type };
+    SpanFunctionInstance* addFunction = findFunction("index", context.activeProject->namespace_, indexTypes, 2, expression->ast, false);
+    if (addFunction != NULL) {
+        expression->exprType = et_functionCall;
+        expression->type = addFunction->function->functionType->function.returnType;
+        SpanExpressionFunctionCall* functionCall = &expression->functionCall;
+        functionCall->args = allocArena(context.arena, sizeof(SpanExpression) * 2);
+        functionCall->argsCount = 2;
+        functionCall->function = addFunction;
+        implicitlyCast(value, &functionCall->function->function->functionType->function.paramTypes[0], true);
+        implicitlyCast(index, &functionCall->function->function->functionType->function.paramTypes[1], true);
+        functionCall->args[0] = *value;
+        functionCall->args[1] = *index;
+        return true;
+    }
+    logErrorAst(expression->ast, "can't index type of %s with %s", valueType->base->name, indexType->base->name);
+    return false;
+}
+
+SpanExpression createSpanIndexExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value) {
+    massert(ast->type == ast_index, "should be a index");
+    SpanExpression index = createSpanExpression(ast->index.index, scope);
+    if (index.exprType == et_invalid) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    SpanExpression valueExpr = createSpanExpression(ast->index.value, scope);
+    if (valueExpr.exprType == et_invalid) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    SpanExpression expression;
+    expression.ast = ast;
+    expression.exprType = et_index;
+    expression.index.value = allocArena(context.arena, sizeof(SpanExpression));
+    *expression.index.value = valueExpr;
+    expression.index.index = allocArena(context.arena, sizeof(SpanExpression));
+    *expression.index.index = index;
+
+    if (!completeIndexExpression(&expression, scope)) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    return expression;
+}
+
+SpanExpression createSpanCastCallExpression(SpanAst* ast, SpanScope* scope) {
+    massert(ast->type == ast_cast_call, "should be a cast call");
+
+    SpanType type = getType(ast->castCall.type, true);
+    if (type.base->type == t_invalid) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    SpanExpression value = createSpanExpression(ast->castCall.value, scope);
+    if (value.exprType == et_invalid) {
+        SpanExpression err = { 0 };
+        return err;
+    }
+    SpanType* valueType = &value.type;
+
+
+    if (isNumbericType(valueType) && isNumbericType(&type)) {
+        makeCastExpression(&value, &type);
+        return value;
+    }
+
+    if (isTypePointer(valueType) && isTypePointer(&type)) {
+        makeCastExpression(&value, &type);
+        return value;
+    }
+
+    if (isTypeReference(valueType)) {
+        SpanType derefType = dereferenceType(valueType);
+        if (isNumbericType(&derefType) && isNumbericType(&type)) {
+            makeCastExpression(&value, &derefType);
+            makeCastExpression(&value, &type);
+            return value;
+        }
+        if (isTypePointer(&derefType) && isTypePointer(&type)) {
+            makeCastExpression(&value, &derefType);
+            makeCastExpression(&value, &type);
+            return value;
+        }
+    }
+
+    //TODO: more casts
+
+    // if not core cast interpret like function call
+    SpanType* castType = &type;
+    SpanFunctionInstance* castFunction;
+    if (isTypeReference(valueType)) {
+        SpanType derefType = dereferenceType(valueType);
+        castFunction = findCastFunction(valueType, castType, context.activeProject->namespace_, false, ast);
+        if (castFunction == NULL) {
+            castFunction = findCastFunction(&derefType, castType, context.activeProject->namespace_, false, ast);
+            if (castFunction->function == NULL) {
+                // run again with error to put out error
+                // not the best way to do this but it works
+                castFunction = findCastFunction(valueType, castType, context.activeProject->namespace_, true, ast);
+                castFunction = findCastFunction(&derefType, castType, context.activeProject->namespace_, true, ast);
+                SpanExpression err = { 0 };
+                return err;
+            }
+            makeCastExpression(&value, &derefType);
+        }
+    } else {
+        castFunction = findCastFunction(valueType, castType, context.activeProject->namespace_, true, ast);
+        if (castFunction == NULL) {
+            SpanExpression err = { 0 };
+            return err;
+        }
+    }
+    SpanExpression functionCall = { 0 };
+    functionCall.ast = ast;
+    functionCall.exprType = et_functionCall;
+    functionCall.functionCall.args = allocArena(context.arena, sizeof(SpanExpression));
+    functionCall.functionCall.argsCount = 1;
+    functionCall.functionCall.function = castFunction;
+    functionCall.functionCall.args[0] = value;
+    functionCall.type = functionCall.functionCall.function->function->functionType->function.returnType;
+    return functionCall;
 }
 
 
@@ -408,17 +673,17 @@ SpanExpression createSpanMethodCallExpression(SpanAst* ast, SpanScope* scope) {
     }
     char* methodName = ast->methodCall.methodName;
 
-    SpanFunction* function = findFunction(ast->methodCall.methodName, context.activeProject->namespace_, types, typesCount, ast, true);
+    SpanFunctionInstance* function = findFunction(ast->methodCall.methodName, context.activeProject->namespace_, types, typesCount, ast, true);
     if (function == NULL) {
         SpanExpression err = { 0 };
         return err;
     }
     // implicitly cast function args
     for (u64 i = 0; i < expression.functionCall.argsCount; i++) {
-        implicitlyCast(&expression.functionCall.args[i], &function->functionType->function.paramTypes[i], true);
+        implicitlyCast(&expression.functionCall.args[i], &function->function->functionType->function.paramTypes[i], true);
     }
     expression.functionCall.function = function;
-    expression.type = function->functionType->function.returnType;
+    expression.type = function->function->functionType->function.returnType;
     return expression;
 }
 
@@ -466,10 +731,29 @@ void compileExpression(SpanExpression* expression, SpanScope* scope, SpanFunctio
         case et_type:
             compileTypeExpression(expression, scope, function);
             break;
+        case et_index:
+            compileIndexExpression(expression, scope, function);
+            break;
         default:
             massert(false, "not implemented");
             break;
     }
+}
+
+void compileIndexExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
+    compileExpression(expression->index.value, scope, function);
+    compileExpression(expression->index.index, scope, function);
+    SpanExpression* value = expression->index.value;
+    SpanExpression* index = expression->index.index;
+    SpanType* valueType = &value->type;
+    SpanType* indexType = &index->type;
+    LLVMValueRef indexValue = index->llvmValue;
+    LLVMValueRef valueValue = value->llvmValue;
+    massert(isTypePointer(valueType), "should be a pointer");
+    SpanType withoutPointer = *valueType;
+    withoutPointer.modsCount = withoutPointer.modsCount - 1;
+    LLVMTypeRef underlyingType = getLLVMType(&withoutPointer);
+    expression->llvmValue = LLVMBuildGEP2(context.builder, underlyingType, valueValue, &indexValue, 1, "indextmp");
 }
 
 void compileTypeSizeExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function) {
@@ -501,9 +785,9 @@ void compileFunctionCallExpression(SpanExpression* expression, SpanScope* scope,
         compileExpression(arg, scope, function);
         valueBuffer[i] = arg->llvmValue;
     }
-    SpanFunction* functionToCall = expression->functionCall.function;
+    SpanFunctionInstance* functionToCall = expression->functionCall.function;
     LLVMValueRef functionToCallLLVM = functionToCall->llvmFunc;
-    LLVMTypeRef functionToCallType = functionToCall->functionType->llvmType;
+    LLVMTypeRef functionToCallType = functionToCall->function->functionType->llvmType;
 
     if (functionToCallLLVM == NULL) {
         // function doesn't exist so compile it
@@ -716,6 +1000,28 @@ void compileCastExpression(SpanExpression* expression, SpanScope* scope, SpanFun
         return;
     }
 
+    if (isTypePointer(fromType) && isTypePointer(currentType)) {
+        expression->llvmValue = LLVMBuildBitCast(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "casted_ptr");
+        return;
+    }
+    if (isTypePointer(fromType) && isIntType(currentType)) {
+        expression->llvmValue = LLVMBuildPtrToInt(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "ptrtoint");
+        return;
+    }
+    if (isIntType(fromType) && isTypePointer(currentType)) {
+        expression->llvmValue = LLVMBuildIntToPtr(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "inttoptr");
+        return;
+    }
+    if (isTypePointer(fromType) && isUintType(currentType)) {
+        expression->llvmValue = LLVMBuildPtrToInt(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "ptrtoint");
+        return;
+    }
+    if (isUintType(fromType) && isTypePointer(currentType)) {
+        expression->llvmValue = LLVMBuildIntToPtr(context.builder, fromExpr->llvmValue, getLLVMType(currentType), "inttoptr");
+        return;
+    }
+
+
     if (typeIsReferenceOf(fromType, currentType)) {
         LLVMTypeRef llvmType = getLLVMType(currentType);
         LLVMValueRef val = LLVMBuildLoad2(context.builder, llvmType, fromExpr->llvmValue, "deref");
@@ -786,6 +1092,11 @@ int canImplicitlyCast(SpanType* fromType, SpanType* toType, bool logError, SpanA
         }
     }
     if (isFloatType(fromType) && isFloatType(toType)) {
+        return 1;
+    }
+
+    bool fromTypeIsVoidPtr = isTypePointer(fromType) && fromType->base->type == t_void && fromType->modsCount == 1;
+    if (fromTypeIsVoidPtr && isTypePointer(toType)) {
         return 1;
     }
 

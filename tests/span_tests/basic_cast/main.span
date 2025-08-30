@@ -1,0 +1,20 @@
+
+
+struct Foo{
+	i32 a
+	i32 b
+}
+
+i32 cast(Foo foo){
+	i32 a = foo.a
+	return a
+}
+
+i32 main(){
+	Foo foo
+	foo.a = i32*&.size
+	foo.b = i32.size
+	i32 a = foo.cast(i32)
+	i32 a2 = cast(foo, i32)
+	return a
+}

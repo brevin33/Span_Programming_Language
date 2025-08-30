@@ -716,6 +716,43 @@ i64 getBiopPrecedence(OurTokenType tokenType) {
     }
 }
 
+SpanAst AstCastCallParse(Arena arena, Token** tokens, SpanAst* value) {
+    Token* token = *tokens;
+    massert(token->type == tt_dot, "should be a dot");
+    token++;
+    massert(token->type == tt_id, "should be a cast");
+    char buffer[BUFFER_SIZE];
+    char* word = tokenGetString(*token, buffer);
+    massert(strcmp(word, "cast") == 0, "should be a cast");
+    SpanAst ast = { 0 };
+    ast.type = ast_cast_call;
+    ast.token = value->token;
+    ast.castCall.value = value;
+    token++;
+    if (token->type != tt_lparen) {
+        logErrorTokens(token, 1, "expected left paren after cast");
+        SpanAst err = { 0 };
+        return err;
+    }
+    token++;
+    SpanAst* type = allocArena(arena, sizeof(SpanAst));
+    *type = AstTypeParse(arena, &token, true);
+    if (type->type == ast_invalid) {
+        SpanAst err = { 0 };
+        return err;
+    }
+    if (token->type != tt_rparen) {
+        logErrorTokens(token, 1, "expected closing paren after cast");
+        SpanAst err = { 0 };
+        return err;
+    }
+    token++;
+    ast.castCall.type = type;
+    ast.tokenLength = token - ast.token;
+    *tokens = token;
+    return ast;
+}
+
 SpanAst AstExpressionDotParse(Arena arena, Token** tokens, SpanAst* value) {
     Token* token = *tokens;
     massert(token->type == tt_dot, "should be a dot");
@@ -724,6 +761,11 @@ SpanAst AstExpressionDotParse(Arena arena, Token** tokens, SpanAst* value) {
         logErrorTokens(token, 1, "expected member or method name");
         SpanAst err = { 0 };
         return err;
+    }
+    char buffer[BUFFER_SIZE];
+    char* word = tokenGetString(*token, buffer);
+    if (strcmp(word, "cast") == 0) {
+        return AstCastCallParse(arena, tokens, value);
     }
     token++;
     if (token->type == tt_lparen) {
@@ -787,15 +829,36 @@ SpanAst AstExpressionBiopParse(Arena arena, Token** tokens, i64 precedence, OurT
             continue;
         }
 
+        if (token->type == tt_lbracket) {
+            token++;
+            SpanAst* index = allocArena(arena, sizeof(SpanAst));
+            OurTokenType dels[] = { tt_rbracket };
+            *index = AstExpressionParse(arena, &token, dels, 1);
+            if (index->type == ast_invalid) {
+                SpanAst err = { 0 };
+                return err;
+            }
+            massert(token->type == tt_rbracket, "should be a right bracket");
+            token++;
+            SpanAst indexAst = { 0 };
+            indexAst.type = ast_index;
+            indexAst.token = lhs.token;
+            indexAst.index.index = index;
+            indexAst.index.value = allocArena(arena, sizeof(SpanAst));
+            *indexAst.index.value = lhs;
+            indexAst.tokenLength = token - indexAst.token;
+            lhs = indexAst;
+            continue;
+        }
+
 
         i64 biopPrecedence = getBiopPrecedence(token->type);
         OurTokenType op = token->type;
         if (biopPrecedence == -1) {
-            logErrorTokens(token, 1, "expected biop");
+            logErrorTokens(token, 1, "expected biop or end of the expression");
             SpanAst err = { 0 };
             return err;
         }
-
         if (biopPrecedence >= precedence) {
             *tokens = token;
             return lhs;
@@ -876,6 +939,7 @@ static bool interpretAsType(Arena arena, Token* token) {
     return false;
 }
 
+
 SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
     Token* token = *tokens;
     SpanAst ast = { 0 };
@@ -893,6 +957,35 @@ SpanAst AstExpressionValueParse(Arena arena, Token** tokens) {
 
 
             if (token->type == tt_lparen) {
+                // cast call
+                if (strcmp(word, "cast") == 0) {
+                    ast.type = ast_cast_call;
+                    token++;
+                    OurTokenType delimeters[] = { tt_comma };
+                    SpanAst value = AstExpressionParse(arena, &token, delimeters, 1);
+                    if (value.type == ast_invalid) {
+                        SpanAst err = { 0 };
+                        return err;
+                    }
+                    massert(token->type == tt_comma, "should be a right paren");
+                    token++;
+                    SpanAst type = AstTypeParse(arena, &token, true);
+                    if (type.type == ast_invalid) {
+                        SpanAst err = { 0 };
+                        return err;
+                    }
+                    if (token->type != tt_rparen) {
+                        logErrorTokens(token, 1, "expected closing paren after cast");
+                        SpanAst err = { 0 };
+                        return err;
+                    }
+                    token++;
+                    ast.castCall.value = allocArena(arena, sizeof(SpanAst));
+                    *ast.castCall.value = value;
+                    ast.castCall.type = allocArena(arena, sizeof(SpanAst));
+                    *ast.castCall.type = type;
+                    break;
+                }
                 // function call
                 ast.type = ast_function_call;
                 ast.functionCall.name = word;
@@ -1068,20 +1161,31 @@ SpanAst AstTypeParse(Arena arena, Token** tokens, bool logError) {
     u64 modsCapacity = 2;
     ast.type_.mods = allocArena(arena, sizeof(SpanAst) * modsCapacity);
 
+    bool refShowedUp = false;
+    bool err = false;
     while (true) {
         SpanAst tmod = AstTmodParse(arena, &token);
         if (tmod.type == ast_invalid) {
             break;
         }
-
+        if (refShowedUp && !err) {
+            err = true;
+        }
+        if (tmod.type == ast_tmod_ref) {
+            refShowedUp = true;
+        }
         if (ast.type_.modsCount >= modsCapacity) {
             ast.type_.mods = reallocArena(arena, sizeof(SpanAst) * modsCapacity * 2, ast.type_.mods, sizeof(SpanAst) * modsCapacity);
             modsCapacity *= 2;
         }
         ast.type_.mods[ast.type_.modsCount++] = tmod;
     }
-
     ast.tokenLength = token - *tokens;
+    if (err) {
+        logErrorAst(&ast, "reference can only be the last type modifier");
+        ast.type_.modsCount = 0;
+        ast.type_.name = "$invalid$";
+    }
     *tokens = token;
     return ast;
 }

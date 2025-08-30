@@ -36,6 +36,9 @@ typedef struct _SpanContext {
     SpanFunction** functions;
     u64 functionsCount;
     u64 functionsCapacity;
+    SpanFunction** castFunctions;
+    u64 castFunctionsCount;
+    u64 castFunctionsCapacity;
     u32 numberOfErrors;
     LLVMContextRef llvmContext;
     LLVMBuilderRef builder;

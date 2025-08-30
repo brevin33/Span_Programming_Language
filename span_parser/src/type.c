@@ -136,9 +136,15 @@ LLVMTypeRef getLLVMType(SpanType* type) {
             case tm_sptr:
                 SpanType deref = *type;
                 deref.modsCount--;
+                if (type->base->type == t_void && deref.modsCount == 0) {
+                    return LLVMPointerType(LLVMIntType(8), 0);
+                }
                 return LLVMPointerType(getLLVMType(&deref), 0);
             case tm_ref: {
                 SpanType derefType = dereferenceType(type);
+                if (type->base->type == t_void && derefType.modsCount == 0) {
+                    return LLVMPointerType(LLVMIntType(8), 0);
+                }
                 return LLVMPointerType(getLLVMType(&derefType), 0);
             }
             default:
@@ -414,6 +420,56 @@ SpanTypeBase* getNumbericLiteralTypeBase() {
     return addBaseType(&base);
 }
 
+SpanTypeBase* getAnyTypeBase() {
+    SpanTypeBase base;
+    base.type = t_interface;
+    base.namespace_ = NO_NAMESPACE;
+    base.ast = NULL;
+    base.name = "any";
+    SpanTypeBase* existing = findBaseType(base.name, NO_NAMESPACE);
+    if (existing != NULL) {
+        return existing;
+    }
+    return addBaseType(&base);
+}
+bool isInterfaceType(SpanType* type) {
+    return type->base->type == t_interface;
+}
+
+bool isTypeBaseEqual(SpanTypeBase* type1, SpanTypeBase* type2) {
+    bool sameType = type1->type == type2->type;
+    bool sameNamespace = type1->namespace_ == type2->namespace_;
+    bool sameAst = type1->ast == type2->ast;
+    bool sameName = strcmp(type1->name, type2->name) == 0;
+    return sameType && sameNamespace && sameAst && sameName;
+}
+
+bool isSpanTypeSubtitutionTheSame(SpanTypeSubstitution* substitution1, SpanTypeSubstitution* substitution2) {
+    if (isTypeBaseEqual(substitution1->type, substitution2->type) && isTypeEqual(&substitution1->replacement, &substitution2->replacement)) {
+        return true;
+    }
+    return false;
+}
+
+bool typeFufillsInterface(SpanType* type, SpanType* interfaceType) {
+    massert(interfaceType->base->type == t_interface, "type is not an interface");
+    char buffer[BUFFER_SIZE];
+    char* interfaceName = getTypeName(interfaceType, buffer);
+    if (strcmp(interfaceName, "any") == 0) {
+        return true;
+    }
+    massert(false, "not implemented");
+    return false;
+}
+
+SpanType getAnyType() {
+    SpanTypeBase* base = getAnyTypeBase();
+    SpanType type;
+    type.base = base;
+    type.modsCount = 0;
+    return type;
+}
+
 SpanTypeBase* getVoidTypeBase() {
     SpanTypeBase base;
     base.type = t_void;
@@ -440,6 +496,12 @@ SpanTypeBase* typeFromTypeAst(SpanAst* typeAst, bool logError) {
 
     if (strcmp(typeName, "void") == 0) {
         return getVoidTypeBase();
+    }
+    if (strcmp(typeName, "$invalid$") == 0) {
+        return getInvalidTypeBase();
+    }
+    if (strcmp(typeName, "any") == 0) {
+        return getAnyTypeBase();
     }
 
     char firstChar = typeName[0];

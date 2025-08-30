@@ -22,10 +22,11 @@ void addStatmentsToScope(SpanAst* ast, SpanScope* scope, SpanFunction* function)
     for (u64 i = 0; i < astScope->statementsCount; i++) {
         SpanAst* ast = astScope->statements + i;
         scope->statments[i] = createSpanStatement(ast, scope, function);
+        massert(scope->statments[i].type != st_invalid, "should be a valid statement");
     }
 }
 
-void compileScope(SpanScope* scope, SpanFunction* function) {
+void compileScope(SpanScope* scope, SpanFunctionInstance* function) {
     LLVMBasicBlockRef scopeBlock = LLVMAppendBasicBlock(function->llvmFunc, "scope");
     LLVMBuildBr(context.builder, scopeBlock);
     LLVMPositionBuilderAtEnd(context.builder, scopeBlock);
@@ -45,7 +46,7 @@ void compileScope(SpanScope* scope, SpanFunction* function) {
     bool exitedScope = false;
     for (u64 i = 0; i < scope->statmentsCount; i++) {
         SpanStatement* statement = &scope->statments[i];
-        exitedScope = compileStatement(statement, scope, function);
+        exitedScope = compileStatement(statement, scope, function->function);
         if (exitedScope) {
             break;
         }

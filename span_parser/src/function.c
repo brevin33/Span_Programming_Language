@@ -4,16 +4,93 @@
 #include <llvm-c/Types.h>
 
 SpanFunction* addFunction(SpanFunction* function) {
+    // cast is unique
+    if (strcmp(function->name, "cast") == 0) {
+        SpanFunction* f = allocArena(context.arena, sizeof(SpanFunction));
+        *f = *function;
+
+        f->functionInstancesCount = 0;
+        f->functionInstancesCapacity = 1;
+        f->functionInstances = allocArena(context.arena, sizeof(SpanFunctionInstance) * f->functionInstancesCapacity);
+
+        // make sure only one param
+        if (function->functionType->function.paramTypesCount != 1) {
+            logErrorTokens(function->ast->token, 1, "cast function should have exactly one param");
+            return f;
+        }
+        if (context.castFunctionsCount >= context.castFunctionsCapacity) {
+            context.castFunctions = reallocArena(context.arena, sizeof(SpanFunction*) * context.castFunctionsCapacity * 2, context.castFunctions, sizeof(SpanFunction*) * context.castFunctionsCapacity);
+            context.castFunctionsCapacity *= 2;
+        }
+        context.castFunctions[context.castFunctionsCount++] = f;
+        return f;
+    }
+
     if (context.functionsCount >= context.functionsCapacity) {
         context.functions = reallocArena(context.arena, sizeof(SpanFunction*) * context.functionsCapacity * 2, context.functions, sizeof(SpanFunction*) * context.functionsCapacity);
         context.functionsCapacity *= 2;
     }
     SpanFunction* f = allocArena(context.arena, sizeof(SpanFunction));
     *f = *function;
-    f->llvmFunc = NULL;
+
+    f->functionInstancesCount = 0;
+    f->functionInstancesCapacity = 1;
+    f->functionInstances = allocArena(context.arena, sizeof(SpanFunctionInstance) * f->functionInstancesCapacity);
+
     context.functions[context.functionsCount++] = f;
 
     return f;
+}
+
+SpanFunctionInstance* findCastFunction(SpanType* valueType, SpanType* castType, u32 namespace_, bool logError, SpanAst* ast) {
+    SpanFunction* functions[BUFFER_SIZE];
+    u64 functionsCount = 0;
+    for (u64 i = 0; i < context.castFunctionsCount; i++) {
+        SpanFunction* function = context.castFunctions[i];
+        SpanType* returnType = &function->functionType->function.returnType;
+        SpanType* paramType = &function->functionType->function.paramTypes[0];
+        bool validNamespace = function->functionType->namespace_ == namespace_;
+        validNamespace = validNamespace || function->functionType->namespace_ == NO_NAMESPACE;
+        if (isTypeEqual(returnType, castType) && isTypeEqual(paramType, valueType) && validNamespace) {
+            functions[functionsCount++] = function;
+        }
+    }
+    if (functionsCount == 0) {
+        if (logError) {
+            char buffer[BUFFER_SIZE];
+            char buffer2[BUFFER_SIZE];
+            char* valueTypeName = getTypeName(valueType, buffer);
+            char* castTypeName = getTypeName(castType, buffer2);
+            logErrorAst(ast, "can't find cast function from %s to %s", valueTypeName, castTypeName);
+        }
+        SpanFunctionInstance functionInstance;
+        return NULL;
+    }
+    if (functionsCount > 1) {
+        if (logError) {
+            char buffer[BUFFER_SIZE];
+            char buffer2[BUFFER_SIZE];
+            char* valueTypeName = getTypeName(valueType, buffer);
+            char* castTypeName = getTypeName(castType, buffer2);
+            logErrorAst(ast, "ambiguous cast function from %s to %s", valueTypeName, castTypeName);
+            for (u64 i = 0; i < functionsCount; i++) {
+                char* functionName = functions[i]->name;
+                logErrorAst(ast, "the cast could have meant this %s", functionName);
+            }
+        }
+        return NULL;
+    }
+    //TODO: fix this
+    SpanFunction* function = functions[0];
+    if (function->functionInstancesCount == 0) {
+        SpanFunctionInstance functionInstance;
+        functionInstance.function = functions[0];
+        functionInstance.llvmFunc = NULL;
+        functionInstance.substitutions = NULL;
+        functionInstance.substitutionsCount = 0;
+        function->functionInstances[function->functionInstancesCount++] = functionInstance;
+    }
+    return &function->functionInstances[0];
 }
 
 void compileRealMainFunction(SpanFunction* mainToCall) {
@@ -28,26 +105,31 @@ void compileRealMainFunction(SpanFunction* mainToCall) {
 
     // call the real main function
     LLVMTypeRef mainToCallLLVMType = mainToCall->functionType->llvmType;
-    LLVMValueRef val = LLVMBuildCall2(context.builder, mainToCallLLVMType, mainToCall->llvmFunc, NULL, 0, "callMain");
+    massert(mainToCall->functionInstancesCount == 1, "main should only have one instance");
+    LLVMValueRef val = LLVMBuildCall2(context.builder, mainToCallLLVMType, mainToCall->functionInstances[0].llvmFunc, NULL, 0, "callMain");
     LLVMBuildRet(context.builder, val);
 }
 
-void compileFunction(SpanFunction* function) {
-    if (function->isExtern) {
-        SpanTypeBase* functionType = function->functionType;
+void compileFunction(SpanFunctionInstance* function) {
+    if (function->function->isExtern) {
+        SpanTypeBase* functionType = function->function->functionType;
         LLVMTypeRef llvmFuncType = functionType->llvmType;
         massert(llvmFuncType != NULL, "llvm type should not be null");
-        LLVMValueRef llvmFunc = LLVMAddFunction(context.activeProject->llvmModule, function->name, llvmFuncType);
+        LLVMValueRef llvmFunc = LLVMAddFunction(context.activeProject->llvmModule, function->function->name, llvmFuncType);
         function->llvmFunc = llvmFunc;
         return;
     }
+
+    // do the type substitutions
+
+
     // save the current block
     LLVMBasicBlockRef lastBlock = context.currentBlock;
 
-    SpanTypeBase* functionType = function->functionType;
+    SpanTypeBase* functionType = function->function->functionType;
     LLVMTypeRef llvmFuncType = functionType->llvmType;
     massert(llvmFuncType != NULL, "llvm type should not be null");
-    LLVMValueRef llvmFunc = LLVMAddFunction(context.activeProject->llvmModule, function->scrambledName, llvmFuncType);
+    LLVMValueRef llvmFunc = LLVMAddFunction(context.activeProject->llvmModule, function->function->scrambledName, llvmFuncType);
     function->llvmFunc = llvmFunc;
 
 
@@ -56,10 +138,10 @@ void compileFunction(SpanFunction* function) {
     LLVMPositionBuilderAtEnd(context.builder, entry);
 
     // parameters
-    for (u64 i = 0; i < function->functionType->function.paramTypesCount; i++) {
-        char* paramName = function->paramNames[i];
-        SpanType paramType = function->functionType->function.paramTypes[i];
-        SpanVariable* variable = getVariableFromScope(&function->scope, paramName);
+    for (u64 i = 0; i < function->function->functionType->function.paramTypesCount; i++) {
+        char* paramName = function->function->paramNames[i];
+        SpanType paramType = function->function->functionType->function.paramTypes[i];
+        SpanVariable* variable = getVariableFromScope(&function->function->scope, paramName);
         LLVMTypeRef paramTypeLLVM = getLLVMType(&paramType);
         if (!variable->isReference) {
             variable->llvmValue = LLVMBuildAlloca(context.builder, paramTypeLLVM, variable->name);
@@ -70,7 +152,7 @@ void compileFunction(SpanFunction* function) {
         }
     }
 
-    SpanStatement* statement = function->scope.statments;
+    SpanStatement* statement = function->function->scope.statments;
     massert(statement->type == st_scope, "should be a scope");
     SpanScope* scope = statement->scope.scope;
 
@@ -101,7 +183,34 @@ SpanFunction** findFunctions(char* name, u32 namespace_, SpanFunction** buffer, 
     return buffer;
 }
 
-SpanFunction* findFunction(char* name, u32 namespace_, SpanType* types, u32 typesCount, SpanAst* ast, bool logError) {
+
+bool SpanFunctionInstanceIsEqual(SpanFunctionInstance* instance1, SpanFunctionInstance* instance2) {
+    bool sameFunction = instance1->function == instance2->function;
+    if (!sameFunction) {
+        return false;
+    }
+    if (instance1->substitutionsCount != instance2->substitutionsCount) {
+        return false;
+    }
+    for (u32 i = 0; i < instance1->substitutionsCount; i++) {
+        if (!isSpanTypeSubtitutionTheSame(&instance1->substitutions[i], &instance2->substitutions[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+SpanFunctionInstance* getIfFunctionAlreadyHasInstance(SpanFunction* function, SpanFunctionInstance* instance) {
+    for (u32 i = 0; i < function->functionInstancesCount; i++) {
+        SpanFunctionInstance* functionInstance = &function->functionInstances[i];
+        if (SpanFunctionInstanceIsEqual(instance, functionInstance)) {
+            return functionInstance;
+        }
+    }
+    return NULL;
+}
+
+SpanFunctionInstance* findFunction(char* name, u32 namespace_, SpanType* types, u32 typesCount, SpanAst* ast, bool logError) {
     // finding function
     u32 matchingFunctionsCount = 0;
     SpanFunction* buffer[BUFFER_SIZE];
@@ -131,7 +240,23 @@ SpanFunction* findFunction(char* name, u32 namespace_, SpanType* types, u32 type
 
     if (matchFunctionsCount != 0) {
         if (matchFunctionsCount == 1) {
-            return matchFunctions[0];
+            SpanFunction* function = matchFunctions[0];
+            SpanFunctionInstance functionInstance;
+            functionInstance.function = function;
+            functionInstance.llvmFunc = NULL;
+            functionInstance.substitutions = NULL;
+            functionInstance.substitutionsCount = 0;
+            SpanFunctionInstance* existing = getIfFunctionAlreadyHasInstance(function, &functionInstance);
+            if (existing == NULL) {
+                if (function->functionInstancesCount >= function->functionInstancesCapacity) {
+                    function->functionInstances
+                        = reallocArena(context.arena, sizeof(SpanFunctionInstance) * function->functionInstancesCapacity * 2, function->functionInstances, sizeof(SpanFunctionInstance) * function->functionInstancesCapacity);
+                    function->functionInstancesCapacity *= 2;
+                }
+                function->functionInstances[function->functionInstancesCount++] = functionInstance;
+                return &function->functionInstances[function->functionInstancesCount - 1];
+            }
+            return existing;
         }
         if (logError) {
             logErrorAst(ast, "ambiguous function call");
@@ -175,7 +300,23 @@ SpanFunction* findFunction(char* name, u32 namespace_, SpanType* types, u32 type
 
     if (matchFunctionsCount != 0) {
         if (matchFunctionsCount == 1) {
-            return matchFunctions[0];
+            SpanFunction* function = matchFunctions[0];
+            SpanFunctionInstance functionInstance;
+            functionInstance.function = function;
+            functionInstance.llvmFunc = NULL;
+            functionInstance.substitutions = NULL;
+            functionInstance.substitutionsCount = 0;
+            SpanFunctionInstance* existing = getIfFunctionAlreadyHasInstance(function, &functionInstance);
+            if (existing == NULL) {
+                if (function->functionInstancesCount >= function->functionInstancesCapacity) {
+                    function->functionInstances
+                        = reallocArena(context.arena, sizeof(SpanFunctionInstance) * function->functionInstancesCapacity * 2, function->functionInstances, sizeof(SpanFunctionInstance) * function->functionInstancesCapacity);
+                    function->functionInstancesCapacity *= 2;
+                }
+                function->functionInstances[function->functionInstancesCount++] = functionInstance;
+                return &function->functionInstances[function->functionInstancesCount - 1];
+            }
+            return existing;
         }
         if (logError) {
             logErrorAst(ast, "ambiguous function call");
@@ -214,7 +355,102 @@ SpanFunction* findFunction(char* name, u32 namespace_, SpanType* types, u32 type
 
     if (matchFunctionsCount != 0) {
         if (matchFunctionsCount == 1) {
-            return matchFunctions[0];
+            SpanFunction* function = matchFunctions[0];
+            SpanFunctionInstance functionInstance;
+            functionInstance.function = function;
+            functionInstance.llvmFunc = NULL;
+            functionInstance.substitutions = NULL;
+            functionInstance.substitutionsCount = 0;
+            SpanFunctionInstance* existing = getIfFunctionAlreadyHasInstance(function, &functionInstance);
+            if (existing == NULL) {
+                if (function->functionInstancesCount >= function->functionInstancesCapacity) {
+                    function->functionInstances
+                        = reallocArena(context.arena, sizeof(SpanFunctionInstance) * function->functionInstancesCapacity * 2, function->functionInstances, sizeof(SpanFunctionInstance) * function->functionInstancesCapacity);
+                    function->functionInstancesCapacity *= 2;
+                }
+                function->functionInstances[function->functionInstancesCount++] = functionInstance;
+                return &function->functionInstances[function->functionInstancesCount - 1];
+            }
+            return existing;
+        }
+        if (logError) {
+            logErrorAst(ast, "ambiguous function call");
+            for (u64 i = 0; i < matchFunctionsCount; i++) {
+                SpanAst* functionItCouldHaveBeenAst = matchFunctions[i]->ast;
+                logErrorAst(functionItCouldHaveBeenAst, "the function could have meant this");
+            }
+        }
+        return NULL;
+    }
+
+
+    // interface function match
+    matchFunctionsCount = 0;
+    for (u64 i = 0; i < matchingFunctionsCount; i++) {
+        SpanFunction* function = matchingFunctions[i];
+        if (function->functionType->function.paramTypesCount != typesCount) {
+            continue;
+        }
+        bool paramTypesMatch = true;
+        for (u64 j = 0; j < function->functionType->function.paramTypesCount; j++) {
+            SpanType paramType1 = types[j];
+            SpanType paramType2 = function->functionType->function.paramTypes[j];
+            if (isTypeEqual(&paramType1, &paramType2) == false) {
+                // implicit cast
+                bool worked = canImplicitlyCast(&paramType1, &paramType2, false, ast) >= 0;
+                if (!worked) {
+                    if (isInterfaceType(&paramType2) && typeFufillsInterface(&paramType1, &paramType2)) {
+                    } else {
+                        paramTypesMatch = false;
+                        break;
+                    }
+                }
+            }
+        }
+        if (paramTypesMatch) {
+            matchFunctions[matchFunctionsCount++] = function;
+        }
+    }
+
+    if (matchFunctionsCount != 0) {
+        if (matchFunctionsCount == 1) {
+            SpanFunction* function = matchFunctions[0];
+            SpanTypeSubstitution substitutions[BUFFER_SIZE];
+            u64 substitutionsCount = 0;
+            // figure out substitutions needed
+            for (u64 i = 0; i < function->functionType->function.paramTypesCount; i++) {
+                SpanType paramType1 = types[i];
+                SpanType paramType2 = function->functionType->function.paramTypes[i];
+                if (isTypeEqual(&paramType1, &paramType2) == false) {
+                    // implicit cast
+                    bool worked = canImplicitlyCast(&paramType1, &paramType2, false, ast) >= 0;
+                    if (!worked) {
+                        massert(paramType2.base->type == t_interface, "should be an interface type");
+                        SpanTypeSubstitution substitution;
+                        substitution.type = paramType2.base;
+                        substitution.replacement = paramType1;
+                        substitutions[substitutionsCount++] = substitution;
+                    }
+                }
+            }
+
+            SpanFunctionInstance functionInstance;
+            functionInstance.function = function;
+            functionInstance.llvmFunc = NULL;
+            functionInstance.substitutions = allocArena(context.arena, sizeof(SpanTypeSubstitution) * substitutionsCount);
+            memcpy(functionInstance.substitutions, substitutions, sizeof(SpanTypeSubstitution) * substitutionsCount);
+            functionInstance.substitutionsCount = substitutionsCount;
+            SpanFunctionInstance* existing = getIfFunctionAlreadyHasInstance(function, &functionInstance);
+            if (existing == NULL) {
+                if (function->functionInstancesCount >= function->functionInstancesCapacity) {
+                    function->functionInstances
+                        = reallocArena(context.arena, sizeof(SpanFunctionInstance) * function->functionInstancesCapacity * 2, function->functionInstances, sizeof(SpanFunctionInstance) * function->functionInstancesCapacity);
+                    function->functionInstancesCapacity *= 2;
+                }
+                function->functionInstances[function->functionInstancesCount++] = functionInstance;
+                return &function->functionInstances[function->functionInstancesCount - 1];
+            }
+            return existing;
         }
         if (logError) {
             logErrorAst(ast, "ambiguous function call");

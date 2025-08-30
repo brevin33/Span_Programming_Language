@@ -10,6 +10,7 @@ typedef struct _SpanVariable SpanVariable;
 typedef struct _SpanExpression SpanExpression;
 typedef struct _SpanScope SpanScope;
 typedef struct _SpanFunction SpanFunction;
+typedef struct _SpanFunctionInstance SpanFunctionInstance;
 
 typedef enum _SpanExpressionType {
     et_invalid = 0,
@@ -24,6 +25,8 @@ typedef enum _SpanExpressionType {
     et_get_val,
     et_type,
     et_type_size,
+    et_cast_call,
+    et_index,
 } SpanExpressionType;
 
 typedef struct _SpanExpressionNumberLiteral {
@@ -37,6 +40,11 @@ typedef struct _SpanExpressionGetPtr {
 typedef struct _SpanExpressionGetVal {
     SpanExpression* value;
 } SpanExpressionGetVal;
+
+typedef struct _SpanExpressionIndex {
+    SpanExpression* value;
+    SpanExpression* index;
+} SpanExpressionIndex;
 
 typedef struct _SpanExpressionStructAccess {
     SpanExpression* value;
@@ -52,7 +60,7 @@ typedef struct _SpanExpressionCast {
 } SpanExpressionCast;
 
 typedef struct _SpanExpressionFunctionCall {
-    SpanFunction* function;
+    SpanFunctionInstance* function;
     SpanExpression* args;
     u64 argsCount;
 } SpanExpressionFunctionCall;
@@ -71,6 +79,7 @@ typedef struct _SpanExpressionTypeSize {
     SpanType type;
 } SpanExpressionTypeSize;
 
+
 typedef struct _SpanExpression {
     SpanAst* ast;
     SpanExpressionType exprType;
@@ -86,6 +95,7 @@ typedef struct _SpanExpression {
         SpanExpressionGetVal getVal;
         SpanExpressionTypeType typeType;
         SpanExpressionTypeSize typeSize;
+        SpanExpressionIndex index;
     };
     LLVMValueRef llvmValue;
 } SpanExpression;
@@ -103,6 +113,8 @@ SpanExpression createSpanGetValExpression(SpanAst* ast, SpanScope* scope, SpanEx
 SpanExpression createSpanMethodCallExpression(SpanAst* ast, SpanScope* scope);
 SpanExpression createSpanTypeExpression(SpanAst* ast, SpanScope* scope, bool logError);
 SpanExpression createSpanTypeSizeExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
+SpanExpression createSpanCastCallExpression(SpanAst* ast, SpanScope* scope);
+SpanExpression createSpanIndexExpression(SpanAst* ast, SpanScope* scope, SpanExpression* value);
 
 char* getNumbericLiteralNumber(SpanExpression* expression);
 char* getNumberLiteralNumber(SpanExpression* expression);
@@ -122,7 +134,7 @@ void makeCastExpression(SpanExpression* expr, SpanType* type);
 int canImplicitlyCast(SpanType* fromType, SpanType* toType, bool logError, SpanAst* ast);
 bool implicitlyCast(SpanExpression* expression, SpanType* type, bool logError);
 
-void completeAddExpression(SpanExpression* expression, SpanScope* scope);
+bool completeAddExpression(SpanExpression* expression, SpanScope* scope);
 
 void compileExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 
@@ -136,6 +148,7 @@ void compileGetPtrExpression(SpanExpression* expression, SpanScope* scope, SpanF
 void compileGetValExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 void compileTypeSizeExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 void compileTypeExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
+void compileIndexExpression(SpanExpression* expression, SpanScope* scope, SpanFunction* function);
 
 
 

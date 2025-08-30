@@ -1,0 +1,9 @@
+void* malloc(u64 size)
+
+i32 main(){
+	i32* ptr = malloc(12)
+	ptr[2] = 10
+	ptr[1] = 4
+	ptr[0] = 200
+	return ptr[2] + ptr[1] + ptr[0]
+}

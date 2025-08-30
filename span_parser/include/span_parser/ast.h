@@ -39,8 +39,21 @@ typedef enum _SpanASTType {
     ast_call_paramerter_list,
     ast_member_access,
     ast_method_call,
+    ast_cast_call,
+    ast_cast_definition,
+    ast_index,
 } SpanASTType;
 
+
+typedef struct _SpanAstCastCall {
+    SpanAst* type;
+    SpanAst* value;
+} SpanAstCastCall;
+
+typedef struct _SpanAstIndex {
+    SpanAst* value;
+    SpanAst* index;
+} SpanAstIndex;
 
 typedef struct _SpanAstTmodArray {
     u64 size;
@@ -131,11 +144,6 @@ typedef struct _SpanAstCallParamerterList {
     u64 paramsCount;
 } SpanAstCallParamerterList;
 
-typedef struct _SpanAstCastCall {
-    SpanAst* type;
-    SpanAst* value;
-} SpanAstCastCall;
-
 typedef struct _SpanAst {
     SpanASTType type;
     u32 tokenLength;
@@ -159,6 +167,7 @@ typedef struct _SpanAst {
         SpanAstMemberAccess memberAccess;
         SpanAstMethodCall methodCall;
         SpanAstCastCall castCall;
+        SpanAstIndex index;
     };
 } SpanAst;
 
@@ -189,7 +198,7 @@ SpanAst AstExpressionDotParse(Arena arena, Token** tokens, SpanAst* value);
 SpanAst AstMemberAccessParse(Arena arena, Token** tokens, SpanAst* value);
 SpanAst AstMethodCallParse(Arena arena, Token** tokens, SpanAst* value);
 SpanAst AstMethodDefinitionParse(Arena arena, Token** tokens);
-SpanAst AstCastCallParse(Arena arena, Token** tokens, SpanAst* type);
+SpanAst AstCastCallParse(Arena arena, Token** tokens, SpanAst* value);
 
 
 bool AstIsExpression(SpanAst* ast);
@@ -200,7 +209,9 @@ bool AstIsExpression(SpanAst* ast);
     case ast_member_access:                                                                                                                                                                                                          \
     case ast_function_call:                                                                                                                                                                                                          \
     case ast_method_call:                                                                                                                                                                                                            \
-    case ast_type
+    case ast_type:                                                                                                                                                                                                                   \
+    case ast_cast_call:                                                                                                                                                                                                              \
+    case ast_index
 
 
 

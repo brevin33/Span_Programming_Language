@@ -5,10 +5,11 @@
 #include "span_parser/arena.h"
 #include "span_parser/tokens.h"
 #include "span_parser/ast.h"
-#include "span_parser/statment.h"
 #include "span_parser/type.h"
 
 typedef struct _SpanFunction SpanFunction;
+typedef struct _SpanStatement SpanStatement;
+typedef struct _SpanFunctionInstance SpanFunctionInstance;
 
 typedef struct _SpanVariable {
     char* name;
@@ -35,4 +36,4 @@ void addStatmentsToScope(SpanAst* ast, SpanScope* scope, SpanFunction* function)
 
 SpanVariable* addVariableToScope(SpanScope* scope, char* name, SpanType type, SpanAst* ast);
 SpanVariable* getVariableFromScope(SpanScope* scope, char* name);
-void compileScope(SpanScope* scope, SpanFunction* function);
+void compileScope(SpanScope* scope, SpanFunctionInstance* function);

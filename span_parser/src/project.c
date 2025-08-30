@@ -19,6 +19,9 @@ void initializeContext(Arena arena) {
     context.functionsCount = 0;
     context.functions = allocArena(arena, sizeof(SpanFunction) * context.functionsCapacity);
     context.numberOfErrors = 0;
+    context.castFunctionsCapacity = 8;
+    context.castFunctionsCount = 0;
+    context.castFunctions = allocArena(arena, sizeof(SpanFunction) * context.castFunctionsCapacity);
 }
 
 void cleanupSpanContext() {
@@ -209,6 +212,22 @@ SpanProject createSpanProjectHelper(Arena arena, SpanProject* parent, char* path
         SpanFileImplementFunctions(&project.files[i]);
     }
 
+
+    for (u64 i = 0; i < context.functionsCount; i++) {
+        SpanFunction* function = context.functions[i];
+        char* name = context.functions[i]->name;
+        if (strcmp(name, "main") == 0) {
+            massert(function->functionInstancesCount == 0, "main should have zero instance right now");
+            // TODO: make sure that main doesn't have any direct use of interfaces
+            SpanFunctionInstance mainFunctionInstance;
+            mainFunctionInstance.function = function;
+            mainFunctionInstance.llvmFunc = NULL;
+            mainFunctionInstance.substitutions = NULL;
+            mainFunctionInstance.substitutionsCount = 0;
+            function->functionInstances[function->functionInstancesCount++] = mainFunctionInstance;
+        }
+    }
+
     if (context.numberOfErrors > 0) {
         redprintf("\nfailed to create span project!\n");
         redprintf("number of errors: %u\n", context.numberOfErrors);
@@ -309,7 +328,9 @@ void compileSpanProject(SpanProject* project) {
         SpanFunction* function = context.functions[i];
         char* name = context.functions[i]->name;
         if (strcmp(name, "main") == 0) {
-            compileFunction(function);
+            massert(function->functionInstancesCount == 1, "main should only have one instance");
+            SpanFunctionInstance* mainFunctionInstance = &function->functionInstances[0];
+            compileFunction(mainFunctionInstance);
             compileRealMainFunction(function);
         }
     }
